@@ -30,3 +30,88 @@
 *.exe
 *.out
 *.app
+*.elf
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Build directories
+build/
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# Make
+Makefile.in
+configure
+autom4te.cache/
+aclocal.m4
+config.log
+config.status
+
+# IDE specific files
+.vs/
+.vscode/
+*.swp
+*.swo
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# SDL specific
+SDL2-*/
+
+# GLEW specific
+glew-*/
+
+# OpenGL shader files (often better to include these in the repo)
+# Uncomment if you don't want to track them
+# *.vert
+# *.frag
+# *.geom
+# *.comp
+# *.tesc
+# *.tese
+
+# Generated documentation
+doc/
+docs/html/
+docs/latex/
+
+# Dependency directories that might be created by package managers
+vcpkg/
+conan/
+packages/
+
+# Log files
+*.log
+log/
+logs/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
