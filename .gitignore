@@ -115,3 +115,9 @@ logs/
 temp/
 tmp/
 *.tmp
+
+# Allow specific libraries
+!SDL3.dll
+!libSDL3.dll.a
+!glew32.lib
+!glew32.dll
