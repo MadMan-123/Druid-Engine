@@ -1,0 +1,12 @@
+#pragma once
+#include "../src/Core/maths.h"
+#include "../src/Core/arena.h"
+#include "../src/Systems/Physics/collider.h"
+#include "../src/Core/coroutine.h"
+#include <cstdio>
+#include <cstdlib>
+#include <stdio.h>
+#include "../src/systems/Rendering/graphics.h"
+#include "../src/Systems/WorldModel/ECS.h"
+#include "../src/defines.h"
+#include "../src/application/application.h"
