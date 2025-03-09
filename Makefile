@@ -1,6 +1,6 @@
 INCLUDES := -Iinclude -Iinclude/SDL3 -Iinclude/GL
 SRCDIR := src
-OBJDIR := obj
+OBJDIR := .obj
 BINDIR := bin
 
 CXX := g++
