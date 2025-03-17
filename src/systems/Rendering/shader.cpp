@@ -13,8 +13,8 @@ Shader* initShader(const std::string& filename)
 	//initialize the shader
 
 	shader->program = glCreateProgram(); // create shader program (openGL saves as ref number)
-	shader->shaders[0] = createShader(loadShader("..\\res\\shader.vert"), GL_VERTEX_SHADER); // create vertex shader
-	shader->shaders[1] = createShader(loadShader("..\\res\\shader.frag"), GL_FRAGMENT_SHADER); // create fragment shader
+	shader->shaders[0] = createShader(loadShader("..\\res\\" + filename + ".vert"), GL_VERTEX_SHADER); // create vertex shader
+	shader->shaders[1] = createShader(loadShader("..\\res\\" + filename + ".frag"), GL_FRAGMENT_SHADER); // create fragment shader
 
 	for (unsigned int i = 0; i < Shader::NUM_SHADERS; i++)
 	{
@@ -23,6 +23,7 @@ Shader* initShader(const std::string& filename)
 
 	glBindAttribLocation(shader->program, 0, "position"); // associate attribute variable with our shader program attribute (in this case attribute vec3 position;)
 	glBindAttribLocation(shader->program, 1, "texCoord");
+	glBindAttribLocation(shader->program, 2, "normal");
 
 	glLinkProgram(shader->program); //create executables that will run on the GPU shaders
 	checkShaderError(
@@ -40,6 +41,7 @@ Shader* initShader(const std::string& filename)
 
 	shader->uniforms[Shader::TRANSFORM_U] = glGetUniformLocation(shader->program, "transform"); // associate with the location of uniform variable within a program
 
+	shader->uniforms[Shader::MODEL_U] = glGetUniformLocation(shader->program, "model"); // associate with the location of uniform variable within a program
 	return shader;
 }
 
@@ -65,7 +67,10 @@ void bind(const Shader* shader)
 
 void updateShader(const Shader* shader, const Transform& transform, const Camera& camera)
 {
-	auto mvp = getViewProjection(&camera) * getModel(&transform);
+	auto model = getModel(&transform);
+	auto mvp = getViewProjection(&camera) * model;
+	
+	glUniformMatrix4fv(shader->uniforms[Shader::MODEL_U],1,GLU_FALSE,&model[0][0]);
 	glUniformMatrix4fv(
 		shader->uniforms[Shader::TRANSFORM_U],
 	1,

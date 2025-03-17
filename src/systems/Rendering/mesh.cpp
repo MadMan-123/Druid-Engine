@@ -63,6 +63,7 @@ void initModel(Mesh* mesh,const IndexedModel &model)
 	//move the data to the GPU - type of data, size of data, starting address (pointer) of data, where do we store the data on the GPU
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(model.indices[0]), &model.indices[0], GL_STATIC_DRAW);
 
+	
 	glBindVertexArray(0); // unbind our VAO
 }
 void freeMesh(Mesh *mesh)

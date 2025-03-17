@@ -5,6 +5,10 @@
 #include <vector>
 #include <string>
 
+
+
+//TODO: Oh sweet jesus there is too many classes here
+
 struct OBJIndex
 {
     unsigned int vertexIndex;
@@ -13,6 +17,7 @@ struct OBJIndex
     
     bool operator<(const OBJIndex& r) const { return vertexIndex < r.vertexIndex; }
 };
+
 
 class IndexedModel
 {

@@ -23,6 +23,7 @@ typedef struct
 		TEXCOORD_VB,
 		NORMAL_VB,
 		INDEX_VB,
+		TEXID_VB,
 		NUM_BUFFERS
 	};
 
