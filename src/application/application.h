@@ -9,24 +9,28 @@
 
 enum ApplicationState{RUN, EXIT};
 
+extern double FPS;
 typedef struct 
 {
 	//function pointers
 	void(*init)();
-	void(*update)();
-	void(*render)();
+	void(*update)(float);
+	void(*render)(float);
 	void(*destroy)();
 	
 	//open gl context with sdl within the display	
 	Display* display;
 	ApplicationState state;
 	const bool *input;
+	double fps;	
+	
 }Application;
 
 //function pointer typedef
+typedef void(*FncPtrFloat)(float);
 typedef void(*FncPtr)();
 
-DAPI Application* createApplication(FncPtr init, FncPtr update, FncPtr render, FncPtr destroy);
+DAPI Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy);
 DAPI void run(Application* app);
 DAPI void destroyApplication(Application* app);
 
@@ -36,4 +40,4 @@ DAPI void initSystems(const Application* app);
 DAPI void startApplication(Application* app);
 
 DAPI void processInput(Application* app);
-DAPI void render(Application* app);
+DAPI void render(Application* app,float dt);

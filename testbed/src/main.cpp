@@ -6,27 +6,19 @@ bool rightMouseWasPressed;
 float speed = 0.1f;
 float rotateSpeed = 0.05f;
 
-GLint timeloc = -1;
 GLint lightPos = -1;
+GLint cameraPos = -1;
 Transform currentTransform;
 
 glm::vec3 light = glm::vec3(0,2,0);
 
-Mesh* mesh2;
-Texture armorTex,faceTex,swordTex;
+Mesh* mesh;
+Texture texture, bumpTexture;
 Shader* shader;
 
 float counter = 0.0f;
 
 
-
-glm::vec3 rotating(float time, float radius = 2.0f, float speed = 1.0f)
-{
-	float x = radius * std::sin(time* speed);
-	float z = radius * std::cos(time * speed);
-
-	return glm::vec3(x,0,z);
-}
 
 void init()
 {
@@ -35,13 +27,12 @@ void init()
 	currentTransform.rot = glm::vec3(0, 0, 0);
 	currentTransform.scale = glm::vec3(1, 1,1);
 	//mesh1.init(vertices, sizeof(vertices) / sizeof(vertices[0]), indices, sizeof(indices) / sizeof(indices[0])); //size calcuated by number of bytes of an array / no bytes of one element
-	mesh2 = loadModel("..\\res\\knight.obj");
+	mesh = loadModel("..\\res\\monkey3.obj");
 	
-	shader = initShader("..\\res\\shader"); //new shader
+	shader = initShader("..\\res\\bump"); //new shader
 	
-	initTexture(&armorTex,"..\\res\\Armor_tex_bloody.png");
-	initTexture(&faceTex, "..\\res\\Face.png");
-	initTexture(&swordTex, "..\\..\\Sword_and_Shield.png");
+	initTexture(&texture,"..\\res\\bricks.jpg");
+	initTexture(&bumpTexture, "..\\res\\normal.jpg");
 	initCamera(
 		&camera,
 		{0,0,-30},
@@ -54,11 +45,11 @@ void init()
 
 	lightPos = glGetUniformLocation(shader->program,"lightPos");
 
-
+	cameraPos = glGetUniformLocation(shader->program,"camPos");
 
 }
 
-void update()
+void moveCamera()
 {
        	if (game->input[SDL_SCANCODE_W])
        		moveForward(&camera, speed);
@@ -69,8 +60,11 @@ void update()
        		moveRight(&camera, -speed);
        	if (game->input[SDL_SCANCODE_S])
        		moveForward(&camera, -speed);
-      	//pitch and rotate based on mouse movement
-      	bool rightMouseIsPressed = SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT);
+}
+
+void rotateCamera()
+{
+	bool rightMouseIsPressed = SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT);
       
       	if (rightMouseIsPressed) {
       		float x, y;
@@ -103,36 +97,58 @@ void update()
       	rightMouseWasPressed = rightMouseIsPressed;
 
 
+}
 
+
+void update(float dt)
+{
+	moveCamera();
+      	//pitch and rotate based on mouse movement
+      	rotateCamera();			
+
+	
+	//rotate the current transform 
+	currentTransform.rot += glm::vec3(0,90,0)* 50.0f * dt;	
+	printf("%.2f\n",game->fps);
 }
 
 
 
-void render()
+void render(float dt)
 {
 
 	
-	clearDisplay(0, 0, 0, 0);
+	clearDisplay(0.01f, 0.01f, 0.01f, 1);
 	//draw the mesh
 
-	glUniform3f(lightPos,light.x,light.y,light.z);	
+	//glUniform3f(lightPos,light.x,light.y,light.z);	
+	
 	bind(shader);
 	
+	auto cPos = camera.pos;
+	glUniform3f(cameraPos, cPos.x,cPos.y,cPos.z);
 
 	updateShader(shader,currentTransform, camera);
 
-	bind(&armorTex, 0);
-	draw(mesh2);
+	GLuint diffuseLoc = glGetUniformLocation(shader->program,"diffuse");
+	GLuint normalLoc = glGetUniformLocation(shader->program, "normal");
+
+	bind(&texture, 0);
+	glUniform1i(diffuseLoc,0);
+
+	bind(&bumpTexture,1);
+	glUniform1i(normalLoc,1);
+
+	draw(mesh);
 	
 }
 
 void destroy()
 {
-	freeMesh(mesh2);
+	freeMesh(mesh);
 	freeShader(shader);
-	freeTexture(&faceTex);
-	freeTexture(&armorTex);
-	freeTexture(&swordTex);
+	freeTexture(&texture);
+	freeTexture(&bumpTexture);
 
 }
 
@@ -141,7 +157,7 @@ int main(int argc, char** argv) //argument used to call SDL main
 {
 	//create the application
 	game = createApplication(init, update, render, destroy);
-
+	
 	//assert that the application was created
 	assert(game != NULL && "Application could not be created");
 	
