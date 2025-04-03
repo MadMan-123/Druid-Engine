@@ -40,4 +40,5 @@ DAPI Mesh* loadModel(const std::string& filename);
 DAPI void initModel(Mesh* mesh,const IndexedModel &model);
 DAPI void freeMesh(Mesh* mesh);
 
+DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize);
 
