@@ -17,7 +17,7 @@ Vec2 v2Sub(Vec2 a, Vec2 b)
 }
 
 
-Vec2 v2Mul(Vec2 a, float b)
+Vec2 v2Scale(Vec2 a, float b)
 {
     return {a.x * b, a.y * b };
 }
@@ -64,7 +64,7 @@ Vec3 v3Sub(Vec3 a, Vec3 b)
 {
 	return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
-Vec3 v3Mul(Vec3 a, float b)
+Vec3 v3Scale(Vec3 a, float b)
 {
 
 	return {a.x / b, a.y / b, a.z / b};
@@ -99,5 +99,65 @@ Vec3 v3Div(Vec3 a, float b)
 {
 	return {a.x/b,a.y/b,a.z/b};
 }
+
+void matAdd(f32** a,f32** b, Vec2i aSize)
+{
+	for(u32 x = 0; x < aSize.x; x++)
+	{
+		for(u32 y = 0; y < aSize.y;y++)
+		{
+			a[x][y] = a[x][y] + b[x][y];
+		}
+	}
+
+}
+void matSub(f32** a,f32** b, Vec2i aSize)
+{
+	for(u32 x = 0; x < aSize.x; x++)
+	{
+		for(u32 y = 0; y < aSize.y;y++)
+		{
+			a[x][y] = a[x][y] - b[x][y];
+		}
+	}
+
+}
+
+
+void matDiv(f32** a,f32** b, Vec2i aSize)
+{
+	for(u32 x = 0; x < aSize.x; x++)
+	{
+		for(u32 y = 0; y < aSize.y;y++)
+		{
+			a[x][y] = a[x][y] / b[x][y];
+		}
+	}
+
+}
+void matMul(f32** a,f32** b, Vec2i aSize)
+{
+	for(u32 x = 0; x < aSize.x; x++)
+	{
+		for(u32 y = 0; y < aSize.y;y++)
+		{
+			a[x][y] = a[x][y] * b[x][y];
+		}
+	}
+
+}
+
+void matScale(f32** a,f32 b, Vec2i aSize)
+{
+	for(u32 x = 0; x < aSize.x; x++)
+	{
+		for(u32 y = 0; y < aSize.y;y++)
+		{
+			a[x][y] = a[x][y] * b;
+		}
+	}
+
+}
+
 
 
