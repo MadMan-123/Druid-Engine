@@ -21,9 +21,7 @@ typedef struct
 	//open gl context with sdl within the display	
 	Display* display;
 	ApplicationState state;
-	const bool *input;
-	double fps;	
-	
+	double fps;		
 }Application;
 
 //function pointer typedef
@@ -39,5 +37,4 @@ DAPI void destroyApplication(Application* app);
 DAPI void initSystems(const Application* app);
 DAPI void startApplication(Application* app);
 
-DAPI void processInput(Application* app);
 DAPI void render(Application* app,float dt);

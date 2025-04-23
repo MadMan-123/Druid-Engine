@@ -1,0 +1,65 @@
+TODO: 
+	we need to sort some esential things out for our systems to handle to make the developer experience easier with performance in mind
+----------------------------------------------------------------------------------------
+SoA Allocator
+
+Custom Maths library
+
+A better way to draw things
+	The process of Binding the shader to be used
+	upadting the values of the shader
+		- We also need to update the model view projection matrix based on if we are in a 2d or 3d enviroment
+	then telling the gpu to bind the vertex array object
+		- Draw all the elements	
+		- bind the vertex array to 0
+
+REDO THE FUCKING MESH SHIT
+
+
+
+---------------------------------------------------------------------------------------
+
+
+WORK FOR UNI TO GET MARKS
+
+Make Rotation a quaternion
+
+Add physics to fps camera
+
+
+Shader Work Ideas
+	PSX shader
+	Quantize colour shader
+	Water Shader
+	Mirror Shader
+	Compute shader
+
+
+Steps:
+
+	create a input system
+	
+	update the way we draw things:
+		1.Create a function that allows to update shader functions by storing a hash map of variables names and (shader variable locations + shader id)
+
+	this means drawing a thing in the engine will consist of:
+	void render(float dt)	
+	{
+		clearDisplay(0.01f,0.01f,0.01f,1);
+		
+		//set the current shader
+		bind(Shader)
+
+		//update values
+		UpdateShader(shader, "name of the variable", value);
+		
+		auto model = getModelView(&transform);
+		
+		auto modelViewProjection = getViewProjection(&camera) * model;
+
+		//for now we will keep this in as i dont know a better way around this
+		UpdateShader(shader, "Transform", 
+		 
+
+		draw(mesh);
+	}

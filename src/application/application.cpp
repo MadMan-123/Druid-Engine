@@ -1,5 +1,7 @@
 #include "Application.h"
+#include "../core/input.h"
 #include <iostream>
+
 
 double performanceFreq = 0.0;
 u64 previousTime = 0;
@@ -114,24 +116,7 @@ void startApplication(Application* app)
 	}
 }
 
-void processInput(Application* app)
-{
-	SDL_Event evnt;
 
-	// allow the camera to move based on input
-	app->input = SDL_GetKeyboardState(NULL);
-	while(SDL_PollEvent(&evnt)) //get and process events
-	{
-		switch (evnt.type)
-		{
-			case SDL_EVENT_QUIT:
-				app->state = EXIT;
-				break;
-			default: ;
-		}
-	}
-	
-}
 
 void render(Application* app, float dt)
 {

@@ -59,28 +59,27 @@ void init()
 
 void moveCamera(float dt)
 {
-       	if (game->input[SDL_SCANCODE_W])
+       	if (isInputDown(KEY_W))
        		moveForward(&camera, (speed * 100 )* dt);
        	//move left and right
-       	if (game->input[SDL_SCANCODE_A])
+       	if (isInputDown(KEY_A))
        		moveRight(&camera, (speed * 100)* dt);
-       	if (game->input[SDL_SCANCODE_D])
+       	if (isInputDown(KEY_D))
        		moveRight(&camera, (-speed * 100)* dt);
-       	if (game->input[SDL_SCANCODE_S])
+       	if (isInputDown(KEY_S))
        		moveForward(&camera, (-speed * 100)* dt);
 }
 
 void rotateCamera(float dt)
 {
-	bool rightMouseIsPressed = SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT);
       
-      	if (rightMouseIsPressed) {
-      		float x, y;
+      	if (isMouseDown(SDL_BUTTON_RIGHT)) 
+	{
+      		f32 x, y;
       		// This gets the relative motion since the last call
-      		SDL_GetRelativeMouseState(&x, &y);
+      		getMouseDelta(&x, &y);
           
       		// Only apply rotation if this isn't the first frame the button is pressed
-      		if (rightMouseWasPressed) {
       			rotateY(&camera, (((rotateSpeed * 100)* dt) * -x));
              
       			float camPitch = glm::degrees(asin(camera.forward.y));
@@ -94,15 +93,9 @@ void rotateCamera(float dt)
 		  			pitch(&camera, pitchDelta);
 	
       			
-      		}
+      		
       	}
       
-      	// Clear the relative state when button is first pressed
-      	if (rightMouseIsPressed && !rightMouseWasPressed) {
-      		SDL_GetRelativeMouseState(NULL, NULL); // Clear any accumulated movement
-      	}
-      	
-      	rightMouseWasPressed = rightMouseIsPressed;
 
 
 }
