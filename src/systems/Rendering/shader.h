@@ -28,10 +28,16 @@ typedef struct
 
 
 
+typedef union{
+	
+}ShaderValue;
+
 
 DAPI void bind(const Shader* shader); //Set gpu to use our shaders
 
-DAPI void updateShader(const Shader* shader,const Transform& transform, const Camera& camera);
+
+DAPI void updateShader(const Shader* shader, const char* variableName, const ShaderValue value)
+
 DAPI Shader* initShader(const std::string& filename);
 DAPI std::string loadShader(const std::string& fileName);
 DAPI void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const std::string& errorMessage);

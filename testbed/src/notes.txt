@@ -37,8 +37,6 @@ Shader Work Ideas
 
 Steps:
 
-	create a input system
-	
 	update the way we draw things:
 		1.Create a function that allows to update shader functions by storing a hash map of variables names and (shader variable locations + shader id)
 

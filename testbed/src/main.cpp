@@ -72,7 +72,6 @@ void moveCamera(float dt)
 
 void rotateCamera(float dt)
 {
-      
       	if (isMouseDown(SDL_BUTTON_RIGHT)) 
 	{
       		f32 x, y;
@@ -91,13 +90,7 @@ void rotateCamera(float dt)
       			//try and prevent the camera from flipping from gimbal lock
       			if (abs(newPitch) < maxPitch)
 		  			pitch(&camera, pitchDelta);
-	
-      			
-      		
       	}
-      
-
-
 }
 
 

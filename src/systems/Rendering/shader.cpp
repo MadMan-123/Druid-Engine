@@ -49,8 +49,7 @@ void freeShader(Shader *shader)
 {
 	for (unsigned int i = 0; i < Shader::NUM_UNIFORMS; i++)
 	{
-		glDetachShader(shader->program, shader->shaders[i]); //detach shader from program
-		
+		glDetachShader(shader->program, shader->shaders[i]); //detach shader from program	
 		glDeleteShader(shader->shaders[i]); //delete the sahders
 	}
 	glDeleteProgram(shader->program); // delete the program
