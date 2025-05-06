@@ -5,7 +5,7 @@
 Application* game;
 Camera camera;
 bool rightMouseWasPressed;
-float speed = 1000.0f;
+float speed = 100000.0f;
 float rotateSpeed = 90.0f;
 
 Transform currentTransform, terrainTransform;
@@ -122,14 +122,14 @@ void init()
 void moveCamera(float dt)
 {
        	if (isInputDown(KEY_W))
-       		moveForward(&camera, (speed * 100 )* dt);
+       		moveForward(&camera, (speed )* dt);
        	//move left and right
        	if (isInputDown(KEY_A))
-       		moveRight(&camera, (speed * 100)* dt);
+       		moveRight(&camera, (-speed )* dt);
        	if (isInputDown(KEY_D))
-       		moveRight(&camera, (-speed * 100)* dt);
+       		moveRight(&camera, (speed )* dt);
        	if (isInputDown(KEY_S))
-       		moveForward(&camera, (-speed * 100)* dt);
+       		moveForward(&camera, (-speed )* dt);
 }
 
 void rotateCamera(float dt)
@@ -184,10 +184,10 @@ void render(float dt)
 	updateShaderMVP(terrainShader,terrainTransform,camera);	
 	//updateShader(terrainShader,terrainTransform,camera);
 	
-
+	
 		
 	draw(terrain);
-
+	
 		
 }
 

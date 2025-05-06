@@ -88,7 +88,7 @@ inline Vec3 v3Sub(Vec3 a, Vec3 b)
 inline Vec3 v3Scale(Vec3 a, float b)
 {
 
-	return {a.x / b, a.y / b, a.z / b};
+	return {a.x * b, a.y * b, a.z * b};
 }
 
 inline Vec3 v3Mul(Vec3 a, Vec3 b)
