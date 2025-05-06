@@ -1,42 +1,44 @@
-﻿#include "Camera.h"
+﻿#include "../../../Include/druid.h"
 
-#include <glm/glm.hpp>
-#include <glm/gtx/transform.hpp>
-glm::mat4 getViewProjection(const Camera* camera)
+Mat4 getViewProjection(const Camera* camera)
 {
-		return camera->projection * glm::lookAt(camera->pos, camera->pos + camera->forward, camera->up);
+	auto view = mat4LookAt(camera->pos, v3Add(camera->pos, camera->forward), camera->up);
+	return mat4Mul(camera->projection,view);
 }
 
-void initCamera(Camera* camera, const glm::vec3& pos, float fov, float aspect, float nearClip, float farClip)
+void initCamera(Camera* camera, const Vec3& pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip)
 {
     camera->pos = pos;
-    camera->forward = glm::vec3(0.0f, 0.0f, 1.0f);
-    camera->up = glm::vec3(0.0f, 1.0f, 0.0f);
-    camera->projection = glm::perspective(fov, aspect, nearClip, farClip);
+    camera->forward = {0.0f, 0.0f, 1.0f};
+    camera->up = {0.0f, 1.0f, 0.0f};
+    camera->projection = mat4Perspective(fov, aspect, nearClip, farClip);
 }
 
-void moveForward(Camera* camera, float amt)
+void moveForward(Camera* camera, f32 amt)
 {
-   camera->pos += camera->forward * amt;
+   	camera->pos = v3Add(camera->pos,v3Scale(camera->forward , amt));
 }
 
-void moveRight(Camera* camera, float amt)
+void moveRight(Camera* camera, f32 amt)
 {
-    camera->pos += glm::cross(camera->up, camera->forward) * amt;
+    camera->pos = v3Add(camera->pos,v3Scale(v3Cross(camera->up, camera->forward) , amt));
 }
 
-void pitch(Camera* camera, float angle) 
+void pitch(Camera* camera, f32 angle) 
 {
-    auto right = glm::normalize(glm::cross(camera->up, camera->forward));
-    camera->forward = glm::vec3(glm::normalize(glm::rotate(angle, right) * glm::vec4(camera->forward, 0.0)));
-    camera->up = glm::normalize(glm::cross(camera->forward, right));
+	Vec3 right = v3Norm(v3Cross(camera->up, camera->forward));
+	Mat4 rot = mat4Rotate(angle, right);
+	
+	//set the forward and up
+	camera->forward = v3Norm(mat4TransformDirection(rot, camera->forward));
+	camera->up = v3Norm(v3Cross(camera->forward, right));
 }
 
-void rotateY(Camera* camera, float angle)
+void rotateY(Camera* camera, f32 angle)
 {
-    static const glm::vec3 UP(0.0f, 1.0f, 0.0f);
-    auto rotation = glm::rotate(angle, UP);
-    camera->forward = glm::vec3(glm::normalize(rotation * glm::vec4(camera->forward, 0.0)));
-    camera->up = glm::vec3(glm::normalize(rotation * glm::vec4(camera->up, 0.0)));
-    
+
+    Mat4 rotation = mat4Rotate(angle, v3Up);
+
+    camera->forward = v3Norm(mat4TransformDirection(rotation, camera->forward));
+    camera->up = v3Norm(mat4TransformDirection(rotation, camera->up));
 }

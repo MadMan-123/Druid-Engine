@@ -1,5 +1,5 @@
-#include "display.h"
-
+#include "../../../include/druid.h"
+#include <iostream>
 
 void returnError(const std::string& errorString)
 {

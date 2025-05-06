@@ -1,152 +1,181 @@
-#include "Shader.h"
+#include "../../../include/druid.h"
 #include <iostream>
 #include <fstream>
 
-
-
-Shader* initShader(const std::string& filename)
-{
-	//create a new shader
-	Shader* shader = (Shader*)malloc(sizeof(Shader));
-	//assert that the shader was created
-	assert(shader != NULL && "Shader could not be created");
-	//initialize the shader
-
-	shader->program = glCreateProgram(); // create shader program (openGL saves as ref number)
-	shader->shaders[0] = createShader(loadShader("..\\res\\" + filename + ".vert"), GL_VERTEX_SHADER); // create vertex shader
-	shader->shaders[1] = createShader(loadShader("..\\res\\" + filename + ".frag"), GL_FRAGMENT_SHADER); // create fragment shader
-
-	for (unsigned int i = 0; i < Shader::NUM_SHADERS; i++)
-	{
-		glAttachShader(shader->program, shader->shaders[i]); //add all our shaders to the shader program "shaders" 
-	}
-
-	glBindAttribLocation(shader->program, 0, "position"); // associate attribute variable with our shader program attribute (in this case attribute vec3 position;)
-	glBindAttribLocation(shader->program, 1, "texCoord");
-	glBindAttribLocation(shader->program, 2, "normal");
-
-	glLinkProgram(shader->program); //create executables that will run on the GPU shaders
-	checkShaderError(
-		shader->program,
-		GL_LINK_STATUS,
-		true,
-		"Error: Shader program linking failed"); // cheack for error
-
-	glValidateProgram(shader->program); //check the entire program is valid
-	checkShaderError(
-		shader->program,
-		GL_VALIDATE_STATUS,
-		true,
-		"Error: Shader program not valid");
-
-	shader->uniforms[Shader::TRANSFORM_U] = glGetUniformLocation(shader->program, "transform"); // associate with the location of uniform variable within a program
-
-	shader->uniforms[Shader::MODEL_U] = glGetUniformLocation(shader->program, "model"); // associate with the location of uniform variable within a program
-	return shader;
-}
-
-void freeShader(Shader *shader)
-{
-	for (unsigned int i = 0; i < Shader::NUM_UNIFORMS; i++)
-	{
-		glDetachShader(shader->program, shader->shaders[i]); //detach shader from program	
-		glDeleteShader(shader->shaders[i]); //delete the sahders
-	}
-	glDeleteProgram(shader->program); // delete the program
-
-	free(shader); //free the shader
-}
-
-
-
-void bind(const Shader* shader)
-{
-	glUseProgram(shader->program); //installs the program object specified by program as part of rendering state
-}
-
-void updateShader(const Shader* shader, const Transform& transform, const Camera& camera)
-{
-	auto model = getModel(&transform);
-	auto mvp = getViewProjection(&camera) * model;
-	
-	glUniformMatrix4fv(shader->uniforms[Shader::MODEL_U],1,GLU_FALSE,&model[0][0]);
-	glUniformMatrix4fv(
-		shader->uniforms[Shader::TRANSFORM_U],
-	1,
-	GLU_FALSE,
-	&mvp[0][0]);
-}
-
-
-GLuint createShader( const std::string& text, unsigned int type)
-{
-	GLuint shader = glCreateShader(type); //create shader based on specified type
-
-	if (shader == 0) //if == 0 shader no created
-		std::cerr << "Error type creation failed " << type << '\n';
-
-	const GLchar* stringSource[1]; //convert strings into list of c-strings
-	stringSource[0] = text.c_str();
-	GLint lengths[1];
-	lengths[0] = text.length();
-
-	glShaderSource(shader, 1, stringSource, lengths); //send source code to opengl
-	glCompileShader(shader); //get open gl to compile shader code
-
-	checkShaderError(
-		shader,
-		GL_COMPILE_STATUS,
-		false,
-		"Error compiling shader!"
-		); //check for compile error
-
-
-	
-	return shader;
-}
-
+// Utility functions
 std::string loadShader(const std::string& fileName)
 {
-	std::ifstream file;
-	file.open((fileName).c_str());
+    std::ifstream file;
+    file.open((fileName).c_str());
 
-	std::string output;
-	std::string line;
+    std::string output;
+    std::string line;
 
-	if (file.is_open())
-	{
-		while (file.good())
-		{
-			getline(file, line);
-			output.append(line + "\n");
-		}
-	}
-	else
-	{
-		std::cerr << "Unable to load shader: " << fileName << std::endl;
-	}
+    if (file.is_open())
+    {
+        while (file.good())
+        {
+            getline(file, line);
+            output.append(line + "\n");
+        }
+    }
+    else
+    {
+        std::cerr << "Unable to load shader: " << fileName << std::endl;
+    }
 
-	return output;
+    return output;
 }
 
 void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const std::string& errorMessage)
 {
-	GLint success = 0;
-	GLchar error[1024] = { 0 };
+    GLint success = 0;
+    GLchar error[1024] = { 0 };
 
-	if (isProgram)
-		glGetProgramiv(shader, flag, &success);
-	else
-		glGetShaderiv(shader, flag, &success);
+    if (isProgram)
+        glGetProgramiv(shader, flag, &success);
+    else
+        glGetShaderiv(shader, flag, &success);
 
-	if (success == GL_FALSE)
-	{
-		if (isProgram)
-			glGetProgramInfoLog(shader, sizeof(error), NULL, error);
-		else
-			glGetShaderInfoLog(shader, sizeof(error), NULL, error);
+    if (success == GL_FALSE)
+    {
+        if (isProgram)
+            glGetProgramInfoLog(shader, sizeof(error), NULL, error);
+        else
+            glGetShaderInfoLog(shader, sizeof(error), NULL, error);
 
-		std::cerr << errorMessage << ": '" << error << "'" << std::endl;
-	}
+        std::cerr << errorMessage << ": '" << error << "'" << std::endl;
+    }
+}
+
+u32 createShader(const std::string& text, unsigned int type)
+{
+    u32 shader = glCreateShader(type);
+
+    if (shader == 0)
+        std::cerr << "Error type creation failed " << type << '\n';
+
+    const GLchar* stringSource[1];
+    stringSource[0] = text.c_str();
+    GLint lengths[1];
+    lengths[0] = text.length();
+
+    glShaderSource(shader, 1, stringSource, lengths);
+    glCompileShader(shader);
+
+    checkShaderError(
+        shader,
+        GL_COMPILE_STATUS,
+        false,
+        "Error compiling shader!"
+    );
+
+    return shader;
+}
+
+// Main shader functions
+u32 createProgram(u32 shader)
+{
+    u32 program = glCreateProgram();
+    glAttachShader(program, shader);
+    return program;
+}
+
+u32 createComputeProgram(const std::string& computePath)
+{
+    std::string code = loadShader(computePath);
+    u32 shader = createShader(code, GL_COMPUTE_SHADER);
+
+    if(shader == 0)
+    {
+        return 0;
+    }
+
+    u32 program = glCreateProgram();
+    glAttachShader(program, shader);
+    glLinkProgram(program);
+    
+    checkShaderError(program, GL_LINK_STATUS, true, "ERROR: Compute Program linking failed");
+    glValidateProgram(program);
+    checkShaderError(
+     program,
+     GL_VALIDATE_STATUS,
+     true,
+     "Error: Shader program not valid");
+
+ 
+    // Clean up the shader as it's now linked to the program
+    glDetachShader(program, shader);
+    glDeleteShader(shader);
+    
+    return program;
+}
+
+
+
+u32 createGraphicsProgram(const std::string& vertPath, const std::string& fragPath)
+{
+    u32 program = glCreateProgram();
+    
+    u32 vertexShader = createShader(loadShader(vertPath), GL_VERTEX_SHADER);
+    u32 fragmentShader = createShader(loadShader(fragPath), GL_FRAGMENT_SHADER);
+
+    if (vertexShader == 0 || fragmentShader == 0)
+    {
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+
+    glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "texCoord");
+    glBindAttribLocation(program, 2, "normal");
+    
+    glLinkProgram(program);
+    checkShaderError(
+        program,
+        GL_LINK_STATUS,
+        true,
+        "Error: Shader program linking failed");
+
+    glValidateProgram(program);
+    checkShaderError(
+        program,
+        GL_VALIDATE_STATUS,
+        true,
+        "Error: Shader program not valid");
+
+    // Clean up the shaders as they're now linked to the program
+    glDetachShader(program, vertexShader);
+    glDetachShader(program, fragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return program;
+}
+
+
+void freeShader(u32 shader)
+{
+	glDeleteProgram(shader); // delete the program
+
+}
+
+
+
+void updateShaderMVP(u32 shaderProgram, const Transform& transform, const Camera& camera)
+{
+    auto model = getModel(&transform);
+    auto mvp = mat4Mul(getViewProjection(&camera) , model);
+    
+    u32 modelUniform = glGetUniformLocation(shaderProgram, "model");
+    u32 transformUniform = glGetUniformLocation(shaderProgram, "transform");
+    
+    glUniformMatrix4fv(modelUniform, 1, GL_FALSE, &model.m[0][0]);
+    glUniformMatrix4fv(transformUniform, 1, GL_FALSE, &mvp.m[0][0]);
 }
 

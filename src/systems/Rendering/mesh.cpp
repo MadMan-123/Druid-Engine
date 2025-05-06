@@ -1,4 +1,4 @@
-#include "mesh.h"
+#include "../../../include/druid.h"
 #include <vector>
 
 
@@ -119,9 +119,9 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
     vertices->ammount = totalVertices;
     
     // Allocate raw arrays for positions, texcoords, and normals
-    vertices->positions = new glm::vec3[totalVertices];
-    vertices->texCoords = new glm::vec2[totalVertices];
-    vertices->normals = new glm::vec3[totalVertices];
+    vertices->positions = new Vec3[totalVertices];
+    vertices->texCoords = new Vec2[totalVertices];
+    vertices->normals = new Vec3[totalVertices];
 
     // Generate vertex data
     for (unsigned int z = 0; z < verticesZ; ++z) {
@@ -129,20 +129,20 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
             unsigned int idx = z * verticesX + x;
 
             // Position calculation
-            vertices->positions[idx] = glm::vec3(
+            vertices->positions[idx] = {
                 x * cellSize,      // X position
                 0.0f,              // Initial flat height
                 z * cellSize        // Z position
-            );
+            };
 
             // Texture coordinate mapping
-            vertices->texCoords[idx] = glm::vec2(
+            vertices->texCoords[idx] = {
                 static_cast<float>(x) / cellsX,  // U coordinate
                 static_cast<float>(z) / cellsZ   // V coordinate
-            );
+            };
 
             // Normal vector (upward for flat terrain)
-            vertices->normals[idx] = glm::vec3(0.0f, 1.0f, 0.0f);
+            vertices->normals[idx] = v3Up;
         }
     }
 

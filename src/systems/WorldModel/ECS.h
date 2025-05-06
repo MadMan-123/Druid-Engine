@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "../../defines.h"
+#include "../../../include/druid.h"
 #define MEMBER_COUNT 16
 #define SIZE 1024
 

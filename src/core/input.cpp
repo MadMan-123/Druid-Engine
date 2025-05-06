@@ -1,4 +1,4 @@
-#include "input.h"
+#include "../../include/druid.h"
 
 static SDL_Event evnt;
 static const bool* state = SDL_GetKeyboardState(NULL);
@@ -42,5 +42,4 @@ void getMouseDelta(f32*x,f32*y)
 }
 
 
-DAPI void getMouseDelta(u32*x, u32*y);
 

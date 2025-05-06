@@ -4,7 +4,7 @@ OBJDIR := .obj
 BINDIR := bin
 
 CXX := g++
-CXXFLAGS := -Wall -O2 -std=c++17 -shared -fPIC -DDRUID_EXPORT -DWIN32 -g
+CXXFLAGS := -Wall -O2 -std=c++17 -shared -fPIC -DDRUID_EXPORT -DWIN32 -g -fpermissive
 LDFLAGS := -shared -Wl,--out-implib,$(BINDIR)/libdruid.a
 LIBS := -Ldeps -lglew32 -lopengl32 -lSDL3 -lgdi32 -luser32
 

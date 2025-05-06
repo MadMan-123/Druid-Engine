@@ -1,5 +1,4 @@
-#include "Application.h"
-#include "../core/input.h"
+#include "../../include/druid.h"
 #include <iostream>
 
 
@@ -84,7 +83,8 @@ void startApplication(Application* app)
       	float dt = (float)((double)(current - previousTime) / performanceFreq);
 	
 	u64 fpsTime = current;
-	previousTime = current;	
+	previousTime = current;
+	double elapsedTime = (double)(current - previousTime);	
 	while (app->state != EXIT)
 	{
 
@@ -101,7 +101,7 @@ void startApplication(Application* app)
 		frameCount++;
 		current = SDL_GetPerformanceCounter();
 		
-		double elapsedTime = (double)(current - fpsTime) / performanceFreq;
+		elapsedTime = (double)(current - fpsTime) / performanceFreq;
 		
 		if(elapsedTime >= 1.0)
 		{
