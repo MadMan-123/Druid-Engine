@@ -37,10 +37,11 @@ void initModel(Mesh* mesh,const IndexedModel &model)
 	glGenBuffers(Mesh::NUM_BUFFERS, mesh->vab); 
 
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
-	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[0]); 
-
-	//move the data to the GPU - type of data, size of data, starting address (pointer) of data, where do we store the data on the GPU (determined by type)
-	glBufferData(GL_ARRAY_BUFFER, model.positions.size() * sizeof(model.positions[0]), &model.positions[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::POSITION_VERTEXBUFFER]);
+	glBufferStorage(GL_ARRAY_BUFFER,
+                model.positions.size() * sizeof(model.positions[0]),
+                &model.positions[0],
+                GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	

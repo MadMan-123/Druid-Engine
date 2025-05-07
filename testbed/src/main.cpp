@@ -5,20 +5,28 @@
 Application* game;
 Camera camera;
 bool rightMouseWasPressed;
-float speed = 100000.0f;
+float speed = 200000.0f;
 float rotateSpeed = 90.0f;
 
 Transform currentTransform, terrainTransform;
 Vec3 light = {0,2,0};
+const u32 gridSize = 3;
 
 int timePos;
-Mesh* mesh, *terrain;
 
+
+//TODO: SoA
+Mesh* mesh, *terrainGrid[gridSize][gridSize];
+Transform terrainTransforms[gridSize][gridSize];
+
+const f32 panelSize = 50.0f;
 
 
 
 u32 texture, bumpTexture;
 u32 shader, terrainShader;
+
+u32 computeShader;
 
 float counter = 0.0f;
 
@@ -48,47 +56,20 @@ bool mat4HasNaN(Mat4 mat) {
 	return false;
 }
 
-void testMatrices() {
-	// Create simple transform
-	Transform transform;
-	transform.pos = {1.0f, 2.0f, 3.0f};
-	transform.rot = {0.1f, 0.2f, 0.3f};
-	transform.scale = {1.0f, 1.0f, 1.0f};
-    
-	// Test model matrix
-	Mat4 model = getModel(&transform);
-	printMat4("Model Matrix", model);
-    
-
-	// Test view matrix
-	Vec3 eye = {0.0f, 0.0f, 10.0f};
-	Vec3 target = {0.0f, 0.0f, 0.0f};
-	Vec3 up = {0.0f, 1.0f, 0.0f};
-	Mat4 view = mat4LookAt(eye, target, up);
-	printMat4("View Matrix", view);
-    
-	// Test projection matrix
-	float fov = 3.14159f / 4.0f;  // 45 degrees
-	float aspect = 800.0f / 600.0f;
-	float near = 0.1f;
-	float far = 100.0f;
-	Mat4 proj = mat4Perspective(fov, aspect, near, far);
-	printMat4("Projection Matrix", proj);
-    
-	// Test MVP
-	Mat4 vp = mat4Mul(proj, view);
-	Mat4 mvp = mat4Mul(vp, model);
-	printMat4("MVP Matrix", mvp);
-    
-	// Check for problems
-	mat4HasNaN(mvp);
-}
 void init()
 {	
-	
-	terrainTransform.pos = {-50,-10,-50};
-	terrainTransform.rot = {0,0,0};
-	terrainTransform.scale = {1,1,1};
+	int offset = 450;
+	for (int z = 0; z < gridSize; ++z) {
+		for (int x = 0; x < gridSize; ++x) {
+			terrainGrid[z][x] = createTerrainMesh(10, 10, panelSize);
+			terrainTransforms[z][x] = {
+				.pos = { (x - 1) * (panelSize + offset), -10.0f, (z - 1) * (panelSize + offset)},
+				.rot = { 0, 0, 0 },
+				.scale = { 1, 1, 1 }
+			};
+		}
+	}	
+
 
 	currentTransform.pos = {0, 0, 0};
 	currentTransform.rot = {0, 0, 0};
@@ -102,21 +83,40 @@ void init()
 	
 	timePos = glGetUniformLocation(terrainShader, "uTime");
 
-	texture = initTexture("..\\res\\bricks.jpg");
-	bumpTexture = initTexture( "..\\res\\normal.jpg");
+	texture = initTexture("..\\res\\128x128\\Grass\\Grass_02-128x128.png");
 	initCamera(
 		&camera,
 		{0,0,-30},
 		70.0f,
 		game->display->screenWidth/game->display->screenHeight,
 		0.01f,
-		1000
+		2500
 		);
 	counter = 0.0f;
 
+	//turn vsync off
+	SDL_GL_SetSwapInterval(0);
+
+	computeShader = createComputeProgram("..\\res\\terrain.comp");
+/*
+	for (int z = 0; z < gridSize; ++z) {
+		for (int x = 0; x < gridSize; ++x) {
+			glUseProgram(computeShader);
+
+			// Bind terrain vertex buffer
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, terrainGrid[z][x]->vab[Mesh::POSITION_VERTEXBUFFER]);
+
+			// Uniforms
+			glUniform2f(glGetUniformLocation(computeShader, "terrainSize"), 10, 10);
+			glUniform2f(glGetUniformLocation(computeShader, "offset"), x * panelSize, z * panelSize);
+
+        	glDispatchCompute(11 / 16 + 1, 11 / 16 + 1, 1);
+			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		}
+	}
+*/
 
 
-	terrain = createTerrainMesh(10,10,10);
 }
 
 void moveCamera(float dt)
@@ -162,6 +162,8 @@ void update(float dt)
       	//pitch and rotate based on mouse movement
       	rotateCamera(dt);			
 
+	//print fps
+	printf("FPS: %f\n", game->fps);
 	
 }
 
@@ -176,17 +178,18 @@ void render(float dt)
 
 	//glUniform3f(lightPos,light.x,light.y,light.z);	
 	
-	glUniform1f(timePos,SDL_GetTicks() / 1000);	
-	
-	//bind the shader
+	bindTexture(texture, 0);
 	glUseProgram(terrainShader);
-	
-	updateShaderMVP(terrainShader,terrainTransform,camera);	
-	//updateShader(terrainShader,terrainTransform,camera);
-	
+	glUniform1f(timePos, SDL_GetTicks() / 1000);
+	for (int z = 0; z < gridSize; ++z) {
+		for (int x = 0; x < gridSize; ++x) {
+			updateShaderMVP(terrainShader, terrainTransforms[z][x], camera);
+			
+			draw(terrainGrid[z][x]);
+		}
+	}	
 	
 		
-	draw(terrain);
 	
 		
 }
@@ -194,20 +197,24 @@ void render(float dt)
 void destroy()
 {
 	freeMesh(mesh);
-	freeMesh(terrain);
 	freeShader(shader);
 	freeShader(terrainShader);
+	freeShader(computeShader);
 	freeTexture(texture);
 	freeTexture(bumpTexture);
-
+	for (int z = 0; z < gridSize; ++z) 
+	{
+		for (int x = 0; x < gridSize; ++x)
+		{
+			//free the terrain mesh		
+			freeMesh(terrainGrid[z][x]);
+		}
+	}	
 }
 
 
 int main(int argc, char** argv) //argument used to call SDL main
 {
-	//run test
-	testMatrices();
-
 	//create the application
 	game = createApplication(init, update, render, destroy);
 	
