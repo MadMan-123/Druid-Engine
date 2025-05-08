@@ -5,65 +5,44 @@
 Application* game;
 Camera camera;
 bool rightMouseWasPressed;
-f32 speed = 200000.0f;
+f32 speed = 400000.0f;
 f32 rotateSpeed = 180.0f;
-
-Transform currentTransform, terrainTransform;
 Vec3 light = {0,2,0};
 
-int timePos;
-const u32 tileSize = 55;
+const u32 tileSize = 100;
 
-const u32 gridSize = 3;
 
 
 //TODO: SoA
-Mesh* mesh, *terrainGrid[gridSize][gridSize];
-Transform terrainTransforms[gridSize][gridSize];
-
-
+Mesh* terrain;
+Transform terrainTransform;
 
 u32 texture;
 u32 terrainShader;
 
 
-f32 counter = 0.0f;
 
 
 void init()
 {	
 
-
-
-	int offset = 495;
-	for (int z = 0; z < gridSize; ++z) {
-		for (int x = 0; x < gridSize; ++x) {
-			terrainGrid[z][x] = createTerrainMeshWithHeight(
-				10, 
-				10, 
-				tileSize, 
-				50.0f,
-				"..\\res\\terrain.comp");
-			terrainTransforms[z][x] = {
-				.pos = { (x - 1) * (tileSize + offset), -100.0f, (z - 1) * (tileSize + offset)},
-				.rot = quatIdentity(),
-				.scale = { 1, 1, 1 }
-			};
-		}
-	}	
-
-
-	currentTransform.pos = {0, 0, 0};
-	currentTransform.rot = quatIdentity();
-	currentTransform.scale = {1, 1,1};
-	//mesh1.init(vertices, sizeof(vertices) / sizeof(vertices[0]), indices, sizeof(indices) / sizeof(indices[0])); //size calcuated by number of bytes of an array / no bytes of one element
-	mesh = loadModel("..\\res\\monkey3.obj");
+	terrain = createTerrainMeshWithHeight(
+		64, 
+		64, 
+		tileSize, 
+		50.0f,
+		"..\\res\\terrain.comp"
+	);
+		
+	terrainTransform= {
+		.pos = {-1000,-400,-1000},
+		.rot = quatIdentity(),
+		.scale = { 1, 1, 1 }
+	};
 	
-	
+
 	terrainShader = createGraphicsProgram("..\\res\\terrain.vert","..\\res\\terrain.frag");
 	
-	timePos = glGetUniformLocation(terrainShader, "uTime");
-
 	texture = initTexture("..\\res\\128x128\\Grass\\Grass_04-128x128.png");
 	initCamera(
 		&camera,
@@ -71,25 +50,22 @@ void init()
 		70.0f,
 		game->display->screenWidth/game->display->screenHeight,
 		0.01f,
-		2500
+		5000
 		);
-	counter = 0.0f;
-
-
 
 }
 
 void moveCamera(f32 dt)
 {
        	if (isInputDown(KEY_W))
-       		moveForward(&camera, (speed )* dt);
+       		moveForward(&camera, (speed  * 100)* dt);
        	//move left and right
        	if (isInputDown(KEY_A))
-       		moveRight(&camera, (-speed )* dt);
+       		moveRight(&camera, (-speed * 100)* dt);
        	if (isInputDown(KEY_D))
-       		moveRight(&camera, (speed )* dt);
+       		moveRight(&camera, (speed * 100)* dt);
        	if (isInputDown(KEY_S))
-       		moveForward(&camera, (-speed )* dt);
+       		moveForward(&camera, (-speed * 100)* dt);
 }
 
 // In camera struct:
@@ -139,21 +115,13 @@ void update(f32 dt)
 void render(f32 dt)
 {
 
-	
 	clearDisplay(0.01f, 0.01f, 0.01f, 1);
 	//draw the mesh
 
-	//glUniform3f(lightPos,light.x,light.y,light.z);	
-	
 	bindTexture(texture, 0);
 	glUseProgram(terrainShader);
-	for (int z = 0; z < gridSize; ++z) {
-		for (int x = 0; x < gridSize; ++x) {
-			updateShaderMVP(terrainShader, terrainTransforms[z][x], camera);
-			//pass the index of the current terrain	
-			draw(terrainGrid[z][x]);
-		}
-	}	
+	updateShaderMVP(terrainShader, terrainTransform,camera);
+	draw(terrain);
 	
 		
 	
@@ -162,17 +130,9 @@ void render(f32 dt)
 
 void destroy()
 {
-	freeMesh(mesh);
+	freeMesh(terrain);
 	freeShader(terrainShader);
 	freeTexture(texture);
-	for (int z = 0; z < gridSize; ++z) 
-	{
-		for (int x = 0; x < gridSize; ++x)
-		{
-			//free the terrain mesh		
-			freeMesh(terrainGrid[z][x]);
-		}
-	}	
 
 
 }

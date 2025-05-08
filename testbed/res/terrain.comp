@@ -72,10 +72,11 @@ void main() {
     // Add seed to position for variety
     vec2 pos = vec2(coord) + vec2(seed);
 
+    float scale = heightScale * 5;
     // Multi-octave noise for more interesting terrain
-    float height = fbm(pos * 0.05) * heightScale;
-    height += valueNoise(pos * 0.1) * heightScale * 0.5;
-    height += valueNoise(pos * 0.2) * heightScale * 0.25;
+    float height = fbm(pos * 0.05) * scale;
+    height += fbm(pos * 0.1) * scale * 0.5;
+    height += valueNoise(pos * 0.2) * scale * 0.25;
 
     // Store the height value
     terrainData[index] = height;

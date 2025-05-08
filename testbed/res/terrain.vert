@@ -22,4 +22,5 @@ void main()
 {
     TexCoord = aTexCoord;
     gl_Position = transform * vec4(aPos, 1.0);
+    Height = aPos.y;
 }

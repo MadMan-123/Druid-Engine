@@ -7,12 +7,19 @@ in float NoiseHeight;
 
 uniform sampler2D diffuse;
 out vec4 FragColor;
-
-uniform float uNoiseHeight;
-float textureScale = 1;
+const float uNoiseHeight = 50;
+float textureScale = 0.1;
 void main() 
 {
+   
+
     
+    //if the height is above a certain value then apply white
+    if (Height / 5 > uNoiseHeight)
+    {
+        FragColor = vec4(1.0,1.0,1.0,1.0);
+        return;
+    }
     
 
 
