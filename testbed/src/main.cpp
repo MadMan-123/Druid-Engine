@@ -5,56 +5,30 @@
 Application* game;
 Camera camera;
 bool rightMouseWasPressed;
-float speed = 200000.0f;
-float rotateSpeed = 180.0f;
+f32 speed = 200000.0f;
+f32 rotateSpeed = 180.0f;
 
 Transform currentTransform, terrainTransform;
 Vec3 light = {0,2,0};
-const u32 gridSize = 3;
 
 int timePos;
+const u32 tileSize = 55;
+
+const u32 gridSize = 3;
 
 
 //TODO: SoA
 Mesh* mesh, *terrainGrid[gridSize][gridSize];
 Transform terrainTransforms[gridSize][gridSize];
 
-const int tileSize = 55;
 
 
-
-u32 texture, bumpTexture;
-u32 shader, terrainShader;
-
-u32 computeShader;
-
-float counter = 0.0f;
+u32 texture;
+u32 terrainShader;
 
 
-void printMat4(const char* name, Mat4 mat) {
-	printf("%s:\n", name);
-	for (int i = 0; i < 4; i++) {
-		printf("  ");
-		for (int j = 0; j < 4; j++) {
-			printf("%f ", mat.m[i][j]);
-		}
-		printf("\n");
-	}
-	printf("\n");
-}
+f32 counter = 0.0f;
 
-// Check if matrix contains NaN or Inf values
-bool mat4HasNaN(Mat4 mat) {
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			if (isnan(mat.m[i][j]) || isinf(mat.m[i][j])) {
-				printf("NaN/Inf found at m[%d][%d] = %f\n", i, j, mat.m[i][j]);
-				return true;
-			}
-		}
-	}
-	return false;
-}
 
 void init()
 {	
@@ -64,10 +38,15 @@ void init()
 	int offset = 495;
 	for (int z = 0; z < gridSize; ++z) {
 		for (int x = 0; x < gridSize; ++x) {
-			terrainGrid[z][x] = createTerrainMesh(10, 10, tileSize);
+			terrainGrid[z][x] = createTerrainMeshWithHeight(
+				10, 
+				10, 
+				tileSize, 
+				50.0f,
+				"..\\res\\terrain.comp");
 			terrainTransforms[z][x] = {
-				.pos = { (x - 1) * (tileSize + offset), -10.0f, (z - 1) * (tileSize + offset)},
-				.rot = { 0, 0, 0 },
+				.pos = { (x - 1) * (tileSize + offset), -100.0f, (z - 1) * (tileSize + offset)},
+				.rot = quatIdentity(),
 				.scale = { 1, 1, 1 }
 			};
 		}
@@ -75,18 +54,17 @@ void init()
 
 
 	currentTransform.pos = {0, 0, 0};
-	currentTransform.rot = {0, 0, 0};
+	currentTransform.rot = quatIdentity();
 	currentTransform.scale = {1, 1,1};
 	//mesh1.init(vertices, sizeof(vertices) / sizeof(vertices[0]), indices, sizeof(indices) / sizeof(indices[0])); //size calcuated by number of bytes of an array / no bytes of one element
 	mesh = loadModel("..\\res\\monkey3.obj");
 	
-	shader = createGraphicsProgram("..\\res\\bump.vert","..\\res\\bump.frag"); //new shader
 	
 	terrainShader = createGraphicsProgram("..\\res\\terrain.vert","..\\res\\terrain.frag");
 	
 	timePos = glGetUniformLocation(terrainShader, "uTime");
 
-	texture = initTexture("..\\res\\128x128\\Grass\\Grass_02-128x128.png");
+	texture = initTexture("..\\res\\128x128\\Grass\\Grass_04-128x128.png");
 	initCamera(
 		&camera,
 		{0,0,-30},
@@ -97,50 +75,11 @@ void init()
 		);
 	counter = 0.0f;
 
-	//turn vsync off
-	SDL_GL_SetSwapInterval(0);
 
-	computeShader = createComputeProgram("..\\res\\terrain.comp");
-
-	
-	u32 totalTerrainSize = tileSize * tileSize *  (gridSize * gridSize);
-/*
-	for (int z = 0; z < gridSize; ++z) 
-	{
-		for (int x = 0; x < gridSize; ++x) 
-		{
-
-			// Create the terrain buffer
-			u32 terrainBuffer;
-			glGenBuffers(1, &terrainBuffer);
-			glBindBuffer(GL_SHADER_STORAGE_BUFFER, terrainBuffer);
-			glBufferData(GL_SHADER_STORAGE_BUFFER, totalTerrainSize * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, terrainBuffer);
-
-
-	
-			glUseProgram(computeShader);
-
-
-
-			glUniform2f(glGetUniformLocation(computeShader, "terrainSize"), tileSize, tileSize);
-
-
-			//glUniform2f(glGetUniformLocation(computeShader, "offset"), x * tileSize, z * tileSize);
-			glUniform1f(glGetUniformLocation(computeShader, "heightScale"), 100.0f);
-			glUniform1i(glGetUniformLocation(computeShader, "seed"), rand()); // Random seed
-
-			// Workgroups = ceil(tileSize / 16.0)
-			int wg = (tileSize + 15) / 16;
-			glDispatchCompute(wg, wg, 1);
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		}
-	}
-*/
 
 }
 
-void moveCamera(float dt)
+void moveCamera(f32 dt)
 {
        	if (isInputDown(KEY_W))
        		moveForward(&camera, (speed )* dt);
@@ -157,7 +96,7 @@ void moveCamera(float dt)
 f32 yaw = 0;
 f32 currentPitch = 0;
 
-void rotateCamera(float dt) 
+void rotateCamera(f32 dt) 
 {
 	if (isMouseDown(SDL_BUTTON_RIGHT)) 
 	{
@@ -184,7 +123,7 @@ void rotateCamera(float dt)
 
 
 
-void update(float dt)
+void update(f32 dt)
 {
 	moveCamera(dt);
       	//pitch and rotate based on mouse movement
@@ -197,7 +136,7 @@ void update(float dt)
 
 
 
-void render(float dt)
+void render(f32 dt)
 {
 
 	
@@ -208,12 +147,10 @@ void render(float dt)
 	
 	bindTexture(texture, 0);
 	glUseProgram(terrainShader);
-	glUniform1f(timePos, SDL_GetTicks() / 1000);
 	for (int z = 0; z < gridSize; ++z) {
 		for (int x = 0; x < gridSize; ++x) {
 			updateShaderMVP(terrainShader, terrainTransforms[z][x], camera);
 			//pass the index of the current terrain	
-			glUniform1i(glGetUniformLocation(terrainShader, "panelIndex"), x + z * gridSize);
 			draw(terrainGrid[z][x]);
 		}
 	}	
@@ -226,11 +163,8 @@ void render(float dt)
 void destroy()
 {
 	freeMesh(mesh);
-	freeShader(shader);
 	freeShader(terrainShader);
-	freeShader(computeShader);
 	freeTexture(texture);
-	freeTexture(bumpTexture);
 	for (int z = 0; z < gridSize; ++z) 
 	{
 		for (int x = 0; x < gridSize; ++x)
@@ -239,6 +173,8 @@ void destroy()
 			freeMesh(terrainGrid[z][x]);
 		}
 	}	
+
+
 }
 
 

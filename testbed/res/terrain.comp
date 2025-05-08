@@ -9,9 +9,9 @@ layout (std430, binding = 0) buffer TerrainData {
 };
 
 // Terrain parameters
-uniform vec2 terrainSize;      // Width and height of the terrain grid
-uniform float heightScale;     // Scale factor for height values
-uniform int seed;              // Random seed for terrain generation
+uniform int gridSize;         // Size of the grid (sizeX from C++ code)
+uniform float heightScale;    // Scale factor for height values
+uniform int seed;             // Random seed for terrain generation
 
 // Good hash function for 2D coordinates
 float hash21(vec2 p) {
@@ -60,35 +60,23 @@ float fbm(vec2 p) {
 }
 
 void main() {
-    // Get the current pixel coordinate
+    // Get the current position
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
-    // Check if we're within bounds
-    if (coord.x >= int(terrainSize.x) || coord.y >= int(terrainSize.y)) {
-        return;
-    }
+    // Make sure we're within bounds
+    if (coord.x >= gridSize || coord.y >= gridSize) return;
 
-    // Calculate the 1D array index from the 2D coordinates
-    int index = coord.y * int(terrainSize.x) + coord.x;
+    // Calculate the 1D index from the 2D position
+    int index = coord.y * gridSize + coord.x;
 
-    // Use different seeds to create variation
-    vec2 seedOffset = vec2(seed * 74.43, seed * 19.78);
+    // Add seed to position for variety
+    vec2 pos = vec2(coord) + vec2(seed);
 
-    // Calculate terrain position with offset to avoid origin artifacts
-    vec2 pos = vec2(coord) + seedOffset + vec2(1337.0, 9547.0);
+    // Multi-octave noise for more interesting terrain
+    float height = fbm(pos * 0.05) * heightScale;
+    height += valueNoise(pos * 0.1) * heightScale * 0.5;
+    height += valueNoise(pos * 0.2) * heightScale * 0.25;
 
-    // Generate primary noise layer
-    float height = fbm(pos * 0.03);
-
-    // Add a secondary layer with different orientation
-    height += 0.5 * fbm(vec2(pos.y * 0.04, pos.x * 0.035) + vec2(50.0, 100.0));
-
-    // Normalize to [0,1] range
-    height = (height + 1.0) * 0.35;
-
-    // Apply non-linear mapping for more dramatic terrain
-    height = pow(height, 1.2) * heightScale;
-
-    // Store the height in the 1D array
+    // Store the height value
     terrainData[index] = height;
 }

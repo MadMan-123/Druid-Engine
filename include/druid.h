@@ -136,13 +136,13 @@ typedef struct {
 //2D vector methods
 DAPI Vec2 v2Add(Vec2 a, Vec2 b);
 DAPI Vec2 v2Sub(Vec2 a, Vec2 b);
-DAPI Vec2 v2Scale(Vec2 a, float b);
+DAPI Vec2 v2Scale(Vec2 a, f32 b);
 DAPI Vec2 v2Mul(Vec2 a, Vec2 b);
-DAPI float v2Mag(Vec2 a);
-DAPI float v2Dis(Vec2 a, Vec2 b);
+DAPI f32 v2Mag(Vec2 a);
+DAPI f32 v2Dis(Vec2 a, Vec2 b);
 DAPI Vec2i v2Tov2i(Vec2 a);
 DAPI Vec2 v2iTov2(Vec2i a);
-DAPI Vec2 v2Div(Vec2 a, float b);
+DAPI Vec2 v2Div(Vec2 a, f32 b);
 
 DAPI bool v2Equal(Vec2 a, Vec2 b);
 
@@ -151,13 +151,13 @@ DAPI bool v2Equal(Vec2 a, Vec2 b);
 
 DAPI  Vec3 v3Add(Vec3 a, Vec3 b);
 DAPI  Vec3 v3Sub(Vec3 a, Vec3 b);
-DAPI  Vec3 v3Scale(Vec3 a, float b);
+DAPI  Vec3 v3Scale(Vec3 a, f32 b);
 DAPI Vec3 v3Mul(Vec3 a, Vec3 b);
-DAPI  float v3Mag(Vec3 a);
-DAPI  float v3Dis(Vec3 a, Vec3 b);
+DAPI  f32 v3Mag(Vec3 a);
+DAPI  f32 v3Dis(Vec3 a, Vec3 b);
 DAPI Vec3i v3Tov3i(Vec3 a);
 DAPI Vec3 v3iTov3(Vec3i a);
-DAPI  Vec3 v3Div(Vec3 a, float b);
+DAPI  Vec3 v3Div(Vec3 a, f32 b);
 DAPI  Vec3 v3Norm(Vec3 a);
 DAPI  Vec3 v3Cross(Vec3 a, Vec3 b);
 DAPI  bool v3Equal(Vec3 a, Vec3 b);
@@ -222,7 +222,7 @@ DAPI f32  mat4Determinant(Mat4 m);
 DAPI Mat4 mat4Inverse(Mat4 m);
 
 
-DAPI Mat4 mat4Perspective(float fovRadians, float aspect, float nearZ, float farZ);
+DAPI Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ);
 
 //helper tools
 DAPI f32 clamp(f32 value, f32 minVal, f32 maxVal);
@@ -296,7 +296,7 @@ typedef struct{
 
 
 DAPI bool createHashMap(HashMap* map, size_t mapSize);
-DAPI unsigned int hash(char* name,size_t mapSize);
+DAPI u32 hash(char* name,size_t mapSize);
 DAPI void printMap(HashMap* map);
 DAPI bool insertMap(HashMap* map);
 DAPI void cleanMap(HashMap* map);
@@ -306,9 +306,9 @@ DAPI void cleanMap(HashMap* map);
 
 struct OBJIndex
 {
-    unsigned int vertexIndex;
-    unsigned int uvIndex;
-    unsigned int normalIndex;
+    u32 vertexIndex;
+    u32 uvIndex;
+    u32 normalIndex;
     
     bool operator<(const OBJIndex& r) const { return vertexIndex < r.vertexIndex; }
 };
@@ -320,7 +320,7 @@ public:
     std::vector<Vec3> positions;
     std::vector<Vec2> texCoords;
     std::vector<Vec3> normals;
-    std::vector<unsigned int> indices;
+    std::vector<u32> indices;
     
     void CalcNormals();
 };
@@ -339,7 +339,7 @@ public:
     
     IndexedModel ToIndexedModel();
 private:
-    unsigned int FindLastVertexIndex(const std::vector<OBJIndex*>& indexLookup, const OBJIndex* currentIndex, const IndexedModel& result);
+    u32 FindLastVertexIndex(const std::vector<OBJIndex*>& indexLookup, const OBJIndex* currentIndex, const IndexedModel& result);
     void CreateOBJFace(const std::string& line);
     
     Vec2 ParseOBJVec2(const std::string& line);
@@ -383,12 +383,12 @@ typedef struct {
 
 
 //Functions
-DAPI Collider* createCircleCollider(float radius);
+DAPI Collider* createCircleCollider(f32 radius);
 DAPI Collider* createBoxCollider(Vec2 scale);
 DAPI bool cleanCollider(Collider* col);
-DAPI bool isCircleColliding(Vec2 posA, float radA, Vec2 posB, float radB);
+DAPI bool isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB);
 DAPI bool isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB);
-DAPI float getRadius(Collider* col);
+DAPI f32 getRadius(Collider* col);
 DAPI Vec2 getScale(Collider* col);
 DAPI bool setBoxScale(Collider* col, Vec2 scale);
 
@@ -402,15 +402,15 @@ typedef struct
 
 DAPI Mat4 getViewProjection(const Camera* camera);
 
-DAPI void initCamera(Camera* camera, const Vec3& pos, float fov, float aspect, float nearClip, float farClip);
+DAPI void initCamera(Camera* camera, const Vec3& pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip);
 
-DAPI void moveForward(Camera* camera,float amt);
+DAPI void moveForward(Camera* camera,f32 amt);
 
-DAPI void moveRight(Camera* camera,float amt);
+DAPI void moveRight(Camera* camera,f32 amt);
 
-DAPI void pitch(Camera* camera, float angle);
+DAPI void pitch(Camera* camera, f32 angle);
 
-DAPI void rotateY(Camera* camera,float angle);
+DAPI void rotateY(Camera* camera,f32 angle);
 
 
 //Display 
@@ -421,8 +421,8 @@ typedef struct
 	//window handle 
 	SDL_Window* sdlWindow; 
 	//size dimensions
-	float screenWidth;
-	float screenHeight;
+	f32 screenWidth;
+	f32 screenHeight;
 }Display;
 
 
@@ -430,7 +430,7 @@ typedef struct
 
 DAPI void initDisplay(Display* display);
 DAPI void swapBuffer(const Display* display);
-DAPI void clearDisplay(float r, float g, float b, float a);
+DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
 
 
 DAPI void returnError(const std::string& errorString);
@@ -454,7 +454,7 @@ DAPI u32 initShader(const std::string& filename);
 //reads in the actual code text to be compiled`
 DAPI std::string loadShader(const std::string& fileName);
 //takes the code of a shader and creates said shader
-DAPI u32 createShader(const std::string& text, unsigned int type);
+DAPI u32 createShader(const std::string& text, u32 type);
 DAPI u32 createProgram(u32 shader);
 
 //creates a program with two shaders, a vertex and fragment shader used to render meshes with open gl
@@ -477,6 +477,14 @@ DAPI u32 initTexture(const std::string& fileName);
 //free texture from memory
 DAPI void freeTexture(u32 texture); 
 
+
+//Terrain stuff
+
+typedef struct{
+    f32* heights;
+    int width;
+    int height;
+}HeightMap;
 
 
 
@@ -507,7 +515,7 @@ typedef struct
 	u32 vao;
 	//array of buffers
 	u32 vab[NUM_BUFFERS];
-	unsigned int drawCount; //how much of the vertexArrayObject do we want to draw
+	u32 drawCount; //how much of the vertexArrayObject do we want to draw
 }Mesh;
 
 
@@ -524,7 +532,7 @@ DAPI void initModel(Mesh* mesh,const IndexedModel &model);
 DAPI void freeMesh(Mesh* mesh);
 
 //creates a plane essentially
-DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize);
+DAPI Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heightScale, const char* computeShaderPath); 
 
 //Keys
 // Keyboard keys enum
@@ -688,8 +696,8 @@ typedef struct
 {
 	//function pointers
 	void(*init)();
-	void(*update)(float);
-	void(*render)(float);
+	void(*update)(f32);
+	void(*render)(f32);
 	void(*destroy)();
 	
 	//open gl context with sdl within the display	
@@ -699,7 +707,7 @@ typedef struct
 }Application;
 
 //function pointer typedef
-typedef void(*FncPtrFloat)(float);
+typedef void(*FncPtrFloat)(f32);
 typedef void(*FncPtr)();
 
 DAPI Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy);
@@ -711,7 +719,7 @@ DAPI void destroyApplication(Application* app);
 DAPI void initSystems(const Application* app);
 DAPI void startApplication(Application* app);
 
-DAPI void render(Application* app,float dt);
+DAPI void render(Application* app,f32 dt);
 //Input 
 
 DAPI void processInput(Application* app);
