@@ -667,3 +667,122 @@ f32 degrees(f32 radians)
 {
     return radians * (180.0f / PI);
 }
+// Helper quaternion functions you'll need
+Vec4 quatIdentity()
+{
+    return (Vec4){0.0f, 0.0f, 0.0f, 1.0f};
+}
+
+Vec4 quatFromAxisAngle(Vec3 axis, f32 angle) {
+    // Check for zero-length axis first (safe, avoids NaN)
+    f32 axisLength = v3Mag(axis);
+    const f32 EPSILON = 1e-6f;  // Small threshold for floating-point precision
+
+    if (axisLength < EPSILON) {
+        return { 0.0f, 0.0f, 0.0f, 1.0f };  // Identity quaternion
+    }
+
+    // Normalize the axis (safe since length > EPSILON)
+    Vec3 normalizedAxis = {
+        axis.x / axisLength,
+        axis.y / axisLength,
+        axis.z / axisLength
+    };
+
+    f32 halfAngle = angle * 0.5f;
+    f32 sinHalfAngle = sinf(halfAngle);
+    
+    return (Vec4){
+        normalizedAxis.x * sinHalfAngle,
+        normalizedAxis.y * sinHalfAngle,
+        normalizedAxis.z * sinHalfAngle,
+        cosf(halfAngle)
+    };
+}
+
+Vec4 quatMul(Vec4 q1, Vec4 q2)
+{
+    Vec4 result;
+    result.x = q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y;
+    result.y = q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x;
+    result.z = q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w;
+    result.w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z;
+    return result;
+}
+
+inline Vec4 quatNormalize(Vec4 q)
+{
+    f32 length = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    if (length > 0.0001f) {
+        return (Vec4){q.x / length, q.y / length, q.z / length, q.w / length};
+    }
+    return quatIdentity();
+}
+
+// Transform a vector by a quaternion
+inline Vec3 quatRotateVec3(Vec4 q, Vec3 v)
+{
+    // Create a pure quaternion from the vector
+    Vec4 qv = {v.x, v.y, v.z, 0.0f};
+    
+    // q * v * q^-1 (using quaternion rotation formula)
+    // For a unit quaternion, q^-1 = conjugate(q) = (-x, -y, -z, w)
+    Vec4 qInv = {-q.x, -q.y, -q.z, q.w};
+    Vec4 result = quatMul(quatMul(q, qv), qInv);
+    
+    return (Vec3){result.x, result.y, result.z};
+}
+
+// Convert quaternion to rotation matrix
+inline Mat4 quatToRotationMatrix(Vec4 q)
+{
+    Mat4 result = mat4Identity();
+    
+    f32 xx = q.x * q.x;
+    f32 xy = q.x * q.y;
+    f32 xz = q.x * q.z;
+    f32 xw = q.x * q.w;
+    f32 yy = q.y * q.y;
+    f32 yz = q.y * q.z;
+    f32 yw = q.y * q.w;
+    f32 zz = q.z * q.z;
+    f32 zw = q.z * q.w;
+    
+    result.m[0][0] = 1.0f - 2.0f * (yy + zz);
+    result.m[0][1] = 2.0f * (xy - zw);
+    result.m[0][2] = 2.0f * (xz + yw);
+    
+    result.m[1][0] = 2.0f * (xy + zw);
+    result.m[1][1] = 1.0f - 2.0f * (xx + zz);
+    result.m[1][2] = 2.0f * (yz - xw);
+    
+    result.m[2][0] = 2.0f * (xz - yw);
+    result.m[2][1] = 2.0f * (yz + xw);
+    result.m[2][2] = 1.0f - 2.0f * (xx + yy);
+    
+    return result;
+}
+
+inline f32 radians(f32 degrees)
+{
+    return degrees * (PI / 180.0f);
+}
+
+inline Vec3 quatTransform(Vec4 q, Vec3 v)
+{
+	Vec4 qv = { v.x, v.y, v.z, 0.0f };
+    Vec4 qInv = quatConjugate(q); // assuming q is normalized
+    Vec4 result = quatMul(quatMul(q, qv), qInv);
+
+    return { result.x, result.y, result.z };
+}
+
+inline Vec4 quatConjugate(const Vec4& q)
+{
+    return { -q.x, -q.y, -q.z, q.w };
+}
+
+inline f32 lerp(f32 a, f32 b, f32 t)
+{
+    return a + t * (b - a);
+}

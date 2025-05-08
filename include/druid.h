@@ -163,6 +163,19 @@ DAPI  Vec3 v3Cross(Vec3 a, Vec3 b);
 DAPI  bool v3Equal(Vec3 a, Vec3 b);
 DAPI f32 v3Dot(Vec3 a, Vec3 b);
 
+//Quaternions
+// Quaternion operations
+DAPI Vec4 quatIdentity();
+DAPI Vec4 quatFromAxisAngle(Vec3 axis, f32 angle);
+DAPI Vec4 quatMul(Vec4 q1, Vec4 q2);
+DAPI Vec4 quatNormalize(Vec4 q);
+DAPI Vec3 quatRotateVec3(Vec4 q, Vec3 v);
+DAPI Mat4 quatToRotationMatrix(Vec4 q);
+DAPI Vec3 quatTransform(Vec4 q, Vec3 v);
+
+DAPI Vec4 quatConjugate(const Vec4& q);
+
+
 //Matrix methods
 DAPI  void matAdd(f32** a,f32** b, Vec2i aSize);
 DAPI  void matSub(f32** a,f32** b, Vec2i aSize);
@@ -214,7 +227,9 @@ DAPI Mat4 mat4Perspective(float fovRadians, float aspect, float nearZ, float far
 //helper tools
 DAPI f32 clamp(f32 value, f32 minVal, f32 maxVal);
 DAPI f32 degrees(f32 radians);
+DAPI f32 radians(f32 degrees);
 
+DAPI f32 lerp(f32 a, f32 b, f32 t);
 //constants
 #define PI 3.14159265358979323846f
 static const Vec3 v3Zero    = {  0.0f,  0.0f,  0.0f };
@@ -339,7 +354,7 @@ private:
 typedef struct
 {
 	Vec3 pos;
-	Vec3 rot;
+	Vec4 rot;
 	Vec3 scale;
 } Transform;
 
@@ -382,8 +397,7 @@ typedef struct
 {
 	Mat4 projection;
 	Vec3 pos;
-	Vec3 forward;
-	Vec3 up;
+	Vec4 orientation;	
 } Camera;
 
 DAPI Mat4 getViewProjection(const Camera* camera);

@@ -1,83 +1,94 @@
 #version 450 core
 
-// If these are passed from the CPU side
-uniform vec2 terrainSize;
-uniform float heightScale;
-
-
-//workgroup size 16x16
+// Define the workgroup size
 layout (local_size_x = 16, local_size_y = 16) in;
-layout (binding = 0) buffer TerrainData {
-    vec4 terrainData[];
+
+// Use a 1D buffer but access it like a 2D array
+layout (std430, binding = 0) buffer TerrainData {
+    float terrainData[];
 };
 
-// Pseudo-random hash function
-/*
-float hash(vec2 p) {
-    p  = 50.0*fract( p*0.3183099 + vec2(0.71,0.113));
-    return -1.0+2.0*fract( p.x*p.y*(p.x+p.y) );
+// Terrain parameters
+uniform vec2 terrainSize;      // Width and height of the terrain grid
+uniform float heightScale;     // Scale factor for height values
+uniform int seed;              // Random seed for terrain generation
+
+// Good hash function for 2D coordinates
+float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
 }
 
-*/
-/*
-// Smooth interpolation
-float smoothNoise(vec2 p) {
+// Value noise with good 2D variation
+float valueNoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
 
-    // Smooth Interpolation Curve
-    vec2 u = f*f*(3.0-2.0*f);
+    // Four corners
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
 
-    return mix( mix( hash( i + vec2(0.0,0.0) ),
-    hash( i + vec2(1.0,0.0) ), u.x),
-    mix( hash( i + vec2(0.0,1.0) ),
-    hash( i + vec2(1.0,1.0) ), u.x), u.y);
+    // Smooth interpolation
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    // Mix the four corners
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Fractal Brownian Motion (fBm) for more natural noise
-float perlinNoise(vec2 p) {
-    float f = 0.0;
+// Fractal Brownian Motion for terrain generation
+float fbm(vec2 p) {
+    // Create a rotation matrix to break up directional patterns
+    mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+
+    float sum = 0.0;
     float amplitude = 0.5;
     float frequency = 1.0;
 
-    // Octaves for more detailed noise
+    // Sum multiple octaves of noise
     for (int i = 0; i < 6; i++) {
-        f += amplitude * smoothNoise(frequency * p);
-        amplitude *= 0.5;
+        // Rotate the coordinates at each octave
+        p = rot * p;
+        sum += amplitude * valueNoise(p * frequency);
         frequency *= 2.0;
+        amplitude *= 0.5;
     }
 
-    return f;
+    return sum;
 }
 
-*/
+void main() {
+    // Get the current pixel coordinate
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
-float perlinNoise(vec2 p) {
-    // Simplex noise or Perlin noise function can be implemented here
-    // For simplicity, we will use a placeholder value
-    return fract(sin(dot(p.xy, vec2(12.9898, 78.233))) * 43758.5453);
-}
-
-void main() 
-{
-    // Get the local ID of the current workgroup
-    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
-
-    if (gid.x >= terrainSize.x || gid.y >= terrainSize.y)
-    {
-        return;  // Don't process out-of-bounds workgroups
+    // Check if we're within bounds
+    if (coord.x >= int(terrainSize.x) || coord.y >= int(terrainSize.y)) {
+        return;
     }
 
-    // Calculate the position of this terrain cell
-    vec2 terrainPos = vec2(gid.x, gid.y);
+    // Calculate the 1D array index from the 2D coordinates
+    int index = coord.y * int(terrainSize.x) + coord.x;
 
-    // Generate terrain height using Perlin Noise (or other noise functions)
-    float noiseValue = perlinNoise(terrainPos * 0.1); // Adjust the scaling factor as needed
+    // Use different seeds to create variation
+    vec2 seedOffset = vec2(seed * 74.43, seed * 19.78);
 
-    // Apply the height scale
-    float height = noiseValue * heightScale;
+    // Calculate terrain position with offset to avoid origin artifacts
+    vec2 pos = vec2(coord) + seedOffset + vec2(1337.0, 9547.0);
 
-    // Store the calculated height in the terrainData array
-    terrainData[gid.y * int(terrainSize.x) + gid.x] = vec4(terrainPos, height, 1.0);
+    // Generate primary noise layer
+    float height = fbm(pos * 0.03);
 
+    // Add a secondary layer with different orientation
+    height += 0.5 * fbm(vec2(pos.y * 0.04, pos.x * 0.035) + vec2(50.0, 100.0));
+
+    // Normalize to [0,1] range
+    height = (height + 1.0) * 0.35;
+
+    // Apply non-linear mapping for more dramatic terrain
+    height = pow(height, 1.2) * heightScale;
+
+    // Store the height in the 1D array
+    terrainData[index] = height;
 }

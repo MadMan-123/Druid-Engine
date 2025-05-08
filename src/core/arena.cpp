@@ -28,5 +28,4 @@ void arenaDestroy(Arena* arena)
     free(arena->data);
     //set data to null
     arena->data = nullptr;
-    
 }

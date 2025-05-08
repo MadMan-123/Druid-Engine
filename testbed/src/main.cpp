@@ -6,7 +6,7 @@ Application* game;
 Camera camera;
 bool rightMouseWasPressed;
 float speed = 200000.0f;
-float rotateSpeed = 90.0f;
+float rotateSpeed = 180.0f;
 
 Transform currentTransform, terrainTransform;
 Vec3 light = {0,2,0};
@@ -19,7 +19,7 @@ int timePos;
 Mesh* mesh, *terrainGrid[gridSize][gridSize];
 Transform terrainTransforms[gridSize][gridSize];
 
-const f32 panelSize = 50.0f;
+const int tileSize = 55;
 
 
 
@@ -58,12 +58,15 @@ bool mat4HasNaN(Mat4 mat) {
 
 void init()
 {	
-	int offset = 450;
+
+
+
+	int offset = 495;
 	for (int z = 0; z < gridSize; ++z) {
 		for (int x = 0; x < gridSize; ++x) {
-			terrainGrid[z][x] = createTerrainMesh(10, 10, panelSize);
+			terrainGrid[z][x] = createTerrainMesh(10, 10, tileSize);
 			terrainTransforms[z][x] = {
-				.pos = { (x - 1) * (panelSize + offset), -10.0f, (z - 1) * (panelSize + offset)},
+				.pos = { (x - 1) * (tileSize + offset), -10.0f, (z - 1) * (tileSize + offset)},
 				.rot = { 0, 0, 0 },
 				.scale = { 1, 1, 1 }
 			};
@@ -98,24 +101,42 @@ void init()
 	SDL_GL_SetSwapInterval(0);
 
 	computeShader = createComputeProgram("..\\res\\terrain.comp");
+
+	
+	u32 totalTerrainSize = tileSize * tileSize *  (gridSize * gridSize);
 /*
-	for (int z = 0; z < gridSize; ++z) {
-		for (int x = 0; x < gridSize; ++x) {
+	for (int z = 0; z < gridSize; ++z) 
+	{
+		for (int x = 0; x < gridSize; ++x) 
+		{
+
+			// Create the terrain buffer
+			u32 terrainBuffer;
+			glGenBuffers(1, &terrainBuffer);
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, terrainBuffer);
+			glBufferData(GL_SHADER_STORAGE_BUFFER, totalTerrainSize * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, terrainBuffer);
+
+
+	
 			glUseProgram(computeShader);
 
-			// Bind terrain vertex buffer
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, terrainGrid[z][x]->vab[Mesh::POSITION_VERTEXBUFFER]);
 
-			// Uniforms
-			glUniform2f(glGetUniformLocation(computeShader, "terrainSize"), 10, 10);
-			glUniform2f(glGetUniformLocation(computeShader, "offset"), x * panelSize, z * panelSize);
 
-        	glDispatchCompute(11 / 16 + 1, 11 / 16 + 1, 1);
+			glUniform2f(glGetUniformLocation(computeShader, "terrainSize"), tileSize, tileSize);
+
+
+			//glUniform2f(glGetUniformLocation(computeShader, "offset"), x * tileSize, z * tileSize);
+			glUniform1f(glGetUniformLocation(computeShader, "heightScale"), 100.0f);
+			glUniform1i(glGetUniformLocation(computeShader, "seed"), rand()); // Random seed
+
+			// Workgroups = ceil(tileSize / 16.0)
+			int wg = (tileSize + 15) / 16;
+			glDispatchCompute(wg, wg, 1);
 			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		}
 	}
 */
-
 
 }
 
@@ -132,28 +153,35 @@ void moveCamera(float dt)
        		moveForward(&camera, (-speed )* dt);
 }
 
-void rotateCamera(float dt)
-{
-      	if (isMouseDown(SDL_BUTTON_RIGHT)) 
-	{
-      		f32 x, y;
-      		// This gets the relative motion since the last call
-      		getMouseDelta(&x, &y);
-          
-      		// Only apply rotation if this isn't the first frame the button is pressed
-      			rotateY(&camera, (((rotateSpeed * 100)* dt) * -x));
-             
-      			float camPitch = degrees(asin(camera.forward.y));
-      			float newPitch = camPitch + (y * ((rotateSpeed * 100)* dt));
-      			const float maxPitch = 85.0f;
-      			newPitch = clamp(newPitch, -maxPitch, maxPitch);
-      			float pitchDelta = newPitch - camPitch;
+// In camera struct:
+f32 yaw = 0;
+f32 currentPitch = 0;
 
-      			//try and prevent the camera from flipping from gimbal lock
-      			if (abs(newPitch) < maxPitch)
-		  			pitch(&camera, pitchDelta);
-      	}
+void rotateCamera(float dt) 
+{
+	if (isMouseDown(SDL_BUTTON_RIGHT)) 
+	{
+		f32 x, y;
+		getMouseDelta(&x, &y);
+
+		yaw += -x * (rotateSpeed * 200.0f) * dt;
+		currentPitch += -y * (rotateSpeed * 100.0f) * dt;
+
+
+		//89 in radians
+		f32 goal = radians(89.0f);
+		// Clamp pitch to avoid gimbal lock
+		currentPitch = clamp(currentPitch,-goal, goal);
+
+
+		// Rebuild quaternion from scratch (prevents drift)
+		Vec4 yawQuat   = quatFromAxisAngle(v3Up, yaw);
+		Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
+		camera.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
+	}
 }
+
+
 
 
 void update(float dt)
@@ -163,7 +191,7 @@ void update(float dt)
       	rotateCamera(dt);			
 
 	//print fps
-	printf("FPS: %f\n", game->fps);
+	//printf("FPS: %f\n", game->fps);
 	
 }
 
@@ -184,7 +212,8 @@ void render(float dt)
 	for (int z = 0; z < gridSize; ++z) {
 		for (int x = 0; x < gridSize; ++x) {
 			updateShaderMVP(terrainShader, terrainTransforms[z][x], camera);
-			
+			//pass the index of the current terrain	
+			glUniform1i(glGetUniformLocation(terrainShader, "panelIndex"), x + z * gridSize);
 			draw(terrainGrid[z][x]);
 		}
 	}	

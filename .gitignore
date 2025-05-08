@@ -111,6 +111,8 @@ packages/
 log/
 logs/
 
+testbed/res/
+
 # Temporary files
 temp/
 tmp/
