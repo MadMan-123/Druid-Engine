@@ -13,30 +13,30 @@
 
 #include <GL/glew.h>
 //=====================================================================================================================
-// Unsigned int types.
+//Unsigned int types.
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
 typedef unsigned long long u64;
 
-// Signed int types.
+//Signed int types.
 typedef signed char i8;
 typedef signed short i16;
 typedef signed int i32;
 typedef signed long long i64;
 
-// Floating point types
+//Floating point types
 typedef float f32;
 typedef double f64;
 
-// Boolean types
+//Boolean types
 typedef int b32;
 typedef bool b8;
 
-// Compile-time assertion macro
+//Compile-time assertion macro
 #define STATIC_ASSERT(COND, MSG) static_assert(COND, MSG)
 
-// Ensure all types are of the correct size.
+//Ensure all types are of the correct size.
 STATIC_ASSERT(sizeof(u8) == 1, "Expected u8 to be 1 byte.");
 STATIC_ASSERT(sizeof(u16) == 2, "Expected u16 to be 2 bytes.");
 STATIC_ASSERT(sizeof(u32) == 4, "Expected u32 to be 4 bytes.");
@@ -52,37 +52,37 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 
 
 
-// Platform detection
+//Platform detection
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
     #define PLATFORM_WINDOWS 1
     #ifndef _WIN32 
         #error "64-bit is required on Windows!"
     #endif
 #elif defined(__linux__) || defined(__gnu_linux__)
-    // Linux OS
+    //Linux OS
     #define PLATFORM_LINUX 1
     #if defined(__ANDROID__)
         #define PLATFORM_ANDROID 1
     #endif
 #elif defined(__unix__)
-    // Catch anything not caught by the above.
+    //Catch anything not caught by the above.
     #define PLATFORM_UNIX 1
 #elif defined(_POSIX_VERSION)
-    // Posix
+    //Posix
     #define PLATFORM_POSIX 1
 #elif __APPLE__
-    // Apple platforms
+    //Apple platforms
     #define PLATFORM_APPLE 1
     #include <TargetConditionals.h>
 #if TARGET_IPHONE_SIMULATOR
-    // iOS Simulator
+    //iOS Simulator
     #define PLATFORM_IOS 1
     #define PLATFORM_IOS_SIMULATOR 1
 #elif TARGET_OS_IPHONE
     #define PLATFORM_IOS 1
-    // iOS device
+    //iOS device
 #elif TARGET_OS_MAC
-// Other kinds of Mac OS
+//Other kinds of Mac OS
 #else
     #error "Unknown Apple platform"
 #endif
@@ -168,7 +168,7 @@ DAPI  bool v3Equal(Vec3 a, Vec3 b);
 DAPI f32 v3Dot(Vec3 a, Vec3 b);
 
 //Quaternions
-// Quaternion operations
+//Quaternion operations
 DAPI Vec4 quatIdentity();
 DAPI Vec4 quatFromAxisAngle(Vec3 axis, f32 angle);
 DAPI Vec4 quatMul(Vec4 q1, Vec4 q2);
@@ -196,12 +196,12 @@ DAPI void freeMat(f32** mat, Vec2i size);
 
 DAPI Mat4 mat4LookAt(Vec3 eye, Vec3 target, Vec3 up);
 
-// Identity and Zero
+//Identity and Zero
 DAPI Mat4 mat4Identity(void);
 DAPI Mat4 mat4Zero(void);
 
 
-// Transformation matrices
+//Transformation matrices
 DAPI Mat4 mat4Translate(Vec3 position);
 DAPI Mat4 mat4Scale(f32 scale);
 DAPI Mat4 mat4ScaleVec(Vec3 scale);
@@ -210,18 +210,18 @@ DAPI Mat4 mat4RotateY(f32 angleRadians);
 DAPI Mat4 mat4RotateZ(f32 angleRadians);
 DAPI Mat4 mat4Rotate(f32 angleRadians, Vec3 axis);
 
-// Matrix math
+//Matrix math
 DAPI Mat4 mat4Mul(Mat4 a, Mat4 b);
 DAPI Mat4 mat4Add(Mat4 a, Mat4 b);
 DAPI Mat4 mat4Sub(Mat4 a, Mat4 b);
 DAPI Mat4 mat4ScaleMatrix(Mat4 a, f32 scale);
 
-// Vector transformation
+//Vector transformation
 DAPI Vec4 mat4TransformVec4(Mat4 m, Vec4 v);
 DAPI Vec3 mat4TransformPoint(Mat4 m, Vec3 p);
 DAPI Vec3 mat4TransformDirection(Mat4 m, Vec3 d);
 
-// Determinant and Inverse
+//Determinant and Inverse
 DAPI f32  mat4Determinant(Mat4 m);
 DAPI Mat4 mat4Inverse(Mat4 m);
 
@@ -520,9 +520,9 @@ DAPI Mesh* createBoxMesh();
 
 DAPI Mesh* createSkyboxMesh(); 
 //Keys
-// Keyboard keys enum
+//Keyboard keys enum
 typedef enum {
-    // Alphabetical keys
+    //Alphabetical keys
     KEY_A = SDL_SCANCODE_A,
     KEY_B = SDL_SCANCODE_B,
     KEY_C = SDL_SCANCODE_C,
@@ -550,7 +550,7 @@ typedef enum {
     KEY_Y = SDL_SCANCODE_Y,
     KEY_Z = SDL_SCANCODE_Z,
     
-    // Number keys
+    //Number keys
     KEY_1 = SDL_SCANCODE_1,
     KEY_2 = SDL_SCANCODE_2,
     KEY_3 = SDL_SCANCODE_3,
@@ -562,7 +562,7 @@ typedef enum {
     KEY_9 = SDL_SCANCODE_9,
     KEY_0 = SDL_SCANCODE_0,
     
-    // Function keys
+    //Function keys
     KEY_F1 = SDL_SCANCODE_F1,
     KEY_F2 = SDL_SCANCODE_F2,
     KEY_F3 = SDL_SCANCODE_F3,
@@ -588,7 +588,7 @@ typedef enum {
     KEY_F23 = SDL_SCANCODE_F23,
     KEY_F24 = SDL_SCANCODE_F24,
     
-    // Special keys
+    //Special keys
     KEY_ESCAPE = SDL_SCANCODE_ESCAPE,
     KEY_TAB = SDL_SCANCODE_TAB,
     KEY_CAPSLOCK = SDL_SCANCODE_CAPSLOCK,
@@ -610,13 +610,13 @@ typedef enum {
     KEY_PAGEUP = SDL_SCANCODE_PAGEUP,
     KEY_PAGEDOWN = SDL_SCANCODE_PAGEDOWN,
     
-    // Arrow keys
+    //Arrow keys
     KEY_RIGHT = SDL_SCANCODE_RIGHT,
     KEY_LEFT = SDL_SCANCODE_LEFT,
     KEY_DOWN = SDL_SCANCODE_DOWN,
     KEY_UP = SDL_SCANCODE_UP,
     
-    // Numpad
+    //Numpad
     KEY_NUMLOCK = SDL_SCANCODE_NUMLOCKCLEAR,
     KEY_NUMPAD_DIVIDE = SDL_SCANCODE_KP_DIVIDE,
     KEY_NUMPAD_MULTIPLY = SDL_SCANCODE_KP_MULTIPLY,
@@ -635,7 +635,7 @@ typedef enum {
     KEY_NUMPAD_0 = SDL_SCANCODE_KP_0,
     KEY_NUMPAD_PERIOD = SDL_SCANCODE_KP_PERIOD,
     
-    // Additional keys
+    //Additional keys
     KEY_GRAVE = SDL_SCANCODE_GRAVE,  // ` key
     KEY_MINUS = SDL_SCANCODE_MINUS,
     KEY_EQUALS = SDL_SCANCODE_EQUALS,
@@ -648,7 +648,7 @@ typedef enum {
     KEY_PERIOD = SDL_SCANCODE_PERIOD,
     KEY_SLASH = SDL_SCANCODE_SLASH,
     
-    // Media and application keys
+    //Media and application keys
     KEY_PRINTSCREEN = SDL_SCANCODE_PRINTSCREEN,
     KEY_SCROLLLOCK = SDL_SCANCODE_SCROLLLOCK,
     KEY_PAUSE = SDL_SCANCODE_PAUSE,
@@ -657,11 +657,11 @@ typedef enum {
     KEY_VOLUMEUP = SDL_SCANCODE_VOLUMEUP,
     KEY_VOLUMEDOWN = SDL_SCANCODE_VOLUMEDOWN,
     
-    // Last key indicator (useful for array sizes)
+    //Last key indicator (useful for array sizes)
     KEY_COUNT = SDL_SCANCODE_COUNT
 } KeyCode;
 
-// Mouse buttons enum
+//Mouse buttons enum
 typedef enum {
     MOUSE_LEFT = 0,
     MOUSE_RIGHT = 1,
