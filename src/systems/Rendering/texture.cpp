@@ -13,19 +13,19 @@ u32 initTexture(const std::string& fileName)
 		std::cerr << "texture load failed" << fileName << std::endl;
 	}
 	
-	// number of and address of textures
+	//number of and address of textures
 	glGenTextures(1, &textureHandler); 
 	
 	//bind texture - define type 
 	glBindTexture(GL_TEXTURE_2D, textureHandler);
 
- 	// wrap texture outside width
+ 	//wrap texture outside width
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	// wrap texture outside height
+	//wrap texture outside height
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); 
  	
 	//TODO: optional filtering
-	// linear filtering for minification (texture is smaller than area)
+	//linear filtering for minification (texture is smaller than area)
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // linear filtering for magnifcation (texture is larger)

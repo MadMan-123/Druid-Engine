@@ -116,16 +116,16 @@ void draw(Mesh* mesh)
 
 
 
-// Function to generate height data using compute shader
+//Function to generate height data using compute shader
 HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,const char* computeShaderPath)
 {
-    // Create compute shader (you can move this to init if preferred)
+    //Create compute shader (you can move this to init if preferred)
     static u32 computeShader = createComputeProgram(computeShaderPath);
 	if (computeShader == 0) 
 	{
     	printf("Failed to create compute shader!\n");
 	}
-    // Create height buffer
+    //Create height buffer
     u32 heightBuffer;
     glGenBuffers(1, &heightBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, heightBuffer);
@@ -138,7 +138,7 @@ HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,const char* co
  	srand(time(0));
 	//get a random seed wit time
 	u32 seed = rand();
-    // Run compute shader
+    //Run compute shader
     glUseProgram(computeShader);
     glUniform1i(glGetUniformLocation(computeShader, "gridSize"), sizeX);
     glUniform1f(glGetUniformLocation(computeShader, "heightScale"), heightScale);
@@ -150,11 +150,11 @@ int workGroupsY = (sizeZ + 15) / 16;  // Ceil(sizeZ / 16)
 glDispatchCompute(workGroupsX, workGroupsY, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    // Read back height data
+    //Read back height data
     f32* heights =  (f32*)malloc(sizeof(f32)*(sizeX * sizeZ));
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeX * sizeZ * sizeof(f32), heights);
 
-    // Clean up
+    //Clean up
     glDeleteBuffers(1, &heightBuffer);
 
     return {heights, sizeX, sizeZ};
@@ -165,24 +165,24 @@ u32* createTerrainIndices(u32 cellsX, u32 cellsZ, u32* outIndexCount)
     u32 verticesX = cellsX + 1;
     u32 totalIndices = cellsX * cellsZ * 6;  // 2 triangles per cell, 3 indices per triangle
 
-    // Allocate indices array
+    //Allocate indices array
     u32* indices = new u32[totalIndices];
     
-    // Track index count for caller
+    //Track index count for caller
     *outIndexCount = totalIndices;
 
-    // Generate indices
+    //Generate indices
     u32 indexIdx = 0;
     for (u32 z = 0; z < cellsZ; ++z) 
     {
         for (u32 x = 0; x < cellsX; ++x) 
 	{
-            // First triangle of the cell
+            //First triangle of the cell
             indices[indexIdx++] = z * verticesX + x;
             indices[indexIdx++] = (z + 1) * verticesX + x;
             indices[indexIdx++] = z * verticesX + x + 1;
 
-            // Second triangle of the cell
+            //Second triangle of the cell
             indices[indexIdx++] = z * verticesX + x + 1;
             indices[indexIdx++] = (z + 1) * verticesX + x;
             indices[indexIdx++] = (z + 1) * verticesX + x + 1;
@@ -193,29 +193,32 @@ u32* createTerrainIndices(u32 cellsX, u32 cellsZ, u32* outIndexCount)
 }
 
 void calculateTerrainNormals(Vertices* vertices, int width, int height)
- {
-    // Reset all normals to zero
-    for (int i = 0; i < width * height; i++) {
+{
+    //reset all normals to zero
+    for (int i = 0; i < width * height; i++)
+    {
         vertices->normals[i] = {0, 0, 0};
     }
 
-    // Calculate normals for each triangle, add to shared vertices
-    for (int z = 0; z < height - 1; z++) {
-        for (int x = 0; x < width - 1; x++) {
-            // Get indices for the quad corners
+    //calculate normals for each triangle, add to shared vertices
+    for (int z = 0; z < height - 1; z++)
+    {
+        for (int x = 0; x < width - 1; x++)
+        {
+            //Get indices for the quad corners
             int topLeft = z * width + x;
             int topRight = topLeft + 1;
             int bottomLeft = (z + 1) * width + x;
             int bottomRight = bottomLeft + 1;
 
-            // Get positions
+            //Get positions
             Vec3& v1 = vertices->positions[topLeft];
             Vec3& v2 = vertices->positions[topRight];
             Vec3& v3 = vertices->positions[bottomLeft];
             Vec3& v4 = vertices->positions[bottomRight];
 
-            // Calculate triangle normals using cross product
-            // First triangle (v1, v3, v2)
+            //Calculate triangle normals using cross product
+            //First triangle (v1, v3, v2)
             Vec3 edge1 = {v3.x - v1.x, v3.y - v1.y, v3.z - v1.z};
             Vec3 edge2 = {v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
             Vec3 normal1 = {
@@ -224,7 +227,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
                 edge1.x * edge2.y - edge1.y * edge2.x
             };
 
-            // Add normal to shared vertices
+            //Add normal to shared vertices
             vertices->normals[topLeft].x += normal1.x;
             vertices->normals[topLeft].y += normal1.y;
             vertices->normals[topLeft].z += normal1.z;
@@ -235,7 +238,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
             vertices->normals[bottomLeft].y += normal1.y;
             vertices->normals[bottomLeft].z += normal1.z;
 
-            // Second triangle (v2, v3, v4)
+            //Second triangle (v2, v3, v4)
             edge1 = {v3.x - v2.x, v3.y - v2.y, v3.z - v2.z};
             edge2 = {v4.x - v2.x, v4.y - v2.y, v4.z - v2.z};
             Vec3 normal2 = {
@@ -244,7 +247,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
                 edge1.x * edge2.y - edge1.y * edge2.x
             };
 
-            // Add normal to shared vertices
+            //Add normal to shared vertices
             vertices->normals[topRight].x += normal2.x;
             vertices->normals[topRight].y += normal2.y;
             vertices->normals[topRight].z += normal2.z;
@@ -257,14 +260,16 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
         }
     }
 
-    // Normalize all normals
-    for (int i = 0; i < width * height; i++) {
+    //Normalize all normals
+    for (int i = 0; i < width * height; i++)
+    {
         float length = sqrtf(
             vertices->normals[i].x * vertices->normals[i].x +
             vertices->normals[i].y * vertices->normals[i].y +
             vertices->normals[i].z * vertices->normals[i].z
         );
-        if (length > 0.0001f) {
+        if (length > 0.0001f) 
+        {
             vertices->normals[i].x /= length;
             vertices->normals[i].y /= length;
             vertices->normals[i].z /= length;
@@ -276,7 +281,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
 
 Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heightScale, const char* computeShaderPath, HeightMap* output) 
 {
-    // First generate height data
+    //First generate height data
     HeightMap heightData = generateHeightMap(cellsX + 1, cellsZ + 1, heightScale,computeShaderPath);
 		
 	//copuy all the data from the heightmap to the output
@@ -291,7 +296,7 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
     }
     
 
-    // Generate vertices with height
+    //Generate vertices with height
     Vertices* terrainVertices =  (Vertices*)malloc(sizeof(Vertices));
     terrainVertices->ammount = heightData.width * heightData.height;
     terrainVertices->positions = (Vec3*)malloc(terrainVertices->ammount * sizeof(Vec3));
@@ -299,9 +304,11 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
     terrainVertices->normals = (Vec3*)malloc(terrainVertices->ammount * sizeof(Vec3));
 
 
-    // Generate vertex data with heights
-    for (u32 z = 0; z < heightData.height; ++z) {
-        for (u32 x = 0; x < heightData.width; ++x) {
+    //Generate vertex data with heights
+    for (u32 z = 0; z < heightData.height; ++z)
+    {
+        for (u32 x = 0; x < heightData.width; ++x)
+        {
             u32 idx = z * heightData.width + x;
             f32 height = heightData.heights[idx];
 
@@ -310,7 +317,7 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
                 height,            // Height from compute shader
                 z * cellSize       // Z position
             };
-			// Normalize to 0.0-1.0 range
+			//Normalize to 0.0-1.0 range
 			f32 textureScale = 0.1f;  // 1/10 = 0.1
 			terrainVertices->texCoords[idx] = {
     			x * cellSize * textureScale,
@@ -320,14 +327,14 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
     }
 
 	calculateTerrainNormals(terrainVertices, heightData.width, heightData.height);
-    // Generate indices (same as before)
+    //Generate indices (same as before)
     u32 indexCount;
     u32* terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
-    // Create mesh
+    //Create mesh
     Mesh* terrainMesh = createMesh(terrainVertices, terrainVertices->ammount, terrainIndices, indexCount);
 
-    // Clean up
+    //Clean up
 	free(heightData.heights);
 	free(terrainVertices->positions);
 	free(terrainVertices->texCoords);
@@ -339,8 +346,9 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
 }
 
 
-Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float cellSize) {
-    // Calculate total number of vertices
+Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float cellSize)
+{
+    //Calculate total number of vertices
     unsigned int verticesX = cellsX + 1;
     unsigned int verticesZ = cellsZ + 1;
     unsigned int totalVertices = verticesX * verticesZ;
@@ -352,25 +360,27 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
     vertices->texCoords = new Vec2[totalVertices];
     vertices->normals = new Vec3[totalVertices];
 
-    // Generate vertex data
-    for (unsigned int z = 0; z < verticesZ; ++z) {
-        for (unsigned int x = 0; x < verticesX; ++x) {
+    //Generate vertex data
+    for (unsigned int z = 0; z < verticesZ; ++z)
+    {
+        for (unsigned int x = 0; x < verticesX; ++x)
+        {
             unsigned int idx = z * verticesX + x;
 
-            // Position calculation
+            //Position calculation
             vertices->positions[idx] = {
                 x * cellSize,      // X position
                 0.0f,              // Initial flat height
                 z * cellSize        // Z position
             };
 
-            // Texture coordinate mapping
+            //Texture coordinate mapping
             vertices->texCoords[idx] = {
                 static_cast<float>(x) / cellsX,  // U coordinate
                 static_cast<float>(z) / cellsZ   // V coordinate
             };
 
-            // Normal vector (upward for flat terrain)
+            //Normal vector (upward for flat terrain)
             vertices->normals[idx] = v3Up;
         }
     }
@@ -379,19 +389,20 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
 }
 
 
-// Create terrain mesh using the existing createMesh function
- Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize) {
-    // Generate vertices
+//Create terrain mesh using the existing createMesh function
+ Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize)
+     {
+    //Generate vertices
     Vertices* terrainVertices = createTerrainVertices(cellsX, cellsZ, cellSize);
 
-    // Generate indices
+    //Generate indices
     unsigned int indexCount;
     unsigned int* terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
-    // Create mesh using the provided createMesh function
+    //Create mesh using the provided createMesh function
     Mesh* terrainMesh = createMesh(terrainVertices, terrainVertices->ammount, terrainIndices, indexCount);
 
-    // Clean up temporary arrays (createMesh should have made copies)
+    //Clean up temporary arrays (createMesh should have made copies)
     delete[] terrainVertices->positions;
     delete[] terrainVertices->texCoords;
     delete[] terrainVertices->normals;
@@ -403,8 +414,8 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
 
 Mesh* createBoxMesh() 
 {
-    // Define vertices for a unit cube centered at origin
-    // Each face needs its own vertices since texture coordinates are different
+    //Define vertices for a unit cube centered at origin
+    //Each face needs its own vertices since texture coordinates are different
     Vertices* boxVertices = (Vertices*)malloc(sizeof(Vertices));
     boxVertices->ammount = 24; // 4 vertices per face * 6 faces
     
@@ -412,69 +423,70 @@ Mesh* createBoxMesh()
     boxVertices->texCoords = (Vec2*)malloc(boxVertices->ammount * sizeof(Vec2)); 
     boxVertices->normals = (Vec3*)malloc(boxVertices->ammount * sizeof(Vec3));  
     
-    // Fill in vertex data for each face
-    // FRONT FACE (Z+)
+    //Fill in vertex data for each face
+    //FRONT FACE (Z+)
     boxVertices->positions[0] = {-1.0f,  1.0f,  1.0f};
     boxVertices->positions[1] = {-1.0f, -1.0f,  1.0f};
     boxVertices->positions[2] = { 1.0f, -1.0f,  1.0f};
     boxVertices->positions[3] = { 1.0f,  1.0f,  1.0f};
     
-    // BACK FACE (Z-)
+    //BACK FACE (Z-)
     boxVertices->positions[4] = { 1.0f,  1.0f, -1.0f};
     boxVertices->positions[5] = { 1.0f, -1.0f, -1.0f};
     boxVertices->positions[6] = {-1.0f, -1.0f, -1.0f};
     boxVertices->positions[7] = {-1.0f,  1.0f, -1.0f};
     
-    // LEFT FACE (X-)
+    //LEFT FACE (X-)
     boxVertices->positions[8] = {-1.0f,  1.0f, -1.0f};
     boxVertices->positions[9] = {-1.0f, -1.0f, -1.0f};
     boxVertices->positions[10] = {-1.0f, -1.0f,  1.0f};
     boxVertices->positions[11] = {-1.0f,  1.0f,  1.0f};
     
-    // RIGHT FACE (X+)
+    //RIGHT FACE (X+)
     boxVertices->positions[12] = { 1.0f,  1.0f,  1.0f};
     boxVertices->positions[13] = { 1.0f, -1.0f,  1.0f};
     boxVertices->positions[14] = { 1.0f, -1.0f, -1.0f};
     boxVertices->positions[15] = { 1.0f,  1.0f, -1.0f};
     
-    // TOP FACE (Y+)
+    //TOP FACE (Y+)
     boxVertices->positions[16] = {-1.0f,  1.0f, -1.0f};
     boxVertices->positions[17] = {-1.0f,  1.0f,  1.0f};
     boxVertices->positions[18] = { 1.0f,  1.0f,  1.0f};
     boxVertices->positions[19] = { 1.0f,  1.0f, -1.0f};
     
-    // BOTTOM FACE (Y-)
+    //BOTTOM FACE (Y-)
     boxVertices->positions[20] = {-1.0f, -1.0f,  1.0f};
     boxVertices->positions[21] = {-1.0f, -1.0f, -1.0f};
     boxVertices->positions[22] = { 1.0f, -1.0f, -1.0f};
     boxVertices->positions[23] = { 1.0f, -1.0f,  1.0f};
     
-    // Fill unused texcoords and normals with zeros
-    for (u32 i = 0; i < boxVertices->ammount; i++) {
+    //Fill unused texcoords and normals with zeros
+    for (u32 i = 0; i < boxVertices->ammount; i++)
+    {
         boxVertices->texCoords[i] = {0.0f, 0.0f};
         boxVertices->normals[i] = {0.0f, 0.0f, 0.0f};
     }
     
-    // Define indices for the cube
+    //Define indices for the cube
     u32 indices[] = {
-        // Front face
+        //Front face
         0, 1, 2, 0, 2, 3,
-        // Back face
+        //Back face
         4, 5, 6, 4, 6, 7,
-        // Left face
+        //Left face
         8, 9, 10, 8, 10, 11,
-        // Right face
+        //Right face
         12, 13, 14, 12, 14, 15,
-        // Top face
+        //Top face
         16, 17, 18, 16, 18, 19,
-        // Bottom face
+        //Bottom face
         20, 21, 22, 20, 22, 23
     };
     
-    // Create the mesh
+    //Create the mesh
     Mesh* boxMesh = createMesh(boxVertices, boxVertices->ammount, indices, 36);
     
-    // Clean up
+    //Clean up
 	free(boxVertices->positions);
 	free(boxVertices->texCoords);
 	free(boxVertices->normals);
@@ -484,23 +496,25 @@ Mesh* createBoxMesh()
 }
 Mesh* createSkyboxMesh() 
 {
-    // Define vertices for a skybox 
+    //Define vertices for a skybox 
     Vertices* skyboxVertices = (Vertices*)malloc(sizeof(Vertices));
     if (!skyboxVertices) return NULL;
     
     skyboxVertices->ammount = 36;
     
-    // Allocate and initialize positions
+    //Allocate and initialize positions
     skyboxVertices->positions = (Vec3*)malloc(36 * sizeof(Vec3));
-    if (!skyboxVertices->positions) {
+    if (!skyboxVertices->positions)
+    {
         free(skyboxVertices);
         return NULL;
     }
     
-    // Allocate empty (but valid) arrays for texCoords and normals
+    //Allocate empty (but valid) arrays for texCoords and normals
     skyboxVertices->texCoords = (Vec2*)malloc(36 * sizeof(Vec2));
     skyboxVertices->normals = (Vec3*)malloc(36 * sizeof(Vec3));
-    if (!skyboxVertices->texCoords || !skyboxVertices->normals) {
+    if (!skyboxVertices->texCoords || !skyboxVertices->normals)
+    {
         free(skyboxVertices->positions);
         free(skyboxVertices->texCoords);
         free(skyboxVertices->normals);
@@ -508,12 +522,12 @@ Mesh* createSkyboxMesh()
         return NULL;
     }
     
-    // Initialize with default values
+    //Initialize with default values
     memset(skyboxVertices->texCoords, 0, 36 * sizeof(Vec2));
     memset(skyboxVertices->normals, 0, 36 * sizeof(Vec3));
     
-    // Fill vertex positions 
-    // Back face (Z-)
+    //Fill vertex positions 
+    //Back face (Z-)
     skyboxVertices->positions[0] = {-1.0f,  1.0f, -1.0f};
     skyboxVertices->positions[1] = {-1.0f, -1.0f, -1.0f};
     skyboxVertices->positions[2] = { 1.0f, -1.0f, -1.0f};
@@ -521,7 +535,7 @@ Mesh* createSkyboxMesh()
     skyboxVertices->positions[4] = { 1.0f,  1.0f, -1.0f};
     skyboxVertices->positions[5] = {-1.0f,  1.0f, -1.0f};
 
-    // Left face (X-)
+    //Left face (X-)
     skyboxVertices->positions[6] = {-1.0f, -1.0f,  1.0f};
     skyboxVertices->positions[7] = {-1.0f, -1.0f, -1.0f};
     skyboxVertices->positions[8] = {-1.0f,  1.0f, -1.0f};
@@ -529,7 +543,7 @@ Mesh* createSkyboxMesh()
     skyboxVertices->positions[10] = {-1.0f,  1.0f,  1.0f};
     skyboxVertices->positions[11] = {-1.0f, -1.0f,  1.0f};
 
-    // Right face (X+)
+    //Right face (X+)
     skyboxVertices->positions[12] = { 1.0f, -1.0f, -1.0f};
     skyboxVertices->positions[13] = { 1.0f, -1.0f,  1.0f};
     skyboxVertices->positions[14] = { 1.0f,  1.0f,  1.0f};
@@ -537,7 +551,7 @@ Mesh* createSkyboxMesh()
     skyboxVertices->positions[16] = { 1.0f,  1.0f, -1.0f};
     skyboxVertices->positions[17] = { 1.0f, -1.0f, -1.0f};
 
-    // Front face (Z+)
+    //Front face (Z+)
     skyboxVertices->positions[18] = {-1.0f, -1.0f,  1.0f};
     skyboxVertices->positions[19] = {-1.0f,  1.0f,  1.0f};
     skyboxVertices->positions[20] = { 1.0f,  1.0f,  1.0f};
@@ -545,7 +559,7 @@ Mesh* createSkyboxMesh()
     skyboxVertices->positions[22] = { 1.0f, -1.0f,  1.0f};
     skyboxVertices->positions[23] = {-1.0f, -1.0f,  1.0f};
 
-    // Top face (Y+)
+    //Top face (Y+)
     skyboxVertices->positions[24] = {-1.0f,  1.0f, -1.0f};
     skyboxVertices->positions[25] = { 1.0f,  1.0f, -1.0f};
     skyboxVertices->positions[26] = { 1.0f,  1.0f,  1.0f};
@@ -553,7 +567,7 @@ Mesh* createSkyboxMesh()
     skyboxVertices->positions[28] = {-1.0f,  1.0f,  1.0f};
     skyboxVertices->positions[29] = {-1.0f,  1.0f, -1.0f};
 
-    // Bottom face (Y-)
+    //Bottom face (Y-)
     skyboxVertices->positions[30] = {-1.0f, -1.0f, -1.0f};
     skyboxVertices->positions[31] = {-1.0f, -1.0f,  1.0f};
     skyboxVertices->positions[32] = { 1.0f, -1.0f, -1.0f};
@@ -561,10 +575,10 @@ Mesh* createSkyboxMesh()
     skyboxVertices->positions[34] = {-1.0f, -1.0f,  1.0f};
     skyboxVertices->positions[35] = { 1.0f, -1.0f,  1.0f};
 
-    // Create the mesh 
+    //Create the mesh 
     Mesh* skyboxMesh = createMesh(skyboxVertices, 36, NULL, 0);
     
-    // Clean up
+    //Clean up
     free(skyboxVertices->positions);
     free(skyboxVertices->texCoords);
     free(skyboxVertices->normals);

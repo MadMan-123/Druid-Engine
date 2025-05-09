@@ -229,7 +229,7 @@ void freeMat(f32** mat, Vec2i size)
 
 
 
-// Create an identity matrix
+//Create an identity matrix
 inline Mat4 mat4Identity() 
 {
     Mat4 result = {0};
@@ -243,7 +243,7 @@ inline Mat4 mat4Identity()
     return result;
 }
 
-// Create a zero matrix
+//Create a zero matrix
 inline Mat4 mat4Zero() 
 {
     Mat4 result;
@@ -257,7 +257,7 @@ inline Mat4 mat4Zero()
     return result;
 }
 
-// Create a translation matrix
+//Create a translation matrix
 inline Mat4 mat4Translate(Vec3 position) 
 {
    	//translate matrix
@@ -272,7 +272,7 @@ inline Mat4 mat4Translate(Vec3 position)
 }
 
 
-// Create a scale matrix
+//Create a scale matrix
 inline Mat4 mat4Scale(float scale) 
 {
     Mat4 result = mat4Zero();
@@ -283,7 +283,7 @@ inline Mat4 mat4Scale(float scale)
     return result;
 }
 
-// Create a scale matrix with different scales per axis
+//Create a scale matrix with different scales per axis
 inline Mat4 mat4ScaleVec(Vec3 scale) 
 {
     Mat4 result = mat4Zero();
@@ -294,7 +294,7 @@ inline Mat4 mat4ScaleVec(Vec3 scale)
     return result;
 }
 
-// Create rotation matrix around X axis
+//Create rotation matrix around X axis
 inline Mat4 mat4RotateX(float angleRadians) 
 {
     Mat4 result = mat4Identity();
@@ -309,7 +309,7 @@ inline Mat4 mat4RotateX(float angleRadians)
     return result;
 }
 
-// Create rotation matrix around Y axis
+//Create rotation matrix around Y axis
 inline Mat4 mat4RotateY(float angleRadians) 
 {
     Mat4 result = mat4Identity();
@@ -324,7 +324,7 @@ inline Mat4 mat4RotateY(float angleRadians)
     return result;
 }
 
-// Create rotation matrix around Z axis
+//Create rotation matrix around Z axis
 inline Mat4 mat4RotateZ(float angleRadians) 
 {
     Mat4 result = mat4Identity();
@@ -339,7 +339,7 @@ inline Mat4 mat4RotateZ(float angleRadians)
     return result;
 }
 
-// Create rotation matrix for arbitrary axis
+//Create rotation matrix for arbitrary axis
 inline Mat4 mat4Rotate(float angleRadians, Vec3 axis) 
 {
     Mat4 result = mat4Identity();
@@ -348,7 +348,7 @@ inline Mat4 mat4Rotate(float angleRadians, Vec3 axis)
     float s = sinf(angleRadians);
     float t = 1.0f - c;
     
-    // Normalize axis
+    //Normalize axis
     float len = sqrtf(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
     if (len > 0.0001f) 
     {
@@ -372,7 +372,7 @@ inline Mat4 mat4Rotate(float angleRadians, Vec3 axis)
     return result;
 }
 
-// Matrix multiplication
+//Matrix multiplication
 inline Mat4 mat4Mul(Mat4 a, Mat4 b)
 {
 
@@ -394,7 +394,7 @@ inline Mat4 mat4Mul(Mat4 a, Mat4 b)
 
 
 
-// Matrix addition
+//Matrix addition
 inline Mat4 mat4Add(Mat4 a, Mat4 b)
 {
     Mat4 result;
@@ -410,7 +410,7 @@ inline Mat4 mat4Add(Mat4 a, Mat4 b)
     return result;
 }
 
-// Matrix subtraction
+//Matrix subtraction
 inline Mat4 mat4Sub(Mat4 a, Mat4 b)
 {
     Mat4 result;
@@ -426,7 +426,7 @@ inline Mat4 mat4Sub(Mat4 a, Mat4 b)
     return result;
 }
 
-// Scale all elements of a matrix
+//Scale all elements of a matrix
 inline Mat4 mat4Scale(Mat4 a, float scale)
 {
     Mat4 result;
@@ -466,7 +466,7 @@ Mat4 mat3ToMat4(const Mat3& m3)
             m4.m[i][j] = m3.m[i][j];
         }
     }
-    // Last row/column should be [0,0,0,1] for pure rotation
+    //Last row/column should be [0,0,0,1] for pure rotation
     m4.m[3][0] = m4.m[3][1] = m4.m[3][2] = 0.0f;
     m4.m[0][3] = m4.m[1][3] = m4.m[2][3] = 0.0f;
     m4.m[3][3] = 1.0f;
@@ -474,7 +474,7 @@ Mat4 mat3ToMat4(const Mat3& m3)
 }
 
 
-// Transform a vector by a matrix
+//Transform a vector by a matrix
 inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
 {
     Vec4 result;
@@ -517,7 +517,7 @@ inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d)
 
 inline float mat4Determinant(Mat4 m) 
 {
-    // Calculate the cofactors of the first row
+    //Calculate the cofactors of the first row
     float c00 = m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
                m.m[1][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) +
                m.m[1][3] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]);
@@ -534,11 +534,11 @@ inline float mat4Determinant(Mat4 m)
                m.m[1][1] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]) +
                m.m[1][2] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]);
     
-    // Calculate determinant using cofactors of first row
+    //Calculate determinant using cofactors of first row
     return m.m[0][0] * c00 - m.m[0][1] * c01 + m.m[0][2] * c02 - m.m[0][3] * c03;
 }
 
-// Invert a 4x4 matrix
+//Invert a 4x4 matrix
 inline Mat4 mat4Inverse(Mat4 m)
 {
     float det = mat4Determinant(m);
@@ -551,7 +551,7 @@ inline Mat4 mat4Inverse(Mat4 m)
     float invDet = 1.0f / det;
     Mat4 result;
     
-    // Calculate the adjugate matrix (transpose of cofactor matrix)
+    //Calculate the adjugate matrix (transpose of cofactor matrix)
     result.m[0][0] = invDet * (
         m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
         m.m[1][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) +
@@ -651,7 +651,7 @@ inline Mat4 mat4Inverse(Mat4 m)
     return result;
 }
 
-// Calculate the transpose of a matrix
+//Calculate the transpose of a matrix
 inline Mat4 mat4Transpose(Mat4 m) 
 {
     Mat4 result;
@@ -668,7 +668,7 @@ inline Mat4 mat4Transpose(Mat4 m)
 }
 
 
-// Copy matrix to f32** format (for compatibility with existing code)
+//Copy matrix to f32** format (for compatibility with existing code)
 inline void mat4ToPointers(Mat4 mat, f32** dest) 
 {
     for (int i = 0; i < 4; i++)
@@ -680,7 +680,7 @@ inline void mat4ToPointers(Mat4 mat, f32** dest)
     }
 }
 
-// Convert f32** to Mat4 format
+//Convert f32** to Mat4 format
 inline Mat4 pointersToMat4(f32** src) 
 {
     Mat4 result;
@@ -726,7 +726,7 @@ f32 degrees(f32 radians)
 {
     return radians * (180.0f / PI);
 }
-// Helper quaternion functions you'll need
+//Helper quaternion functions you'll need
 Vec4 quatIdentity()
 {
     return (Vec4){0.0f, 0.0f, 0.0f, 1.0f};
@@ -734,7 +734,7 @@ Vec4 quatIdentity()
 
 Vec4 quatFromAxisAngle(Vec3 axis, f32 angle) 
     {
-    // Check for zero-length axis first (safe, avoids NaN)
+    //Check for zero-length axis first (safe, avoids NaN)
     f32 axisLength = v3Mag(axis);
     const f32 EPSILON = 1e-6f;  // Small threshold for floating-point precision
 
@@ -743,7 +743,7 @@ Vec4 quatFromAxisAngle(Vec3 axis, f32 angle)
         return { 0.0f, 0.0f, 0.0f, 1.0f };  // Identity quaternion
     }
 
-    // Normalize the axis (safe since length > EPSILON)
+    //Normalize the axis (safe since length > EPSILON)
     Vec3 normalizedAxis = {
         axis.x / axisLength,
         axis.y / axisLength,
@@ -781,21 +781,21 @@ inline Vec4 quatNormalize(Vec4 q)
     return quatIdentity();
 }
 
-// Transform a vector by a quaternion
+//Transform a vector by a quaternion
 inline Vec3 quatRotateVec3(Vec4 q, Vec3 v)
 {
-    // Create a pure quaternion from the vector
+    //Create a pure quaternion from the vector
     Vec4 qv = {v.x, v.y, v.z, 0.0f};
     
-    // q * v * q^-1 (using quaternion rotation formula)
-    // For a unit quaternion, q^-1 = conjugate(q) = (-x, -y, -z, w)
+    //q * v * q^-1 (using quaternion rotation formula)
+    //For a unit quaternion, q^-1 = conjugate(q) = (-x, -y, -z, w)
     Vec4 qInv = {-q.x, -q.y, -q.z, q.w};
     Vec4 result = quatMul(quatMul(q, qv), qInv);
     
     return (Vec3){result.x, result.y, result.z};
 }
 
-// Convert quaternion to rotation matrix
+//Convert quaternion to rotation matrix
 inline Mat4 quatToRotationMatrix(Vec4 q)
 {
     Mat4 result = mat4Identity();

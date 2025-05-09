@@ -22,6 +22,7 @@ typedef struct {
 	Transform* transform; 
 } MeshColliderState;
 
+//NEW COLLIDERS, need testing
 Collider* createCubeCollider(Vec3 scale)
 {
 	Collider* col = (Collider*)malloc(sizeof(Collider));
@@ -42,6 +43,7 @@ Collider* createCubeCollider(Vec3 scale)
     
 	return col;
 }
+
 Collider* createMeshCollider(Mesh* mesh, Transform* transform) 
 {
 	Collider* col = (Collider*)malloc(sizeof(Collider));

@@ -2,7 +2,7 @@
 #include <iostream>
 #include <fstream>
 
-// Utility functions
+//Utility functions
 std::string loadShader(const std::string& fileName)
 {
     std::ifstream file;
@@ -73,7 +73,7 @@ u32 createShader(const std::string& text, unsigned int type)
     return shader;
 }
 
-// Main shader functions
+//Main shader functions
 u32 createProgram(u32 shader)
 {
     u32 program = glCreateProgram();
@@ -104,7 +104,7 @@ u32 createComputeProgram(const std::string& computePath)
      "Error: Shader program not valid");
 
  
-    // Clean up the shader as it's now linked to the program
+    //Clean up the shader as it's now linked to the program
     glDetachShader(program, shader);
     glDeleteShader(shader);
     
@@ -149,7 +149,7 @@ u32 createGraphicsProgram(const std::string& vertPath, const std::string& fragPa
         true,
         "Error: Shader program not valid");
 
-    // Clean up the shaders as they're now linked to the program
+    //Clean up the shaders as they're now linked to the program
     glDetachShader(program, vertexShader);
     glDetachShader(program, fragmentShader);
     glDeleteShader(vertexShader);

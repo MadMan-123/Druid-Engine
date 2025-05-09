@@ -68,11 +68,13 @@ void run(Application* app)
 
 void initSystems(const Application* app)
 {
+    //get default values for the display
 	f32 width = app->width == 0 ? 1920 : app->width;
 	f32 height = app->height == 0 ? 1080 : app->height;
 	//initialize the display
 	initDisplay(app->display,width, height);
 
+    //call the init function pointer
 	app->init();
 
 	//setup timer
