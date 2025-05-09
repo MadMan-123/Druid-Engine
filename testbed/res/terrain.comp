@@ -9,19 +9,19 @@ layout (std430, binding = 0) buffer TerrainData {
 };
 
 // Terrain parameters
-uniform int gridSize;         // Size of the grid (sizeX from C++ code)
-uniform float heightScale;    // Scale factor for height values
-uniform int seed;             // Random seed for terrain generation
+uniform int gridSize;        
+uniform float heightScale;    
+uniform int seed;            
 
-// Good hash function for 2D coordinates
-float hash21(vec2 p) {
+float hash21(vec2 p) 
+{
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
 }
 
-// Value noise with good 2D variation
-float valueNoise(vec2 p) {
+float valueNoise(vec2 p)
+{
     vec2 i = floor(p);
     vec2 f = fract(p);
 
@@ -38,8 +38,9 @@ float valueNoise(vec2 p) {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Fractal Brownian Motion for terrain generation
-float fbm(vec2 p) {
+// Fractal Brownian Motion 
+float fbm(vec2 p) 
+{
     // Create a rotation matrix to break up directional patterns
     mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
 
@@ -59,7 +60,37 @@ float fbm(vec2 p) {
     return sum;
 }
 
-void main() {
+
+float islandMask(vec2 coord, float size) 
+{
+    // Normalize coordinates 
+    vec2 uv = coord / size;
+
+    // Create distance from center (with optional elliptical shape)
+    vec2 center = vec2(0.5);
+    float dist = distance(uv, center);
+
+    // Island shape parameters
+    float islandRadius = 0.4;       
+    float beachStart = 0.25;        
+    float beachWidth = 0.1;         
+    float cliffStart = 0.45;        
+    float cliffEnd = 0.5;           
+
+    // Calculate different zones
+    float islandCore = smoothstep(islandRadius, beachStart, dist);
+    float beach = smoothstep(beachStart, beachStart + beachWidth, dist) * 0.7;
+    float cliff = smoothstep(cliffStart, cliffEnd, dist);
+
+    // Combine zones
+    float land = islandCore + beach;
+    float mask = mix(land, 0.0, cliff);
+
+    return mask;
+}
+
+void main() 
+{
     // Get the current position
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
@@ -72,12 +103,19 @@ void main() {
     // Add seed to position for variety
     vec2 pos = vec2(coord) + vec2(seed);
 
-    float scale = heightScale * 5;
+    float scale = heightScale * 25;
     // Multi-octave noise for more interesting terrain
     float height = fbm(pos * 0.05) * scale;
     height += fbm(pos * 0.1) * scale * 0.5;
     height += valueNoise(pos * 0.2) * scale * 0.25;
+    // Apply island mask
+    float mask = islandMask(vec2(coord), float(gridSize) * 1);
+    height *= mask;
 
+    // Optional: Add some negative height for water around the island
+    if (mask < 0.3) {
+        height -= (0.3 - mask) * 10.0;
+    }
     // Store the height value
     terrainData[index] = height;
 }

@@ -233,8 +233,10 @@ void freeMat(f32** mat, Vec2i size)
 inline Mat4 mat4Identity() 
 {
     Mat4 result = {0};
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 4; j++) 
+        {
             result.m[i][j] = (i == j) ? 1.0f : 0.0f;
         }
     }
@@ -245,8 +247,10 @@ inline Mat4 mat4Identity()
 inline Mat4 mat4Zero() 
 {
     Mat4 result;
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++) 
+    {
+        for (int j = 0; j < 4; j++)
+        {
             result.m[i][j] = 0.0f;
         }
     }
@@ -346,7 +350,8 @@ inline Mat4 mat4Rotate(float angleRadians, Vec3 axis)
     
     // Normalize axis
     float len = sqrtf(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-    if (len > 0.0001f) {
+    if (len > 0.0001f) 
+    {
         axis.x /= len;
         axis.y /= len;
         axis.z /= len;
@@ -373,9 +378,12 @@ inline Mat4 mat4Mul(Mat4 a, Mat4 b)
 
     Mat4 result = mat4Zero();
 
-    for (int col = 0; col < 4; ++col) {
-        for (int row = 0; row < 4; ++row) {
-            for (int i = 0; i < 4; ++i) {
+    for (int col = 0; col < 4; ++col) 
+    {
+        for (int row = 0; row < 4; ++row) 
+        {
+            for (int i = 0; i < 4; ++i) 
+            {
                 result.m[col][row] += a.m[i][row] * b.m[col][i];
             }
         }
@@ -387,11 +395,14 @@ inline Mat4 mat4Mul(Mat4 a, Mat4 b)
 
 
 // Matrix addition
-inline Mat4 mat4Add(Mat4 a, Mat4 b) {
+inline Mat4 mat4Add(Mat4 a, Mat4 b)
+{
     Mat4 result;
     
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
             result.m[i][j] = a.m[i][j] + b.m[i][j];
         }
     }
@@ -400,11 +411,14 @@ inline Mat4 mat4Add(Mat4 a, Mat4 b) {
 }
 
 // Matrix subtraction
-inline Mat4 mat4Sub(Mat4 a, Mat4 b) {
+inline Mat4 mat4Sub(Mat4 a, Mat4 b)
+{
     Mat4 result;
     
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
             result.m[i][j] = a.m[i][j] - b.m[i][j];
         }
     }
@@ -413,11 +427,14 @@ inline Mat4 mat4Sub(Mat4 a, Mat4 b) {
 }
 
 // Scale all elements of a matrix
-inline Mat4 mat4Scale(Mat4 a, float scale) {
+inline Mat4 mat4Scale(Mat4 a, float scale)
+{
     Mat4 result;
     
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
             result.m[i][j] = a.m[i][j] * scale;
         }
     }
@@ -425,9 +442,41 @@ inline Mat4 mat4Scale(Mat4 a, float scale) {
     return result;
 }
 
+
+Mat3 mat4ToMat3(const Mat4& m4) 
+{
+    Mat3 m3;
+    for (int i = 0; i < 3; i++) 
+    {
+        for (int j = 0; j < 3; j++) 
+        {
+            m3.m[i][j] = m4.m[i][j];
+        }
+    }
+    return m3;
+}
+
+Mat4 mat3ToMat4(const Mat3& m3) 
+{
+    Mat4 m4 = mat4Identity();
+    for (int i = 0; i < 3; i++) 
+    {
+        for (int j = 0; j < 3; j++) 
+        {
+            m4.m[i][j] = m3.m[i][j];
+        }
+    }
+    // Last row/column should be [0,0,0,1] for pure rotation
+    m4.m[3][0] = m4.m[3][1] = m4.m[3][2] = 0.0f;
+    m4.m[0][3] = m4.m[1][3] = m4.m[2][3] = 0.0f;
+    m4.m[3][3] = 1.0f;
+    return m4;
+}
+
+
 // Transform a vector by a matrix
 inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
- {
+{
     Vec4 result;
     
     result.x = m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z + m.m[0][3] * v.w;
@@ -438,8 +487,8 @@ inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
     return result;
 }
 
-// Transform a 3D point (implicitly setting w=1)
-inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p) {
+inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p) 
+{
     Vec4 temp;
     
     temp.x = m.m[0][0] * p.x + m.m[0][1] * p.y + m.m[0][2] * p.z + m.m[0][3];
@@ -447,15 +496,16 @@ inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p) {
     temp.z = m.m[2][0] * p.x + m.m[2][1] * p.y + m.m[2][2] * p.z + m.m[2][3];
     temp.w = m.m[3][0] * p.x + m.m[3][1] * p.y + m.m[3][2] * p.z + m.m[3][3];
     
-    if (fabs(temp.w) > 0.0001f) {
+    if (fabs(temp.w) > 0.0001f)
+    {
         return {temp.x / temp.w, temp.y / temp.w, temp.z / temp.w};
     }
     
     return {temp.x, temp.y, temp.z};
 }
 
-// Transform a 3D direction vector (ignoring translation, implicitly setting w=0)
-inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d) {
+inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d) 
+{
     Vec3 result;
     
     result.x = m.m[0][0] * d.x + m.m[0][1] * d.y + m.m[0][2] * d.z;
@@ -465,8 +515,8 @@ inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d) {
     return result;
 }
 
-// Calculate the determinant of a 4x4 matrix
-inline float mat4Determinant(Mat4 m) {
+inline float mat4Determinant(Mat4 m) 
+{
     // Calculate the cofactors of the first row
     float c00 = m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
                m.m[1][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) +
@@ -489,11 +539,12 @@ inline float mat4Determinant(Mat4 m) {
 }
 
 // Invert a 4x4 matrix
-inline Mat4 mat4Inverse(Mat4 m) {
+inline Mat4 mat4Inverse(Mat4 m)
+{
     float det = mat4Determinant(m);
     
-    // If determinant is zero, return identity
-    if (fabs(det) < 0.0001f) {
+    if (fabs(det) < 0.0001f)
+    {
         return mat4Identity();
     }
     
@@ -605,8 +656,10 @@ inline Mat4 mat4Transpose(Mat4 m)
 {
     Mat4 result;
     
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 4; j++) 
+        {
             result.m[i][j] = m.m[j][i];
         }
     }
@@ -616,19 +669,25 @@ inline Mat4 mat4Transpose(Mat4 m)
 
 
 // Copy matrix to f32** format (for compatibility with existing code)
-inline void mat4ToPointers(Mat4 mat, f32** dest) {
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+inline void mat4ToPointers(Mat4 mat, f32** dest) 
+{
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
             dest[i][j] = mat.m[i][j];
         }
     }
 }
 
 // Convert f32** to Mat4 format
-inline Mat4 pointersToMat4(f32** src) {
+inline Mat4 pointersToMat4(f32** src) 
+{
     Mat4 result;
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++) 
+    {
+        for (int j = 0; j < 4; j++) 
+        {
             result.m[i][j] = src[i][j];
         }
     }
@@ -673,12 +732,14 @@ Vec4 quatIdentity()
     return (Vec4){0.0f, 0.0f, 0.0f, 1.0f};
 }
 
-Vec4 quatFromAxisAngle(Vec3 axis, f32 angle) {
+Vec4 quatFromAxisAngle(Vec3 axis, f32 angle) 
+    {
     // Check for zero-length axis first (safe, avoids NaN)
     f32 axisLength = v3Mag(axis);
     const f32 EPSILON = 1e-6f;  // Small threshold for floating-point precision
 
-    if (axisLength < EPSILON) {
+    if (axisLength < EPSILON)
+    {
         return { 0.0f, 0.0f, 0.0f, 1.0f };  // Identity quaternion
     }
 
@@ -713,7 +774,8 @@ Vec4 quatMul(Vec4 q1, Vec4 q2)
 inline Vec4 quatNormalize(Vec4 q)
 {
     f32 length = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-    if (length > 0.0001f) {
+    if (length > 0.0001f)
+    {
         return (Vec4){q.x / length, q.y / length, q.z / length, q.w / length};
     }
     return quatIdentity();

@@ -111,7 +111,7 @@ packages/
 log/
 logs/
 
-testbed/res/
+testbed/res/128x128
 
 # Temporary files
 temp/

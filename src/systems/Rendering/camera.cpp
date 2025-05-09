@@ -10,7 +10,23 @@ Mat4 getViewProjection(const Camera* camera)
     Mat4 view = mat4LookAt(camera->pos, target, up);
     return mat4Mul(camera->projection, view);
 }
-
+Mat4 getView(const Camera* camera, bool removeTranslation = false) 
+{
+    Vec3 forward = quatTransform(camera->orientation, v3Forward);
+    Vec3 up = quatTransform(camera->orientation, v3Up);
+    Vec3 target = v3Add(camera->pos, forward);
+    
+    Mat4 view = mat4LookAt(camera->pos, target, up);
+    
+    if (removeTranslation) 
+{
+        // Proper way to remove translation while preserving rotation
+        Mat3 rotationPart = mat4ToMat3(view);
+        view = mat3ToMat4(rotationPart);
+    }
+    
+    return view;
+}
 
 void initCamera(Camera* camera, const Vec3& pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip)
 {

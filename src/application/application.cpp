@@ -2,12 +2,16 @@
 #include <iostream>
 
 
-double performanceFreq = 0.0;
-u64 previousTime = 0;
-float frameCount = 0;
 
-double FPS = 0.0;
-int fps = 0;
+//perforamance and frame rate tracking
+f64 performanceFreq = 0.0;
+u64 previousTime = 0;
+f32 frameCount = 0;
+
+f64 FPS = 0.0;
+u32 fps = 0;
+
+//create the application
 Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)
 {
 	//create the application
@@ -32,19 +36,23 @@ Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat rend
 	assert(destroy != NULL && "Destroy function pointer is null");
 	
 	
+    //set the function pointers
 	app->init = init;
 	app->update = update;
 	app->render = render;
 	app->destroy = destroy;
 
-	
+	//return the application
 	return app;
 }
 
+//destroy the application
 void destroyApplication(Application* app)
 {
+    //destroy the display
 	onDestroy(app->display);
-	free(app);
+    //free app data	
+    free(app);
 }
 
 void run(Application* app)
@@ -60,15 +68,16 @@ void run(Application* app)
 
 void initSystems(const Application* app)
 {
-	
+	f32 width = app->width == 0 ? 1920 : app->width;
+	f32 height = app->height == 0 ? 1080 : app->height;
 	//initialize the display
-	initDisplay(app->display);
+	initDisplay(app->display,width, height);
 
 	app->init();
 
 	//setup timer
 	previousTime = SDL_GetPerformanceCounter();
-	performanceFreq = (double)SDL_GetPerformanceFrequency();
+	performanceFreq = (f64)SDL_GetPerformanceFrequency();
 
 }
 

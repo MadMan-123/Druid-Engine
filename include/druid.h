@@ -133,6 +133,10 @@ typedef struct {
     f32 m[4][4];
 } Mat4;
 
+typedef struct {
+	f32 m[3][3];
+} Mat3;
+
 //2D vector methods
 DAPI Vec2 v2Add(Vec2 a, Vec2 b);
 DAPI Vec2 v2Sub(Vec2 a, Vec2 b);
@@ -223,7 +227,8 @@ DAPI Mat4 mat4Inverse(Mat4 m);
 
 
 DAPI Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ);
-
+DAPI Mat3 mat4ToMat3(const Mat4& m4);
+DAPI Mat4 mat3ToMat4(const Mat3& m3) ;
 //helper tools
 DAPI f32 clamp(f32 value, f32 minVal, f32 maxVal);
 DAPI f32 degrees(f32 radians);
@@ -366,31 +371,6 @@ DAPI Mat4 getModel(const Transform* transform);
 	
 
 
-//Collier
-typedef enum
-{
-	Circle,
-	Box
-} ColliderType;
-
-typedef struct {
-	ColliderType type;
-	bool isColliding;
-	int layer;
-	void* state;
-	void (*response)(uint32_t self, uint32_t other);
-} Collider;
-
-
-//Functions
-DAPI Collider* createCircleCollider(f32 radius);
-DAPI Collider* createBoxCollider(Vec2 scale);
-DAPI bool cleanCollider(Collider* col);
-DAPI bool isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB);
-DAPI bool isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB);
-DAPI f32 getRadius(Collider* col);
-DAPI Vec2 getScale(Collider* col);
-DAPI bool setBoxScale(Collider* col, Vec2 scale);
 
 //Camera
 typedef struct
@@ -412,6 +392,7 @@ DAPI void pitch(Camera* camera, f32 angle);
 
 DAPI void rotateY(Camera* camera,f32 angle);
 
+DAPI Mat4 getView(const Camera* camera, bool removeTranslation = false); 
 
 //Display 
 typedef struct 
@@ -428,7 +409,7 @@ typedef struct
 
 //Display functions 
 
-DAPI void initDisplay(Display* display);
+DAPI void initDisplay(Display* display, f32 width = 1920, f32 height = 1080);
 DAPI void swapBuffer(const Display* display);
 DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
 
@@ -471,13 +452,13 @@ DAPI void updateShaderMVP(const u32 shader, const Transform& transform, const Ca
 
 //Textures
 //32 textures MAX
-DAPI void bindTexture(u32 texture,u32 unit);
+DAPI void bindTexture(u32 texture,unsigned int unit, GLenum type);
 //return the texture handle 
 DAPI u32 initTexture(const std::string& fileName);
 //free texture from memory
 DAPI void freeTexture(u32 texture); 
 
-
+DAPI u32 createCubeMapTexture(const std::vector<std::string>& faces);
 //Terrain stuff
 
 typedef struct{
@@ -532,8 +513,12 @@ DAPI void initModel(Mesh* mesh,const IndexedModel &model);
 DAPI void freeMesh(Mesh* mesh);
 
 //creates a plane essentially
-DAPI Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heightScale, const char* computeShaderPath); 
+DAPI Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heightScale, const char* computeShaderPath, HeightMap* output); 
+DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize);
 
+DAPI Mesh* createBoxMesh(); 
+
+DAPI Mesh* createSkyboxMesh(); 
 //Keys
 // Keyboard keys enum
 typedef enum {
@@ -703,7 +688,12 @@ typedef struct
 	//open gl context with sdl within the display	
 	Display* display;
 	ApplicationState state;
-	double fps;		
+	
+	f32 width;
+	f32 height;	
+
+	f64 fps;	
+
 }Application;
 
 //function pointer typedef
@@ -733,3 +723,33 @@ DAPI void getMouseDelta(f32*x, f32*y);
 
 
 
+//Collier
+typedef enum
+{
+	Circle,
+	Box,
+	Cube,
+	MeshCollider
+} ColliderType;
+
+typedef struct {
+	ColliderType type;
+	bool isColliding;
+	int layer;
+	void* state;
+	void (*response)(uint32_t self, uint32_t other);
+} Collider;
+
+
+//Functions
+DAPI Collider* createCircleCollider(f32 radius);
+DAPI Collider* createBoxCollider(Vec2 scale);
+DAPI bool cleanCollider(Collider* col);
+DAPI bool isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB);
+DAPI bool isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB);
+DAPI f32 getRadius(Collider* col);
+DAPI Vec2 getScale(Collider* col);
+DAPI bool setBoxScale(Collider* col, Vec2 scale);
+
+DAPI Collider* createCubeCollider(Vec3 scale);
+DAPI Collider* createMeshCollider(Mesh* mesh, Transform* transform); 

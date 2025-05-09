@@ -13,7 +13,58 @@ typedef struct
 	Vec2 scale;
 }BoxCollider;
 
+typedef struct {
+	Vec3 scale;
+} Box3DCollider;
 
+typedef struct {
+	Mesh* mesh;
+	Transform* transform; 
+} MeshColliderState;
+
+Collider* createCubeCollider(Vec3 scale)
+{
+	Collider* col = (Collider*)malloc(sizeof(Collider));
+	if (!col) return NULL;
+    
+	col->type = Cube;
+	col->state = malloc(sizeof(Box3DCollider));
+	if (!col->state)
+    {
+		free(col);
+		return NULL;
+	}
+    
+	((Box3DCollider*)col->state)->scale = scale;
+	col->layer = 0;
+	col->isColliding = false;
+	col->response = NULL;
+    
+	return col;
+}
+Collider* createMeshCollider(Mesh* mesh, Transform* transform) 
+{
+	Collider* col = (Collider*)malloc(sizeof(Collider));
+	if (!col) return NULL;
+    
+	col->type = MeshCollider;
+	col->state = malloc(sizeof(MeshColliderState));
+	if (!col->state)
+    {
+		free(col);
+		return NULL;
+	}
+    
+	MeshColliderState* state = (MeshColliderState*)col->state;
+	state->mesh = mesh;
+	state->transform = transform;
+    
+	col->layer = 0;
+	col->isColliding = false;
+	col->response = NULL;
+    
+	return col;
+}
 Collider* createCircleCollider(float radius)
 {
 	//Allocate memory for the collider

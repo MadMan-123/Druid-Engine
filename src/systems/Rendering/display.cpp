@@ -20,12 +20,12 @@ void clearDisplay(float r, float g, float b, float a)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear colour and depth buffer - set colour to colour defined in glClearColor
 }
 
-void initDisplay(Display* display)
+void initDisplay(Display* display, f32 width = 1920, f32 height = 1080)
 {
 	
 	display->sdlWindow = nullptr; //initialise to generate null access violation for debugging. 
-	display->screenWidth = 1024.0f;
-	display->screenHeight = 768.0f; 
+	display->screenWidth = width; //set the width and height of the window
+	display->screenHeight = height; 
 	SDL_Init(SDL_INIT_EVENTS); //initalise everything
 
 	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8); //Min no of bits used to diplay colour

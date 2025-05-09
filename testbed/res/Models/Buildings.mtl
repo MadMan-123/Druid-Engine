@@ -1,0 +1,44 @@
+# Blender 4.1.1 MTL File: 'Buildings.blend'
+# www.blender.org
+
+newmtl Door
+Ns 475.373901
+Ka 1.000000 1.000000 1.000000
+Ks 0.317544 0.317544 0.317544
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd C:/Door_1.png
+map_Bump -bm 1.000000 C:/Door_1NormalMap.png
+
+newmtl House_Plaster
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd C:/Building_plaster.png
+
+newmtl House_Wood
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.150000
+d 1.000000
+illum 2
+map_Kd C:/Building_wood.png
+
+newmtl Window
+Ka 1.000000 1.000000 1.000000
+Ks 0.921053 0.921053 0.921053
+Ke 0.000000 0.000000 0.000000
+Ni 1.100002
+illum 2
+map_Kd C:/Window_1.png
+map_Ns C:/Window_1_R.png
+map_d C:/Window_1_A.png
+map_Bump -bm 0.900000 C:/Window_1_N.png
