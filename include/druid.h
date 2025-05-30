@@ -104,7 +104,9 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #endif
 #endif
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 //=====================================================================================================================
 //MATHS
 typedef struct {
@@ -753,3 +755,6 @@ DAPI bool setBoxScale(Collider* col, Vec2 scale);
 
 DAPI Collider* createCubeCollider(Vec3 scale);
 DAPI Collider* createMeshCollider(Mesh* mesh, Transform* transform); 
+#ifdef __cplusplus
+}
+#endif

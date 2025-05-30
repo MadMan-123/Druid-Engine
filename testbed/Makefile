@@ -2,7 +2,7 @@ CXX := g++
 CFLAGS := -Wall
 CFLAGS += -g
 
-LDFLAGS := -L../bin -ldruid -L./deps -lopengl32 -lglew32 -lSDL3 
+LDFLAGS := -L../bin -ldruid -L./deps -lopengl32 -lglew32 -lSDL3 -lwinmm  
 INCLUDE := -I../include
 SRC := src
 OBJ := .obj
