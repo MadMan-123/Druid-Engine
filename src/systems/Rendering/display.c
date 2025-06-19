@@ -1,11 +1,10 @@
 #include "../../../include/druid.h"
-#include <iostream>
 
-void returnError(const std::string& errorString)
+void returnError(const char* errorString)
 {
-	std::cout << errorString << '\n';
-	std::cout << "press any  key to quit...";
-	std::cin.get();
+	printf("[DISPLAY ERROR]%s/n",errorString);
+	printf("press any key to quit...\n");
+	getchar();
 	SDL_Quit();
 }
 
@@ -20,10 +19,10 @@ void clearDisplay(float r, float g, float b, float a)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear colour and depth buffer - set colour to colour defined in glClearColor
 }
 
-void initDisplay(Display* display, f32 width = 1920, f32 height = 1080)
+void initDisplay(Display* display, f32 width, f32 height)
 {
     //create all necessary data for the display	
-	display->sdlWindow = nullptr; //initialise to generate null access violation for debugging. 
+	display->sdlWindow = NULL; //initialise to generate null access violation for debugging. 
 	display->screenWidth = width; //set the width and height of the window
 	display->screenHeight = height; 
 	SDL_Init(SDL_INIT_EVENTS); //initalise everything
@@ -39,14 +38,14 @@ void initDisplay(Display* display, f32 width = 1920, f32 height = 1080)
 	display->sdlWindow = SDL_CreateWindow("Game Window",(int)display->screenWidth, (int)display->screenHeight, SDL_WINDOW_OPENGL); // create window
 	
     //null check
-	if (display->sdlWindow == nullptr)
+	if (display->sdlWindow == NULL)
 	{
 		returnError("window failed to create");
 	}
     //create the context
 	display->glContext = SDL_GL_CreateContext(display->sdlWindow);
     //null check
-	if (display->glContext == nullptr)
+	if (display->glContext == NULL)
 	{
 		returnError("SDL_GL context failed to create");
 	}

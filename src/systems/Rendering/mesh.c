@@ -1,39 +1,49 @@
 #include "../../../include/druid.h"
-#include <vector>
-#include <ctime>
-
-#include <cmath>
 Mesh* createMesh(Vertices* vertices, u32 numVertices, u32* indices, u32 numIndices)
 {
 	Mesh* mesh = (Mesh*)malloc(sizeof(Mesh));
 	IndexedModel model;
+
+	model.positionsCount = numVertices;
+	model.texCoordsCount = numVertices;
+	model.normalsCount = numVertices;
+	model.indicesCount = numIndices;
+
+	model.positions = (Vec3*)malloc(sizeof(Vec3) * numVertices);
+	model.texCoords = (Vec2*)malloc(sizeof(Vec2) * numVertices);
+	model.normals = (Vec3*)malloc(sizeof(Vec3) * numVertices);
+	model.indices = (u32*)malloc(sizeof(u32) * numIndices);
+
 	if(vertices != NULL)
     { 
-		
 		vertices->ammount = numVertices;
 		for (u32 i = 0; i < numVertices; i++)
 		{
-			model.positions.push_back(vertices->positions[i]);
-			model.texCoords.push_back(vertices->texCoords[i]);
-			model.normals.push_back(vertices->normals[i]);
+			model.positions[i] = vertices->positions[i];
+			model.texCoords[i] = vertices->texCoords[i];
+			model.normals[i] = vertices->normals[i];
 		}
 	}
 	if(indices != NULL)
 	{
 		for (u32 i = 0; i < numIndices; i++)
-			model.indices.push_back(indices[i]);
+			model.indices[i] = indices[i];
 	}
-	initModel(mesh,model);
+	initModel(mesh, model);
 
+	free(model.positions);
+	free(model.texCoords);
+	free(model.normals);
+	free(model.indices);
 
 	return mesh;
 }
 
 
-void initModel(Mesh* mesh,const IndexedModel &model)
+void initModel(Mesh* mesh,const IndexedModel model)
 {
 	
-	mesh->drawCount = model.indices.size();
+	mesh->drawCount = model.indicesCount;
 
 	//generate our VAO to store the state of our vertex buffer
 	glGenVertexArrays(1, &mesh->vao);
@@ -45,34 +55,30 @@ void initModel(Mesh* mesh,const IndexedModel &model)
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
 	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::POSITION_VERTEXBUFFER]);
 	glBufferStorage(GL_ARRAY_BUFFER,
-                model.positions.size() * sizeof(model.positions[0]),
-                &model.positions[0],
-                GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
+				model.positionsCount * sizeof(model.positions[0]),
+				model.positions,
+				GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
 	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::TEXCOORD_VB]); 
-	glBufferData(GL_ARRAY_BUFFER, model.texCoords.size() * sizeof(model.texCoords[0]), &model.texCoords[0], GL_STATIC_DRAW);
-	//move the data to the GPU - type of data, size of data, starting address (pointer) of data, where do we store the data on the GPU
+	glBufferData(GL_ARRAY_BUFFER, model.texCoordsCount * sizeof(model.texCoords[0]), model.texCoords, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
 	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::NORMAL_VB]);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(model.normals[0]) * model.normals.size(), &model.normals[0], GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(model.normals[0]) * model.normalsCount, model.normals, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-	
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->vab[Mesh::INDEX_VB]);
-
-	//move the data to the GPU - type of data, size of data, starting address (pointer) of data, where do we store the data on the GPU
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(model.indices[0]), &model.indices[0], GL_STATIC_DRAW);
-
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indicesCount * sizeof(model.indices[0]), model.indices, GL_STATIC_DRAW);
 	
 	glBindVertexArray(0); // unbind our VAO
 }
+
 void freeMesh(Mesh *mesh)
 {
 	free(mesh);
@@ -87,7 +93,7 @@ void destroyMesh(Mesh* mesh)
 	free(mesh);
 }
 
-Mesh* loadModel(const std::string& filename)
+Mesh* loadModel(const char* filename)
 {
 	Mesh* mesh = (Mesh*)malloc(sizeof(Mesh));
 
@@ -166,7 +172,7 @@ u32* createTerrainIndices(u32 cellsX, u32 cellsZ, u32* outIndexCount)
     u32 totalIndices = cellsX * cellsZ * 6;  // 2 triangles per cell, 3 indices per triangle
 
     //Allocate indices array
-    u32* indices = new u32[totalIndices];
+    u32* indices = malloc(sizeof(u32)*totalIndices);
     
     //Track index count for caller
     *outIndexCount = totalIndices;
@@ -353,12 +359,12 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
     unsigned int verticesZ = cellsZ + 1;
     unsigned int totalVertices = verticesX * verticesZ;
 
-    Vertices* vertices = new Vertices();
+    Vertices* vertices = malloc(sizeof(Vertices));
     vertices->ammount = totalVertices;
     
-    vertices->positions = new Vec3[totalVertices];
-    vertices->texCoords = new Vec2[totalVertices];
-    vertices->normals = new Vec3[totalVertices];
+    vertices->positions = malloc(sizeof(Vec3)* totalVertices);
+    vertices->texCoords = malloc(sizeof(Vec2)* totalVertices);
+    vertices->normals = malloc(sizeof(Vec3) * totalVertices);
 
     //Generate vertex data
     for (unsigned int z = 0; z < verticesZ; ++z)
@@ -376,8 +382,8 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
 
             //Texture coordinate mapping
             vertices->texCoords[idx] = {
-                static_cast<float>(x) / cellsX,  // U coordinate
-                static_cast<float>(z) / cellsZ   // V coordinate
+                (f32)(x) / cellsX,  // U coordinate
+                (f32)(z) / cellsZ   // V coordinate
             };
 
             //Normal vector (upward for flat terrain)
@@ -403,11 +409,11 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
     Mesh* terrainMesh = createMesh(terrainVertices, terrainVertices->ammount, terrainIndices, indexCount);
 
     //Clean up temporary arrays (createMesh should have made copies)
-    delete[] terrainVertices->positions;
-    delete[] terrainVertices->texCoords;
-    delete[] terrainVertices->normals;
-    delete terrainVertices;
-    delete[] terrainIndices;
+    free(terrainVertices->positions);
+    free(terrainVertices->texCoords);
+    free(terrainVertices->normals);
+    free(terrainVertices);
+    free(terrainIndices);
 
     return terrainMesh;
 }
@@ -425,40 +431,40 @@ Mesh* createBoxMesh()
     
     //Fill in vertex data for each face
     //FRONT FACE (Z+)
-    boxVertices->positions[0] = {-1.0f,  1.0f,  1.0f};
-    boxVertices->positions[1] = {-1.0f, -1.0f,  1.0f};
-    boxVertices->positions[2] = { 1.0f, -1.0f,  1.0f};
-    boxVertices->positions[3] = { 1.0f,  1.0f,  1.0f};
+    boxVertices->positions[0] = (Vec3){-1.0f,  1.0f,  1.0f};
+    boxVertices->positions[1] = (Vec3){-1.0f, -1.0f,  1.0f};
+    boxVertices->positions[2] = (Vec3){ 1.0f, -1.0f,  1.0f};
+    boxVertices->positions[3] = (Vec3){ 1.0f,  1.0f,  1.0f};
     
     //BACK FACE (Z-)
-    boxVertices->positions[4] = { 1.0f,  1.0f, -1.0f};
-    boxVertices->positions[5] = { 1.0f, -1.0f, -1.0f};
-    boxVertices->positions[6] = {-1.0f, -1.0f, -1.0f};
-    boxVertices->positions[7] = {-1.0f,  1.0f, -1.0f};
+    boxVertices->positions[4] = (Vec3){ 1.0f,  1.0f, -1.0f};
+    boxVertices->positions[5] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    boxVertices->positions[6] = (Vec3){-1.0f, -1.0f, -1.0f};
+    boxVertices->positions[7] = (Vec3){-1.0f,  1.0f, -1.0f};
     
     //LEFT FACE (X-)
-    boxVertices->positions[8] = {-1.0f,  1.0f, -1.0f};
-    boxVertices->positions[9] = {-1.0f, -1.0f, -1.0f};
-    boxVertices->positions[10] = {-1.0f, -1.0f,  1.0f};
-    boxVertices->positions[11] = {-1.0f,  1.0f,  1.0f};
+    boxVertices->positions[8] = (Vec3){-1.0f,  1.0f, -1.0f};
+    boxVertices->positions[9] = (Vec3){-1.0f, -1.0f, -1.0f};
+    boxVertices->positions[10] = (Vec3){-1.0f, -1.0f,  1.0f};
+    boxVertices->positions[11] = (Vec3){-1.0f,  1.0f,  1.0f};
     
     //RIGHT FACE (X+)
-    boxVertices->positions[12] = { 1.0f,  1.0f,  1.0f};
-    boxVertices->positions[13] = { 1.0f, -1.0f,  1.0f};
-    boxVertices->positions[14] = { 1.0f, -1.0f, -1.0f};
-    boxVertices->positions[15] = { 1.0f,  1.0f, -1.0f};
+    boxVertices->positions[12] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    boxVertices->positions[13] = (Vec3){ 1.0f, -1.0f,  1.0f};
+    boxVertices->positions[14] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    boxVertices->positions[15] = (Vec3){ 1.0f,  1.0f, -1.0f};
     
     //TOP FACE (Y+)
-    boxVertices->positions[16] = {-1.0f,  1.0f, -1.0f};
-    boxVertices->positions[17] = {-1.0f,  1.0f,  1.0f};
-    boxVertices->positions[18] = { 1.0f,  1.0f,  1.0f};
-    boxVertices->positions[19] = { 1.0f,  1.0f, -1.0f};
+    boxVertices->positions[16] = (Vec3){-1.0f,  1.0f, -1.0f};
+    boxVertices->positions[17] = (Vec3){-1.0f,  1.0f,  1.0f};
+    boxVertices->positions[18] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    boxVertices->positions[19] = (Vec3){ 1.0f,  1.0f, -1.0f};
     
     //BOTTOM FACE (Y-)
-    boxVertices->positions[20] = {-1.0f, -1.0f,  1.0f};
-    boxVertices->positions[21] = {-1.0f, -1.0f, -1.0f};
-    boxVertices->positions[22] = { 1.0f, -1.0f, -1.0f};
-    boxVertices->positions[23] = { 1.0f, -1.0f,  1.0f};
+    boxVertices->positions[20] = (Vec3){-1.0f, -1.0f,  1.0f};
+    boxVertices->positions[21] = (Vec3){-1.0f, -1.0f, -1.0f};
+    boxVertices->positions[22] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    boxVertices->positions[23] = (Vec3){ 1.0f, -1.0f,  1.0f};
     
     //Fill unused texcoords and normals with zeros
     for (u32 i = 0; i < boxVertices->ammount; i++)
@@ -528,52 +534,52 @@ Mesh* createSkyboxMesh()
     
     //Fill vertex positions 
     //Back face (Z-)
-    skyboxVertices->positions[0] = {-1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[1] = {-1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[2] = { 1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[3] = { 1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[4] = { 1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[5] = {-1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[0] = (Vec3){-1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[1] = (Vec3){-1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[2] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[3] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[4] = (Vec3){ 1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[5] = (Vec3){-1.0f,  1.0f, -1.0f};
 
     //Left face (X-)
-    skyboxVertices->positions[6] = {-1.0f, -1.0f,  1.0f};
-    skyboxVertices->positions[7] = {-1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[8] = {-1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[9] = {-1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[10] = {-1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[11] = {-1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[6] = (Vec3){-1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[7] = (Vec3){-1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[8] = (Vec3){-1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[9] = (Vec3){-1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[10] = (Vec3){-1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[11] = (Vec3){-1.0f, -1.0f,  1.0f};
 
     //Right face (X+)
-    skyboxVertices->positions[12] = { 1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[13] = { 1.0f, -1.0f,  1.0f};
-    skyboxVertices->positions[14] = { 1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[15] = { 1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[16] = { 1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[17] = { 1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[12] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[13] = (Vec3){ 1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[14] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[15] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[16] = (Vec3){ 1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[17] = (Vec3){ 1.0f, -1.0f, -1.0f};
 
     //Front face (Z+)
-    skyboxVertices->positions[18] = {-1.0f, -1.0f,  1.0f};
-    skyboxVertices->positions[19] = {-1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[20] = { 1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[21] = { 1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[22] = { 1.0f, -1.0f,  1.0f};
-    skyboxVertices->positions[23] = {-1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[18] = (Vec3){-1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[19] = (Vec3){-1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[20] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[21] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[22] = (Vec3){ 1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[23] = (Vec3){-1.0f, -1.0f,  1.0f};
 
     //Top face (Y+)
-    skyboxVertices->positions[24] = {-1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[25] = { 1.0f,  1.0f, -1.0f};
-    skyboxVertices->positions[26] = { 1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[27] = { 1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[28] = {-1.0f,  1.0f,  1.0f};
-    skyboxVertices->positions[29] = {-1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[24] = (Vec3){-1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[25] = (Vec3){ 1.0f,  1.0f, -1.0f};
+    skyboxVertices->positions[26] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[27] = (Vec3){ 1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[28] = (Vec3){-1.0f,  1.0f,  1.0f};
+    skyboxVertices->positions[29] = (Vec3) {-1.0f,  1.0f, -1.0f};
 
     //Bottom face (Y-)
-    skyboxVertices->positions[30] = {-1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[31] = {-1.0f, -1.0f,  1.0f};
-    skyboxVertices->positions[32] = { 1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[33] = { 1.0f, -1.0f, -1.0f};
-    skyboxVertices->positions[34] = {-1.0f, -1.0f,  1.0f};
-    skyboxVertices->positions[35] = { 1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[30] = (Vec3){-1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[31] = (Vec3){-1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[32] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[33] = (Vec3){ 1.0f, -1.0f, -1.0f};
+    skyboxVertices->positions[34] = (Vec3){-1.0f, -1.0f,  1.0f};
+    skyboxVertices->positions[35] = (Vec3){ 1.0f, -1.0f,  1.0f};
 
     //Create the mesh 
     Mesh* skyboxMesh = createMesh(skyboxVertices, 36, NULL, 0);

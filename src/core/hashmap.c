@@ -1,79 +1,100 @@
 #include "../../include/druid.h"
+#include <stdbool.h>
 #include <string.h>
-#include <cstdio>
+#include <stdlib.h>
 
-bool createHashMap(HashMap* map, size_t mapSize)
+bool createMap(HashMap* map, size_t capacity, size_t keySize, size_t valueSize,
+               u32 (*hashFunc)(const void*, size_t),
+               bool (*equalsFunc)(const void*, const void*))
 {
-	
-	//allocate the map
-	map = (HashMap*)malloc(sizeof(HashMap));
-	//craete the buffer to work with
-	if(!arenaCreate(map->arena,sizeof(Pair) * mapSize)) return false;
-	//set metadata
-	map->mapSize = mapSize;
-	
-	
-	map->pairs = (Pair*)(aalloc(map->arena,sizeof(Pair) * mapSize));
+    if (!map) return false;
 
-	return true;
+    map->capacity = capacity;
+    map->count = 0;
+    map->keySize = keySize;
+    map->valueSize = valueSize;
+    map->hashFunc = hashFunc;
+    map->equalsFunc = equalsFunc;
+
+    map->arena = malloc(sizeof(Arena));
+    if (!map->arena) return false;
+
+    if (!arenaCreate(map->arena, capacity * (keySize + valueSize + sizeof(bool) /* for occupied */)))
+        return false;
+
+    map->pairs = (Pair*)aalloc(map->arena, capacity * sizeof(Pair));
+    if (!map->pairs) return false;
+
+    // Initialize pairs: allocate storage for key and value buffers in arena
+    // But since Pair stores pointers to key/value, we must allocate key and value buffers per pair
+
+    for (size_t i = 0; i < capacity; i++) {
+        map->pairs[i].key = aalloc(map->arena, keySize);
+        map->pairs[i].value = aalloc(map->arena, valueSize);
+        map->pairs[i].occupied = false;
+    }
+
+    return true;
 }
 
-unsigned int hash(char* name,size_t mapSize)
+void destroyMap(HashMap* map)
 {
-	//get the length of the name
-	int len = strnlen(name,MAX_NAME);
-	
-	//setting a uint cache 
-	//TODO: add u32 definitions
-	unsigned int cache = 0;
-	for(int i = 0; i < len; i++)
-	{
-		//add the ascii value to the cache
-		cache += name[i];
-		//multiply the cache by the name char ascii value and then keep it in the range of the map size
-		cache = (cache * name[i]) % mapSize;
-	}
-
-
-	return cache;
+    if (!map) return;
+    if (map->arena) {
+        arenaDestroy(map->arena);
+        free(map->arena);
+        map->arena = NULL;
+    }
 }
 
-
-void printMap(HashMap* map)
+bool insertMap(HashMap* map, const void* key, const void* value)
 {
-	//loop through all elements and print out the table element
-	for(int i = 0; i < map->mapSize; i++)
-	{
-		if(&map->pairs[i] == nullptr)
-		{
-			printf("\t%i\t---", i);
-		}
-		else
-		{
-			printf("\t%i\t%s\n",i,map->pairs[i].name);
-		}
-	}
+    if (!map || !key || !value) return false;
+    if (map->count >= map->capacity) return false; // full map
+
+    u32 hashIndex = map->hashFunc(key, map->capacity);
+
+    for (size_t i = 0; i < map->capacity; i++) {
+        size_t tryIndex = (hashIndex + i) % map->capacity;
+        Pair* pair = &map->pairs[tryIndex];
+
+        if (!pair->occupied) {
+            memcpy(pair->key, key, map->keySize);
+            memcpy(pair->value, value, map->valueSize);
+            pair->occupied = true;
+            map->count++;
+            return true;
+        }
+
+        if (map->equalsFunc(pair->key, key)) {
+            // Update existing value
+            memcpy(pair->value, value, map->valueSize);
+            return true;
+        }
+    }
+
+    return false; // map full
 }
 
-
-
-bool insertMap(HashMap* map, Pair* pair)
+bool findInMap(HashMap* map, const void* key, void* outValue)
 {
-	//is pair valid
-	if(pair == nullptr) return false;
-	//get an index to work with 
-	int index = hash(pair->name,map->mapSize);
-	//if there is something in the spot
-	if(&(map->pairs[index]) != nullptr) return false;
-	//set the value
-	map->pairs[index] = *pair;
-	//return
-	return true;
+    if (!map || !key || !outValue) return false;
 
-}
+    u32 hashIndex = map->hashFunc(key, map->capacity);
 
-void cleanMap(HashMap* map)
-{
-	arenaDestroy(map->arena);
-	free(map);	
+    for (size_t i = 0; i < map->capacity; i++) {
+        size_t tryIndex = (hashIndex + i) % map->capacity;
+        Pair* pair = &map->pairs[tryIndex];
+
+        if (!pair->occupied) {
+            return false; // not found
+        }
+
+        if (map->equalsFunc(pair->key, key)) {
+            memcpy(outValue, pair->value, map->valueSize);
+            return true;
+        }
+    }
+
+    return false; // not found
 }

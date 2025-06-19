@@ -1,7 +1,7 @@
 #include "../../include/druid.h"
 
 static SDL_Event evnt;
-static const bool* state = SDL_GetKeyboardState(NULL);
+static const bool* state; 
 
 void processInput(Application* app)
 {

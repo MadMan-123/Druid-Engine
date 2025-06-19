@@ -1,14 +1,12 @@
 ﻿
 #include "../../include/druid.h"
-#include <glm/gtx/transform.hpp>
 
-#include <glm/glm.hpp>
 Mat4 getModel(const Transform* transform)
 {
     if (!transform) return mat4Identity();
     
     //position matrix
-    Mat4 posMat = mat4Translate(transform->pos);
+    Mat4 posMat = mat4Translate(posMat,transform->pos);
     
     //rotation matrix from quaternion
     Mat4 rotMat = quatToRotationMatrix(transform->rot);

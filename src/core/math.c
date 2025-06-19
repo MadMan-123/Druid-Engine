@@ -1,73 +1,57 @@
 ﻿
-#include <cmath>
+#include <math.h>
 #include <stdio.h>
 
 #include "../../include/druid.h"
-//glm for perspective and lookat
-#include <glm/glm.hpp>
-
-#include <glm/glm.hpp>
-#include <glm/gtx/transform.hpp>
-
-void glmMat4ToMat4(const glm::mat4& glmMat, Mat4* mat)
-{	
-    for (int col = 0; col < 4; col++)
-    {
-        for (int row = 0; row < 4; row++)
-        {
-            mat->m[col][row] = glmMat[col][row];  // column-major copy
-        }
-    }
-}
 
 
 inline Vec2 v2Add(Vec2 a, Vec2 b)
 {
-    return { a.x + b.x, a.y + b.y };
+    return (Vec2){ a.x + b.x, a.y + b.y };
 }
 
 
 inline Vec2 v2Sub(Vec2 a, Vec2 b)
 {
-    return { a.x - b.x, a.y - b.y };
+    return (Vec2){ a.x - b.x, a.y - b.y };
 }
 
 
 inline Vec2 v2Scale(Vec2 a, float b)
 {
-    return {a.x * b, a.y * b };
+    return (Vec2){a.x * b, a.y * b };
 }
 
 
 inline Vec2 v2Mul(Vec2 a, Vec2 b)
 {
-    return { a.x * b.x, a.y * b.y };
+    return (Vec2){ a.x * b.x, a.y * b.y };
 }
 inline float v2Mag(Vec2 a)
 {
-    return sqrt(a.x * a.x + a.y * a.y);
+    return (f32)sqrt(a.x * a.x + a.y * a.y);
 }
 
 inline float v2Dis(Vec2 a, Vec2 b)
 {
-    return  (v2Mag(v2Sub(b, a)));
+    return  (f32)(v2Mag(v2Sub(b, a)));
 }
 
 inline Vec2i v2Tov2i(Vec2 a)
 {
-    return {(int)a.x,(int)a.y};
+    return (Vec2i){(int)a.x,(int)a.y};
 }
 
 inline Vec2 v2iTov2(Vec2i a)
 {
-    return {(float)a.x, (float)a.y};
+    return (Vec2){(float)a.x, (float)a.y};
 }
 
 
 
 inline Vec2 v2Div(Vec2 a, float b)
 {
-	return {(float)(a.x / b),(float)(a.y / b)};
+	return (Vec2){(float)(a.x / b),(float)(a.y / b)};
 }
 
 
@@ -78,53 +62,54 @@ inline bool v2Equal(Vec2 a, Vec2 b)
 
 inline Vec3 v3Add(Vec3 a, Vec3 b)
 {
-	return {a.x + b.x, a.y + b.y, a.z + b.z};
+	return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
 inline Vec3 v3Sub(Vec3 a, Vec3 b)
 {
-	return {a.x - b.x, a.y - b.y, a.z - b.z};
+	return (Vec3){a.x - b.x, a.y - b.y, a.z - b.z};
 }
 inline Vec3 v3Scale(Vec3 a, float b)
 {
 
-	return {a.x * b, a.y * b, a.z * b};
+	return (Vec3){a.x * b, a.y * b, a.z * b};
 }
 
 inline Vec3 v3Mul(Vec3 a, Vec3 b)
 {	
-	return {a.x * b.x, a.y * b.y, a.z * b.z};
+	return (Vec3){a.x * b.x, a.y * b.y, a.z * b.z};
 }
 
 inline float v3Mag(Vec3 a)
 {
-	return sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+	return (f32)sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 }
 
 inline float v3Dis(Vec3 a, Vec3 b)
 {
-	return v3Mag(v3Sub(b,a));
+	return (f32)v3Mag(v3Sub(b,a));
 }
 
 inline Vec3i v3Tov3i(Vec3 a)
 {
-	return {(u32)a.x, (u32)a.y,(u32)a.z};
+	return (Vec3i){(u32)a.x, (u32)a.y,(u32)a.z};
 }
 
 inline Vec3 v3iTov3(Vec3i a)
 {
-	return {(f32)a.x, (f32)a.y,(f32)a.z};
+	return (Vec3){(f32)a.x, (f32)a.y,(f32)a.z};
 }
 
 inline Vec3 v3Div(Vec3 a, float b)
 {
-	return {a.x/b,a.y/b,a.z/b};
+	return (Vec3){a.x/b,a.y/b,a.z/b};
 }
 
 inline Vec3 v3Norm(Vec3 a)
 {
-    float mag = v3Mag(a);
-    return (mag > 0.00001f) ? v3Div(a, mag) : Vec3{0, 0, 0};
+    	float mag = v3Mag(a);
+    	Vec3 output = (mag > 0.00001f) ? v3Div(a, mag) : (Vec3){0, 0, 0};
+	return output;
 }
 
 
@@ -134,7 +119,7 @@ inline bool v3Equal(Vec3 a, Vec3 b)
 }
 inline Vec3 v3Cross(Vec3 a, Vec3 b)
 {
-	return {
+	return (Vec3){
 		a.y * b.z - a.z * b.y,
 		a.z * b.x - a.x * b.z,
 		a.x * b.y - a.y * b.x
@@ -143,7 +128,7 @@ inline Vec3 v3Cross(Vec3 a, Vec3 b)
 
 inline f32 v3Dot(Vec3 a, Vec3 b)
 {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
+    return (f32)a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 
@@ -226,8 +211,50 @@ void freeMat(f32** mat, Vec2i size)
 }
 
 
+inline Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ) 
+{
+    f32 f = 1.0f / tanf(fovRadians / 2.0f);
+    f32 nf = 1.0f / (nearZ - farZ);
 
+    Mat4 result = {0}; // zero-init
 
+    result.m[0][0] = f / aspect;
+    result.m[1][1] = f;
+    result.m[2][2] = (farZ + nearZ) * nf;
+    result.m[2][3] = -1.0f;
+    result.m[3][2] = (2.0f * farZ * nearZ) * nf;
+
+    return result;
+}
+
+inline Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) 
+{
+    Vec3 f = v3Norm(v3Sub(center, eye));
+    Vec3 s = v3Norm(v3Cross(f, up));
+    Vec3 u = v3Cross(s, f);
+
+    Mat4 result = {0};
+
+    // Column-major
+    result.m[0][0] = s.x;
+    result.m[0][1] = s.y;
+    result.m[0][2] = s.z;
+
+    result.m[1][0] = u.x;
+    result.m[1][1] = u.y;
+    result.m[1][2] = u.z;
+
+    result.m[2][0] = -f.x;
+    result.m[2][1] = -f.y;
+    result.m[2][2] = -f.z;
+
+    result.m[3][0] = -v3Dot(s, eye);
+    result.m[3][1] = -v3Dot(u, eye);
+    result.m[3][2] = v3Dot(f, eye);
+    result.m[3][3] = 1.0f;
+
+    return result;
+}
 
 //Create an identity matrix
 inline Mat4 mat4Identity() 
@@ -258,17 +285,16 @@ inline Mat4 mat4Zero()
 }
 
 //Create a translation matrix
-inline Mat4 mat4Translate(Vec3 position) 
+inline Mat4 mat4Translate(Mat4 in, Vec3 translation) 
 {
-   	//translate matrix
-	glm::mat4 translate = glm::translate(glm::mat4(1.0f), glm::vec3(position.x, position.y, position.z));
-   	
-	Mat4 result;
+   	Mat4 out = in;
 	
-	//convert glm mat4 to our mat4
-	glmMat4ToMat4(translate, &result);
-	 
-    return result;
+	out.m[3][0] += in.m[0][0] * translation.x + in.m[1][0] * translation.y + in.m[2][0] * translation.z;
+	out.m[3][1] += in.m[0][1] * translation.x + in.m[1][1] * translation.y + in.m[2][1] * translation.z;
+	out.m[3][2] += in.m[0][2] * translation.x + in.m[1][2] * translation.y + in.m[2][2] * translation.z;
+	out.m[3][3] += in.m[0][3] * translation.x + in.m[1][3] * translation.y + in.m[2][3] * translation.z;
+
+	return (Mat4)out;
 }
 
 
@@ -284,6 +310,7 @@ inline Mat4 mat4Scale(float scale)
 }
 
 //Create a scale matrix with different scales per axis
+/*
 inline Mat4 mat4ScaleVec(Vec3 scale) 
 {
     Mat4 result = mat4Zero();
@@ -293,7 +320,7 @@ inline Mat4 mat4ScaleVec(Vec3 scale)
     result.m[3][3] = 1.0f;
     return result;
 }
-
+*/
 //Create rotation matrix around X axis
 inline Mat4 mat4RotateX(float angleRadians) 
 {
@@ -427,7 +454,7 @@ inline Mat4 mat4Sub(Mat4 a, Mat4 b)
 }
 
 //Scale all elements of a matrix
-inline Mat4 mat4Scale(Mat4 a, float scale)
+inline Mat4 mat4ScaleVal(Mat4 a, float scale)
 {
     Mat4 result;
     
@@ -443,7 +470,7 @@ inline Mat4 mat4Scale(Mat4 a, float scale)
 }
 
 
-Mat3 mat4ToMat3(const Mat4& m4) 
+Mat3 Mat4ToMat3(const Mat4 m4) 
 {
     Mat3 m3;
     for (int i = 0; i < 3; i++) 
@@ -456,7 +483,7 @@ Mat3 mat4ToMat3(const Mat4& m4)
     return m3;
 }
 
-Mat4 mat3ToMat4(const Mat3& m3) 
+Mat4 mat3ToMat4(const Mat3 m3) 
 {
     Mat4 m4 = mat4Identity();
     for (int i = 0; i < 3; i++) 
@@ -475,7 +502,7 @@ Mat4 mat3ToMat4(const Mat3& m3)
 
 
 //Transform a vector by a matrix
-inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
+inline Vec4 Mat4TransformVec4(Mat4 m, Vec4 v)
 {
     Vec4 result;
     
@@ -487,7 +514,7 @@ inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
     return result;
 }
 
-inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p) 
+inline Vec3 Mat4TransformPoint(Mat4 m, Vec3 p) 
 {
     Vec4 temp;
     
@@ -498,13 +525,13 @@ inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p)
     
     if (fabs(temp.w) > 0.0001f)
     {
-        return {temp.x / temp.w, temp.y / temp.w, temp.z / temp.w};
+        return (Vec3){temp.x / temp.w, temp.y / temp.w, temp.z / temp.w};
     }
     
-    return {temp.x, temp.y, temp.z};
+    return (Vec3){temp.x, temp.y, temp.z};
 }
 
-inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d) 
+inline Vec3 Mat4TransformDirection(Mat4 m, Vec3 d) 
 {
     Vec3 result;
     
@@ -515,7 +542,7 @@ inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d)
     return result;
 }
 
-inline float mat4Determinant(Mat4 m) 
+inline float Mat4Determinant(Mat4 m) 
 {
     //Calculate the cofactors of the first row
     float c00 = m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
@@ -541,7 +568,7 @@ inline float mat4Determinant(Mat4 m)
 //Invert a 4x4 matrix
 inline Mat4 mat4Inverse(Mat4 m)
 {
-    float det = mat4Determinant(m);
+    float det = Mat4Determinant(m);
     
     if (fabs(det) < 0.0001f)
     {
@@ -695,26 +722,7 @@ inline Mat4 pointersToMat4(f32** src)
 }
 
 
-inline Mat4 mat4LookAt(Vec3 eye, Vec3 target, Vec3 up) 
-{
-	glm::mat4 lookAt = glm::lookAt(glm::vec3(eye.x, eye.y, eye.z), glm::vec3(target.x, target.y, target.z), glm::vec3(up.x, up.y, up.z));
-	
-	//convert glm mat4 to our mat4
-	Mat4 result = {0};
-	glmMat4ToMat4(lookAt, &result);
-    return result;
-}
-inline Mat4 mat4Perspective(float fovRadians, float aspect, float nearZ, float farZ) 
-{
-	glm::mat4 perspective = glm::perspective(fovRadians, aspect, nearZ, farZ);
-	
-	Mat4 result = {0};
-	
-	//convert glm mat4 to our mat4
-	glmMat4ToMat4(perspective, &result);
-    
-    return result;
-}
+
 f32 clamp(f32 value, f32 minVal, f32 maxVal)
 {
     if (value < minVal) return minVal;
@@ -740,7 +748,7 @@ Vec4 quatFromAxisAngle(Vec3 axis, f32 angle)
 
     if (axisLength < EPSILON)
     {
-        return { 0.0f, 0.0f, 0.0f, 1.0f };  // Identity quaternion
+        return (Vec4){ 0.0f, 0.0f, 0.0f, 1.0f };  // Identity quaternion
     }
 
     //Normalize the axis (safe since length > EPSILON)
@@ -836,12 +844,12 @@ inline Vec3 quatTransform(Vec4 q, Vec3 v)
     Vec4 qInv = quatConjugate(q); // assuming q is normalized
     Vec4 result = quatMul(quatMul(q, qv), qInv);
 
-    return { result.x, result.y, result.z };
+    return (Vec3){ result.x, result.y, result.z };
 }
 
-inline Vec4 quatConjugate(const Vec4& q)
+inline Vec4 quatConjugate(const Vec4 q)
 {
-    return { -q.x, -q.y, -q.z, q.w };
+    return (Vec4){ -q.x, -q.y, -q.z, q.w };
 }
 
 inline f32 lerp(f32 a, f32 b, f32 t)

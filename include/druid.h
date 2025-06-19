@@ -1,13 +1,11 @@
 #pragma once
-#include <cstdio>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>  // For size_t
-#include <cstdlib>
-#include <cassert>
-#include <vector>
-#include <string>
+#include <stdlib.h>
+#include <assert.h>
+#include <string.h>
 
 #include <SDL3/SDL.h>
 
@@ -130,7 +128,6 @@ typedef struct{
 }Vec4;
 
 
-//TODO: Make this in the future a f32[][]
 typedef struct {
     f32 m[4][4];
 } Mat4;
@@ -179,7 +176,7 @@ DAPI Vec3 quatRotateVec3(Vec4 q, Vec3 v);
 DAPI Mat4 quatToRotationMatrix(Vec4 q);
 DAPI Vec3 quatTransform(Vec4 q, Vec3 v);
 
-DAPI Vec4 quatConjugate(const Vec4& q);
+DAPI Vec4 quatConjugate(const Vec4 q);
 
 
 //Matrix methods
@@ -194,22 +191,22 @@ DAPI  void matScale(f32** a,f32 b, Vec2i aSize);
 DAPI f32** matCreate(Vec2i size);
 DAPI void freeMat(f32** mat, Vec2i size);
 
-//TODO: i dont have a need for 3x3 or 2x2 matrices but maybe we will add support 
 
 DAPI Mat4 mat4LookAt(Vec3 eye, Vec3 target, Vec3 up);
 
+DAPI Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ); 
 //Identity and Zero
 DAPI Mat4 mat4Identity(void);
 DAPI Mat4 mat4Zero(void);
 
 
 //Transformation matrices
-DAPI Mat4 mat4Translate(Vec3 position);
+DAPI Mat4 mat4Translate(Mat4 in, Vec3 translation); 
 DAPI Mat4 mat4Scale(f32 scale);
 DAPI Mat4 mat4ScaleVec(Vec3 scale);
+DAPI Mat4 mat4ScaleVal(Mat4 a, float scale);
 DAPI Mat4 mat4RotateX(f32 angleRadians);
 DAPI Mat4 mat4RotateY(f32 angleRadians);
-DAPI Mat4 mat4RotateZ(f32 angleRadians);
 DAPI Mat4 mat4Rotate(f32 angleRadians, Vec3 axis);
 
 //Matrix math
@@ -229,8 +226,8 @@ DAPI Mat4 mat4Inverse(Mat4 m);
 
 
 DAPI Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ);
-DAPI Mat3 mat4ToMat3(const Mat4& m4);
-DAPI Mat4 mat3ToMat4(const Mat3& m3) ;
+DAPI Mat3 mat4ToMat3(const Mat4 m4);
+DAPI Mat4 mat3ToMat4(const Mat3 m3) ;
 //helper tools
 DAPI f32 clamp(f32 value, f32 minVal, f32 maxVal);
 DAPI f32 degrees(f32 radians);
@@ -345,71 +342,101 @@ DAPI void arenaDestroy(Arena* arena);
 
 #define MAX_NAME 256
 
-typedef struct{
-	char name[MAX_NAME];
-	void* data;
-}Pair;
+typedef struct {
+    void* key;       // pointer to key data
+    void* value;     // pointer to value data
+    bool occupied;   // whether this slot is in use
+} Pair;
 
-typedef struct{
-	size_t mapSize;
-	Pair* pairs;
-	Arena* arena;
-}HashMap;
+typedef struct {
+    size_t capacity;
+    size_t count;
+    Pair* pairs;
+    size_t keySize;
+    size_t valueSize;
+    Arena* arena;
+
+    u32 (*hashFunc)(const void* key, size_t capacity);
+    bool (*equalsFunc)(const void* keyA, const void* keyB);
+} HashMap;
 
 
 DAPI bool createHashMap(HashMap* map, size_t mapSize);
 DAPI u32 hash(char* name,size_t mapSize);
 DAPI void printMap(HashMap* map);
-DAPI bool insertMap(HashMap* map);
+DAPI bool insertMap(HashMap* map, const void* key, const void* value);
 DAPI void cleanMap(HashMap* map);
+//=====================================================================================================================
 
-//Object Loading stuff (Needs re-writing)
-//TODO: Oh sweet jesus there is too many classes here
+typedef struct {
+    u32 v;   // vertex index
+    u32 vt;  // uv index or 0xFFFFFFFF if none
+    u32 vn;  // normal index or 0xFFFFFFFF if none
+} OBJKey;
 
-struct OBJIndex
+// obj index structure
+typedef struct
 {
     u32 vertexIndex;
     u32 uvIndex;
     u32 normalIndex;
-    
-    bool operator<(const OBJIndex& r) const { return vertexIndex < r.vertexIndex; }
-};
+} OBJIndex;
 
-
-class IndexedModel
+// indexed model
+typedef struct
 {
-public:
-    std::vector<Vec3> positions;
-    std::vector<Vec2> texCoords;
-    std::vector<Vec3> normals;
-    std::vector<u32> indices;
-    
-    void CalcNormals();
-};
+    Vec3* positions;
+    Vec2* texCoords;
+    Vec3* normals;
+    u32* indices;
 
-class OBJModel
+    u32 positionsCount;
+    u32 texCoordsCount;
+    u32 normalsCount;
+    u32 indicesCount;
+
+    u32 positionsCapacity;
+    u32 texCoordsCapacity;
+    u32 normalsCapacity;
+    u32 indicesCapacity;
+} IndexedModel;
+
+// obj model
+typedef struct
 {
-public:
-    std::vector<OBJIndex> OBJIndices;
-    std::vector<Vec3> vertices;
-    std::vector<Vec2> uvs;
-    std::vector<Vec3> normals;
+    OBJIndex* OBJIndices;
+    Vec3* vertices;
+    Vec2* uvs;
+    Vec3* normals;
     bool hasUVs;
     bool hasNormals;
-    
-    OBJModel(const std::string& fileName);
-    
-    IndexedModel ToIndexedModel();
-private:
-    u32 FindLastVertexIndex(const std::vector<OBJIndex*>& indexLookup, const OBJIndex* currentIndex, const IndexedModel& result);
-    void CreateOBJFace(const std::string& line);
-    
-    Vec2 ParseOBJVec2(const std::string& line);
-    Vec3 ParseOBJVec3(const std::string& line);
-    OBJIndex ParseOBJIndex(const std::string& token, bool* hasUVs, bool* hasNormals);
-};
 
+    u32 OBJIndicesCount;
+    u32 verticesCount;
+    u32 uvsCount;
+    u32 normalsCount;
 
+    u32 OBJIndicesCapacity;
+    u32 verticesCapacity;
+    u32 uvsCapacity;
+    u32 normalsCapacity;
+} OBJModel;
+
+DAPI void IndexedModelCalcNormals(IndexedModel* model);
+DAPI OBJModel* OBJModelCreate(const char* fileName);
+DAPI void OBJModelDestroy(OBJModel* model);
+DAPI IndexedModel* OBJModelToIndexedModel(OBJModel* objModel);
+
+// helpers
+DAPI void OBJModelCreateOBJFace(OBJModel* model, const char* line);
+DAPI OBJIndex OBJModelParseOBJIndex(const char* token, bool* hasUVs, bool* hasNormals);
+DAPI Vec2 OBJModelParseOBJVec2(const char* line);
+DAPI Vec3 OBJModelParseOBJVec3(const char* line);
+DAPI u32 FindNextChar(u32 start, const char* str, u32 length, char token);
+DAPI u32 ParseOBJIndexValue(const char* token, u32 start, u32 end);
+DAPI f32 ParseOBJFloatValue(const char* token, u32 start, u32 end);
+DAPI char** SplitString(const char* s, char delim, u32* count);
+DAPI u32 CompareOBJIndexPtr(const void* a, const void* b);
 //=====================================================================================================================
 //transform 
 
@@ -439,7 +466,7 @@ typedef struct
 
 DAPI Mat4 getViewProjection(const Camera* camera);
 
-DAPI void initCamera(Camera* camera, const Vec3& pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip);
+DAPI void initCamera(Camera* camera, const Vec3 pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip);
 
 DAPI void moveForward(Camera* camera,f32 amt);
 
@@ -449,7 +476,7 @@ DAPI void pitch(Camera* camera, f32 angle);
 
 DAPI void rotateY(Camera* camera,f32 angle);
 
-DAPI Mat4 getView(const Camera* camera, bool removeTranslation = false); 
+DAPI Mat4 getView(const Camera* camera, bool removeTranslation); 
 
 //Display 
 typedef struct 
@@ -466,12 +493,12 @@ typedef struct
 
 //Display functions 
 
-DAPI void initDisplay(Display* display, f32 width = 1920, f32 height = 1080);
+DAPI void initDisplay(Display* display, f32 width, f32 height);
 DAPI void swapBuffer(const Display* display);
 DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
 
 
-DAPI void returnError(const std::string& errorString);
+DAPI void returnError(const char* errorString);
 DAPI void onDestroy(Display* display);
 
 //Graphics state
@@ -488,22 +515,22 @@ DAPI void cleanUpGraphicsState(GraphicsState* state);
 
 
 //Shaders
-DAPI u32 initShader(const std::string& filename);
+DAPI u32 initShader(const char* filename);
 //reads in the actual code text to be compiled`
-DAPI std::string loadShader(const std::string& fileName);
+DAPI char* loadShader(const char* fileName);
 //takes the code of a shader and creates said shader
-DAPI u32 createShader(const std::string& text, u32 type);
+DAPI u32 createShader(const char* text, u32 type);
 DAPI u32 createProgram(u32 shader);
 
 //creates a program with two shaders, a vertex and fragment shader used to render meshes with open gl
-DAPI u32 createGraphicsProgram(const std::string& vertPath, const std::string& fragPath);
+DAPI u32 createGraphicsProgram(const char* vertPath, const char* fragPath);
 //craetes a compute shader program 
-DAPI u32 createComputeProgram(const std::string& computePath);
+DAPI u32 createComputeProgram(const char*  computePath);
 //error tool
-DAPI void checkShaderError(u32 shader, u32 flag, bool isProgram, const std::string& errorMessage);
+DAPI void checkShaderError(u32 shader, u32 flag, bool isProgram, const char* errorMessage);
 DAPI void freeShader(u32 shader);
 
-DAPI void updateShaderMVP(const u32 shader, const Transform& transform, const Camera& camera);
+DAPI void updateShaderMVP(const u32 shader, const Transform transform, const Camera camera);
 
 
 
@@ -511,11 +538,11 @@ DAPI void updateShaderMVP(const u32 shader, const Transform& transform, const Ca
 //32 textures MAX
 DAPI void bindTexture(u32 texture,unsigned int unit, GLenum type);
 //return the texture handle 
-DAPI u32 initTexture(const std::string& fileName);
+DAPI u32 initTexture(const char* fileName);
 //free texture from memory
 DAPI void freeTexture(u32 texture); 
 
-DAPI u32 createCubeMapTexture(const std::vector<std::string>& faces);
+DAPI u32 createCubeMapTexture(const char** faces, u32 count);
 //Terrain stuff
 
 typedef struct{
@@ -535,7 +562,7 @@ typedef struct
 	Vec3* normals;
 }Vertices;
 
-Vertices createVertices(const Vec3& pos, const Vec2& texCoord);
+Vertices createVertices(const Vec3 pos, const Vec2 texCoord);
 
 typedef struct 
 {
@@ -563,9 +590,9 @@ DAPI void draw(Mesh* mesh);
 //creates a mesh from vertices and indices
 DAPI Mesh* createMesh (Vertices* vertices, u32 numVertices, u32* indices, u32 numIndices);
 //loads a mesh from a mesh file 
-DAPI Mesh* loadModel(const std::string& filename);
+DAPI Mesh* loadModel(const char* filename);
 
-DAPI void initModel(Mesh* mesh,const IndexedModel &model);
+DAPI void initModel(Mesh* mesh,const IndexedModel model);
 //free the mesh from memory 
 DAPI void freeMesh(Mesh* mesh);
 
@@ -730,7 +757,7 @@ typedef enum {
 
 //APPLICATION
 
-enum ApplicationState{RUN, EXIT};
+typedef enum ApplicationState{RUN, EXIT};
 
 extern double FPS;
 typedef struct 
@@ -743,7 +770,7 @@ typedef struct
 	
 	//open gl context with sdl within the display	
 	Display* display;
-	ApplicationState state;
+	enum ApplicationState state;
 	
 	f32 width;
 	f32 height;	

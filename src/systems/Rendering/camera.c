@@ -1,5 +1,4 @@
 ﻿#include "../../../Include/druid.h"
-#include <cmath> //for cosf
 
 Mat4 getViewProjection(const Camera* camera)
 {
@@ -15,7 +14,7 @@ Mat4 getViewProjection(const Camera* camera)
     //return the view projection matrix
     return mat4Mul(camera->projection, view);
 }
-Mat4 getView(const Camera* camera, bool removeTranslation = false) 
+Mat4 getView(const Camera* camera, bool removeTranslation) 
 {
     // Get the forward and up vectors
     Vec3 forward = quatTransform(camera->orientation, v3Forward);
@@ -34,7 +33,7 @@ Mat4 getView(const Camera* camera, bool removeTranslation = false)
     return view;
 }
 
-void initCamera(Camera* camera, const Vec3& pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip)
+void initCamera(Camera* camera, const Vec3 pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip)
 {
     //set the camera position
     camera->pos = pos;

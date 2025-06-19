@@ -2,7 +2,7 @@
 #include "../../stb_image.h"
 #include <iostream>
 
-u32 initTexture(const std::string& fileName)
+u32 initTexture(const char* fileName)
 {
 	u32 textureHandler;	
 	int width, height, numComponents; //width, height, and no of components of image
@@ -37,15 +37,15 @@ u32 initTexture(const std::string& fileName)
 	return textureHandler; //return the texture handler
 }
 
-u32 createCubeMapTexture(const std::vector<std::string>& faces)
+u32 createCubeMapTexture(const char** faces,u32 count)
 {
 	u32 textureHandler;
 	glGenTextures(1, &textureHandler);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, textureHandler);
   	u32 width, height, nChannels;
-    for (u32 i = 0; i < faces.size(); i++) 
+    for (u32 i = 0; i < count; i++) 
 	{
-        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nChannels, 0);
+        unsigned char* data = stbi_load(faces[i], &width, &height, &nChannels, 0);
         if (data) 	
 		{
 			GLenum format = (nChannels == 4) ? GL_RGBA : GL_RGB;

@@ -1,6 +1,4 @@
 #include "../../include/druid.h"
-#include <iostream>
-
 
 
 //perforamance and frame rate tracking
