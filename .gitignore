@@ -67,6 +67,7 @@ config.status
 .vs/
 .vscode/
 *.swp
+*.swn
 *.swo
 .idea/
 *.sublime-workspace
@@ -112,7 +113,7 @@ log/
 logs/
 
 testbed/res/128x128
-
+testbed/res/Audio
 # Temporary files
 temp/
 tmp/

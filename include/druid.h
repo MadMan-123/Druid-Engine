@@ -268,6 +268,61 @@ static inline Mat4 Mat4Zero =
 };
 
 
+//=====================================================================================================================
+//SOA ECS
+typedef struct {
+    	const char* name;
+    	u32 size;
+} FieldInfo;
+
+
+typedef struct {
+	const char* name;
+    	FieldInfo* fields;
+    	u32 count;
+}StructLayout;
+
+typedef struct
+{
+	u32 count;
+	u32 entityCount;
+	StructLayout* layout;
+	void* data;
+	void** fields;
+}EntityArena;
+
+//create Entity Arena
+DAPI EntityArena* createEntityArena(StructLayout* layout, u32 entityCount);
+
+DAPI void printEntityArena(EntityArena* arena);
+
+//free the arena
+DAPI bool freeEntityArena(EntityArena* arena);
+//allocate an enitity
+DAPI u32 createEntity(EntityArena* arena);
+
+//calculate Entity Size based of a struct layout
+DAPI u32 getEntitySize(StructLayout* layout);
+
+
+
+#define FIELD_OF(Type, field) \
+    (FieldInfo){ #field, sizeof(((Type*)0)->field) }
+
+#define FIELD(type,name) (FieldInfo){#name,sizeof(type)}
+
+
+
+#define DEFINE_ARCHETYPE(name, ...)            \
+    static FieldInfo name##_fields[] = {       \
+        __VA_ARGS__                            \
+    };                                         \
+    static StructLayout name = {               \
+        #name,                                 \
+        name##_fields,                         \
+        (u32)(sizeof(name##_fields) / sizeof(FieldInfo)) \
+    };
+
 
  
 //=====================================================================================================================
@@ -363,7 +418,7 @@ typedef struct
 	Vec3 pos;
 	Vec4 rot;
 	Vec3 scale;
-} Transform;
+}Transform;
 
 
 
@@ -517,10 +572,9 @@ DAPI void freeMesh(Mesh* mesh);
 //creates a plane essentially
 DAPI Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heightScale, const char* computeShaderPath, HeightMap* output); 
 DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize);
-
 DAPI Mesh* createBoxMesh(); 
-
 DAPI Mesh* createSkyboxMesh(); 
+
 //Keys
 //Keyboard keys enum
 typedef enum {

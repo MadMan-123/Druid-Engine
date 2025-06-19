@@ -1,6 +1,6 @@
 CXX := g++
-CFLAGS := -Wall
-CFLAGS += -g
+CFLAGS := -Wall -std=c++20
+CFLAGS += -g -std=c++20
 
 LDFLAGS := -L../bin -ldruid -L./deps -lopengl32 -lglew32 -lSDL3 -lwinmm  
 INCLUDE := -I../include
