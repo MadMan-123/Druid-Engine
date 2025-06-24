@@ -1,33 +1,45 @@
 #include "../../../include/druid.h"
-#include <iostream>
-#include <fstream>
 
 //Utility functions
-std::string loadShader(const std::string& fileName)
+char* loadFileText(const char* fileName)
 {
-    std::ifstream file;
-    file.open((fileName).c_str());
+	//open the file to read
+ 	FILE* file = fopen(fileName,"r");
 
-    std::string output;
-    std::string line;
+	//null check
+	if(file == NULL)
+	{
+		printf("The File has not opened\n");
+	}
+	
+	//determine how big the file is
+	fseek(file,0,SEEK_END);
+	u64 length = ftell(file);
+	//go back to start
+	rewind(file);
 
-    if (file.is_open())
-    {
-        while (file.good())
-        {
-            getline(file, line);
-            output.append(line + "\n");
-        }
-    }
-    else
-    {
-        std::cerr << "Unable to load shader: " << fileName << std::endl;
-    }
+	//allocate enough memory
+	char* buffer = (char*)malloc(length + 1);
 
-    return output;
+	if(!buffer)
+	{
+		printf("Failed to allocate memory");
+		fclose(file);
+		return NULL;
+	}
+
+	//read the file to the buffer
+	u32 readSize = fread(buffer,1,length,file);
+
+	//add null terminator
+	buffer[readSize] = '\0';
+	
+	fclose(file);
+	return buffer;
+
 }
 
-void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const std::string& errorMessage)
+void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const char* errorMessage)
 {
     GLint success = 0;
     GLchar error[1024] = { 0 };
@@ -44,21 +56,23 @@ void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const std::str
         else
             glGetShaderInfoLog(shader, sizeof(error), NULL, error);
 
-        std::cerr << errorMessage << ": '" << error << "'" << std::endl;
+	//error
+	//TODO: Errors
+	printf("SHADER ERROR: \n Message: \n%s\n Error: %s \n", errorMessage, error);
     }
 }
 
-u32 createShader(const std::string& text, unsigned int type)
+u32 createShader(const char* text, unsigned int type)
 {
     u32 shader = glCreateShader(type);
 
     if (shader == 0)
-        std::cerr << "Error type creation failed " << type << '\n';
+        printf("Error type creation failed %s\n", type);
 
     const GLchar* stringSource[1];
-    stringSource[0] = text.c_str();
+    stringSource[0] = text;
     GLint lengths[1];
-    lengths[0] = text.length();
+    lengths[0] = strlen(text);
 
     glShaderSource(shader, 1, stringSource, lengths);
     glCompileShader(shader);
@@ -81,11 +95,11 @@ u32 createProgram(u32 shader)
     return program;
 }
 
-u32 createComputeProgram(const std::string& computePath)
+u32 createComputeProgram(const char* computePath)
 {
-    std::string code = loadShader(computePath);
+    char* code = loadFileText(computePath);
     u32 shader = createShader(code, GL_COMPUTE_SHADER);
-
+    free(code);
     if(shader == 0)
     {
         return 0;
@@ -113,12 +127,17 @@ u32 createComputeProgram(const std::string& computePath)
 
 
 
-u32 createGraphicsProgram(const std::string& vertPath, const std::string& fragPath)
+u32 createGraphicsProgram(const char* vertPath, const char* fragPath)
 {
     u32 program = glCreateProgram();
-    
-    u32 vertexShader = createShader(loadShader(vertPath), GL_VERTEX_SHADER);
-    u32 fragmentShader = createShader(loadShader(fragPath), GL_FRAGMENT_SHADER);
+   
+    char* vertexShaderText = loadFileText(vertPath);
+    char* fragShaderText = loadFileText(fragPath); 
+    u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);
+    u32 fragmentShader = createShader(fragShaderText, GL_FRAGMENT_SHADER);
+
+    free(vertexShaderText);
+    free(fragShaderText);
 
     if (vertexShader == 0 || fragmentShader == 0)
     {
@@ -167,10 +186,10 @@ void freeShader(u32 shader)
 
 
 
-void updateShaderMVP(u32 shaderProgram, const Transform& transform, const Camera& camera)
+void updateShaderMVP(u32 shaderProgram, const Transform transform, const Camera camera)
 {
-    auto model = getModel(&transform);
-    auto mvp = mat4Mul(getViewProjection(&camera) , model);
+    Mat4 model = getModel(&transform);
+    Mat4 mvp = mat4Mul(getViewProjection(&camera) , model);
     
     u32 modelUniform = glGetUniformLocation(shaderProgram, "model");
     u32 transformUniform = glGetUniformLocation(shaderProgram, "transform");

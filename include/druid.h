@@ -563,19 +563,18 @@ typedef struct
 }Vertices;
 
 Vertices createVertices(const Vec3 pos, const Vec2 texCoord);
-
-typedef struct 
+typedef enum
 {
-	enum
-	{
 		POSITION_VERTEXBUFFER,
 		TEXCOORD_VB,
 		NORMAL_VB,
 		INDEX_VB,
 		TEXID_VB,
 		NUM_BUFFERS
-	};
+}MeshType;
 
+typedef struct 
+{
 	//vertex array object
 	u32 vao;
 	//array of buffers

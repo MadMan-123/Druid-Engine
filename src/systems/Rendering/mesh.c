@@ -1,4 +1,6 @@
 #include "../../../include/druid.h"
+#include <math.h>
+#include <time.h>
 Mesh* createMesh(Vertices* vertices, u32 numVertices, u32* indices, u32 numIndices)
 {
 	Mesh* mesh = (Mesh*)malloc(sizeof(Mesh));
@@ -50,10 +52,10 @@ void initModel(Mesh* mesh,const IndexedModel model)
 	//bind our vao (this will allow us to render from our buffers)
 	glBindVertexArray(mesh->vao); 
 	//generate our buffers to store our vertex data on the GPU
-	glGenBuffers(Mesh::NUM_BUFFERS, mesh->vab); 
+	glGenBuffers(NUM_BUFFERS, mesh->vab); 
 
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
-	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::POSITION_VERTEXBUFFER]);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[POSITION_VERTEXBUFFER]);
 	glBufferStorage(GL_ARRAY_BUFFER,
 				model.positionsCount * sizeof(model.positions[0]),
 				model.positions,
@@ -62,18 +64,18 @@ void initModel(Mesh* mesh,const IndexedModel model)
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
-	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::TEXCOORD_VB]); 
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[TEXCOORD_VB]); 
 	glBufferData(GL_ARRAY_BUFFER, model.texCoordsCount * sizeof(model.texCoords[0]), model.texCoords, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
-	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[Mesh::NORMAL_VB]);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[NORMAL_VB]);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(model.normals[0]) * model.normalsCount, model.normals, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
 	//tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass the data
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->vab[Mesh::INDEX_VB]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->vab[INDEX_VB]);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indicesCount * sizeof(model.indices[0]), model.indices, GL_STATIC_DRAW);
 	
 	glBindVertexArray(0); // unbind our VAO
@@ -89,7 +91,7 @@ void destroyMesh(Mesh* mesh)
 	
 	mesh->drawCount = NULL;
 	glDeleteVertexArrays(1, &mesh->vao);
-	glDeleteBuffers(Mesh::NUM_BUFFERS, mesh->vab);
+	glDeleteBuffers(NUM_BUFFERS, mesh->vab);
 	free(mesh);
 }
 
@@ -100,8 +102,16 @@ Mesh* loadModel(const char* filename)
 	//assert that the mesh was created
 	assert(mesh != NULL && "Mesh could not be created");
 	
-	IndexedModel model = OBJModel(filename).ToIndexedModel();
-	initModel(mesh, model);
+	//get the obj from the file
+	OBJModel* obj = OBJModelCreate(filename);
+	
+	//get the indexed model
+	IndexedModel* model = OBJModelToIndexedModel(obj);
+	
+	
+	initModel(mesh,*model);
+
+
 
 	return mesh;
 }
@@ -126,7 +136,7 @@ void draw(Mesh* mesh)
 HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,const char* computeShaderPath)
 {
     //Create compute shader (you can move this to init if preferred)
-    static u32 computeShader = createComputeProgram(computeShaderPath);
+    u32 computeShader = createComputeProgram(computeShaderPath);
 	if (computeShader == 0) 
 	{
     	printf("Failed to create compute shader!\n");
@@ -136,7 +146,7 @@ HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,const char* co
     glGenBuffers(1, &heightBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, heightBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeX * sizeZ * sizeof(f32), 
-                nullptr, GL_DYNAMIC_DRAW);
+                NULL, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, heightBuffer);
 
 
@@ -163,7 +173,7 @@ glDispatchCompute(workGroupsX, workGroupsY, 1);
     //Clean up
     glDeleteBuffers(1, &heightBuffer);
 
-    return {heights, sizeX, sizeZ};
+    return (HeightMap){heights, sizeX, sizeZ};
 }
 
 u32* createTerrainIndices(u32 cellsX, u32 cellsZ, u32* outIndexCount)
@@ -203,7 +213,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
     //reset all normals to zero
     for (int i = 0; i < width * height; i++)
     {
-        vertices->normals[i] = {0, 0, 0};
+        vertices->normals[i] = (Vec3){0, 0, 0};
     }
 
     //calculate normals for each triangle, add to shared vertices
@@ -218,16 +228,16 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
             int bottomRight = bottomLeft + 1;
 
             //Get positions
-            Vec3& v1 = vertices->positions[topLeft];
-            Vec3& v2 = vertices->positions[topRight];
-            Vec3& v3 = vertices->positions[bottomLeft];
-            Vec3& v4 = vertices->positions[bottomRight];
+            Vec3 v1 = vertices->positions[topLeft];
+            Vec3 v2 = vertices->positions[topRight];
+            Vec3 v3 = vertices->positions[bottomLeft];
+            Vec3 v4 = vertices->positions[bottomRight];
 
             //Calculate triangle normals using cross product
             //First triangle (v1, v3, v2)
-            Vec3 edge1 = {v3.x - v1.x, v3.y - v1.y, v3.z - v1.z};
-            Vec3 edge2 = {v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
-            Vec3 normal1 = {
+            Vec3 edge1 = (Vec3){v3.x - v1.x, v3.y - v1.y, v3.z - v1.z};
+            Vec3 edge2 = (Vec3){v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
+            Vec3 normal1 = (Vec3){
                 edge1.y * edge2.z - edge1.z * edge2.y,
                 edge1.z * edge2.x - edge1.x * edge2.z,
                 edge1.x * edge2.y - edge1.y * edge2.x
@@ -245,9 +255,9 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
             vertices->normals[bottomLeft].z += normal1.z;
 
             //Second triangle (v2, v3, v4)
-            edge1 = {v3.x - v2.x, v3.y - v2.y, v3.z - v2.z};
-            edge2 = {v4.x - v2.x, v4.y - v2.y, v4.z - v2.z};
-            Vec3 normal2 = {
+            edge1 = (Vec3){v3.x - v2.x, v3.y - v2.y, v3.z - v2.z};
+            edge2 = (Vec3){v4.x - v2.x, v4.y - v2.y, v4.z - v2.z};
+            Vec3 normal2 = (Vec3){
                 edge1.y * edge2.z - edge1.z * edge2.y,
                 edge1.z * edge2.x - edge1.x * edge2.z,
                 edge1.x * edge2.y - edge1.y * edge2.x
@@ -269,7 +279,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
     //Normalize all normals
     for (int i = 0; i < width * height; i++)
     {
-        float length = sqrtf(
+        f32 length = sqrtf(
             vertices->normals[i].x * vertices->normals[i].x +
             vertices->normals[i].y * vertices->normals[i].y +
             vertices->normals[i].z * vertices->normals[i].z
@@ -280,7 +290,7 @@ void calculateTerrainNormals(Vertices* vertices, int width, int height)
             vertices->normals[i].y /= length;
             vertices->normals[i].z /= length;
         } else {
-            vertices->normals[i] = {0, 1, 0}; // Default to up if degenerate
+            vertices->normals[i] = (Vec3){0, 1, 0}; // Default to up if degenerate
         }
     }
 }
@@ -318,14 +328,14 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
             u32 idx = z * heightData.width + x;
             f32 height = heightData.heights[idx];
 
-            terrainVertices->positions[idx] = {
+            terrainVertices->positions[idx] = (Vec3){
                 x * cellSize,      // X position
                 height,            // Height from compute shader
                 z * cellSize       // Z position
             };
 			//Normalize to 0.0-1.0 range
 			f32 textureScale = 0.1f;  // 1/10 = 0.1
-			terrainVertices->texCoords[idx] = {
+			terrainVertices->texCoords[idx] = (Vec2){
     			x * cellSize * textureScale,
     			z * cellSize * textureScale
 			};
@@ -352,12 +362,12 @@ Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heig
 }
 
 
-Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float cellSize)
+Vertices* createTerrainVertices(u32 cellsX, u32 cellsZ, f32 cellSize)
 {
     //Calculate total number of vertices
-    unsigned int verticesX = cellsX + 1;
-    unsigned int verticesZ = cellsZ + 1;
-    unsigned int totalVertices = verticesX * verticesZ;
+    u32 verticesX = cellsX + 1;
+    u32 verticesZ = cellsZ + 1;
+    u32 totalVertices = verticesX * verticesZ;
 
     Vertices* vertices = malloc(sizeof(Vertices));
     vertices->ammount = totalVertices;
@@ -367,21 +377,21 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
     vertices->normals = malloc(sizeof(Vec3) * totalVertices);
 
     //Generate vertex data
-    for (unsigned int z = 0; z < verticesZ; ++z)
+    for (u32 z = 0; z < verticesZ; ++z)
     {
-        for (unsigned int x = 0; x < verticesX; ++x)
+        for (u32 x = 0; x < verticesX; ++x)
         {
-            unsigned int idx = z * verticesX + x;
+            u32 idx = z * verticesX + x;
 
             //Position calculation
-            vertices->positions[idx] = {
+            vertices->positions[idx] = (Vec3){
                 x * cellSize,      // X position
                 0.0f,              // Initial flat height
                 z * cellSize        // Z position
             };
 
             //Texture coordinate mapping
-            vertices->texCoords[idx] = {
+            vertices->texCoords[idx] = (Vec2){
                 (f32)(x) / cellsX,  // U coordinate
                 (f32)(z) / cellsZ   // V coordinate
             };
@@ -396,14 +406,14 @@ Vertices* createTerrainVertices(unsigned int cellsX, unsigned int cellsZ, float 
 
 
 //Create terrain mesh using the existing createMesh function
- Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize)
+ Mesh* createTerrainMesh(u32 cellsX, u32 cellsZ, f32 cellSize)
      {
     //Generate vertices
     Vertices* terrainVertices = createTerrainVertices(cellsX, cellsZ, cellSize);
 
     //Generate indices
-    unsigned int indexCount;
-    unsigned int* terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
+    u32 indexCount;
+    u32* terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
     //Create mesh using the provided createMesh function
     Mesh* terrainMesh = createMesh(terrainVertices, terrainVertices->ammount, terrainIndices, indexCount);
@@ -469,8 +479,8 @@ Mesh* createBoxMesh()
     //Fill unused texcoords and normals with zeros
     for (u32 i = 0; i < boxVertices->ammount; i++)
     {
-        boxVertices->texCoords[i] = {0.0f, 0.0f};
-        boxVertices->normals[i] = {0.0f, 0.0f, 0.0f};
+        boxVertices->texCoords[i] = (Vec2){0.0f, 0.0f};
+        boxVertices->normals[i] = (Vec3){0.0f, 0.0f, 0.0f};
     }
     
     //Define indices for the cube
