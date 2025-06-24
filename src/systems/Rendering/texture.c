@@ -1,16 +1,15 @@
 #include "../../../include/druid.h"
 #include "../../stb_image.h"
-#include <iostream>
 
 u32 initTexture(const char* fileName)
 {
 	u32 textureHandler;	
 	int width, height, numComponents; //width, height, and no of components of image
-	unsigned char* imageData = stbi_load((fileName).c_str(), &width, &height, &numComponents, 4); //load the image and store the data
+	unsigned char* imageData = stbi_load((fileName), &width, &height, &numComponents, 4); //load the image and store the data
 
 	if (imageData == NULL)
 	{
-		std::cerr << "texture load failed" << fileName << std::endl;
+		printf("texture load failed %s\n", fileName);
 	}
 	
 	//number of and address of textures
@@ -64,7 +63,7 @@ u32 createCubeMapTexture(const char** faces,u32 count)
 		else 
 		{
 			//TODO: add proper error handling
-			std::cerr << "Cubemap texture failed to load at path: " << faces[i] << std::endl;
+			printf("Cubemap texture failed to load at path: %s\n", faces[i]);
 	
     		stbi_image_free(data);
     		glDeleteTextures(1, &textureHandler);
