@@ -128,7 +128,68 @@ void OBJModelDestroy(OBJModel* model)
     free(model->normals);
     free(model);
 }
+void OBJModelCreateOBJFace(OBJModel* model, const char* line) {
+    if (line[0] != 'f') return;
 
+    char buffer[512];
+    strncpy(buffer, line, sizeof(buffer));
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    char* context = NULL;
+    char* token = strtok_r(buffer, " \t\r\n", &context); // skip 'f'
+
+    OBJIndex indices[4];
+    u32 indexCount = 0;
+
+    while ((token = strtok_r(NULL, " \t\r\n", &context)) && indexCount < 4) {
+        OBJIndex idx = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+
+        char* v = token;
+        char* vt = strchr(v, '/');
+        if (vt) {
+            *vt = '\0';
+            vt++;
+            char* vn = strchr(vt, '/');
+            if (vn) {
+                *vn = '\0';
+                vn++;
+                if (*vn) idx.normalIndex = (u32)atoi(vn) - 1;
+            }
+            if (*vt) idx.uvIndex = (u32)atoi(vt) - 1;
+        }
+
+        if (*v) idx.vertexIndex = (u32)atoi(v) - 1;
+
+        indices[indexCount++] = idx;
+    }
+
+    // Triangulate face (support triangle or quad)
+    u32 faceIndices[6];
+    u32 faceCount = 0;
+
+    if (indexCount == 3) {
+        faceIndices[0] = 0; faceIndices[1] = 1; faceIndices[2] = 2;
+        faceCount = 3;
+    } else if (indexCount == 4) {
+        // quad -> 2 triangles: 0,1,2 and 0,2,3
+        faceIndices[0] = 0; faceIndices[1] = 1; faceIndices[2] = 2;
+        faceIndices[3] = 0; faceIndices[4] = 2; faceIndices[5] = 3;
+        faceCount = 6;
+    } else {
+        // ignore non-triangle/quad faces
+        return;
+    }
+
+    // Ensure capacity
+    if (model->OBJIndicesCount + faceCount >= model->OBJIndicesCapacity) {
+        model->OBJIndicesCapacity *= 2;
+        model->OBJIndices = realloc(model->OBJIndices, sizeof(OBJIndex) * model->OBJIndicesCapacity);
+    }
+
+    for (u32 i = 0; i < faceCount; ++i) {
+        model->OBJIndices[model->OBJIndicesCount++] = indices[faceIndices[i]];
+    }
+}
 IndexedModel* OBJModelToIndexedModel(OBJModel* objModel)
 {
     IndexedModel* result = malloc(sizeof(IndexedModel));
@@ -207,3 +268,23 @@ IndexedModel* OBJModelToIndexedModel(OBJModel* objModel)
 
     return result;
 }
+
+#include <stdio.h>
+#include <stdlib.h>
+
+// Parses a line like "vt 0.123 0.456"
+Vec2 OBJModelParseOBJVec2(const char* line) 
+{
+    Vec2 result = {0.0f, 0.0f};
+    sscanf(line, "%*s %f %f", &result.x, &result.y);
+    return result;
+}
+
+// Parses a line like "v 1.0 2.0 3.0" or "vn 0.0 1.0 0.0"
+Vec3 OBJModelParseOBJVec3(const char* line)
+ {
+    Vec3 result = {0.0f, 0.0f, 0.0f};
+    sscanf(line, "%*s %f %f %f", &result.x, &result.y, &result.z);
+    return result;
+}
+

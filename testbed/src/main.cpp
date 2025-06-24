@@ -1,11 +1,6 @@
 
 #include <druid.h>
 #include <cmath>
-#include <memory>
-#include <windows.h>
-#include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
-
 //meta data
 
 Application* game;
@@ -49,11 +44,6 @@ Vec3* scales;
 
 //compilation of 3 songs
 
-std::string soundFiles[3] = {
-	"..\\res\\Audio\\lost.wav",
-	"..\\res\\Audio\\Lost2.wav",
-	"..\\res\\Audio\\Ambience 2.wav"
-};
 
 #define MAX 10000
 DEFINE_ARCHETYPE(WorldObject,
@@ -83,14 +73,11 @@ void init()
 		
 	}
 
-	//get a random sound file
-	u32 randomSound = rand() % 3;
 	
-	std::string soundFile = soundFiles[randomSound];
 	
 	knight = loadModel("..\\res\\Models\\Knight.obj");
 	//ooh look a fancy c++ feature,
-	std::vector<std::string> faces = 
+	const char* faces[6] = 
 	{
 		"..\\res\\Textures\\Skybox\\right.jpg",
 		"..\\res\\Textures\\Skybox\\left.jpg",
@@ -103,7 +90,7 @@ void init()
 	
 	
 	//setup cube map
-	cubeMapTexture = createCubeMapTexture(faces);
+	cubeMapTexture = createCubeMapTexture(faces,6);
 	
 	cubeMapMesh = createSkyboxMesh();
 	
@@ -266,7 +253,7 @@ void update(f32 dt)
 
 	for(u32 i = 0; i < MAX; i++)
 	{
-		positions[i] = v3Add(positions[i],{0,0,sin(i)});
+		positions[i] = v3Add(positions[i],(Vec3){0,0,sin(i)});
 	}
 }
 

@@ -310,7 +310,7 @@ inline Mat4 mat4Scale(float scale)
 }
 
 //Create a scale matrix with different scales per axis
-/*
+
 inline Mat4 mat4ScaleVec(Vec3 scale) 
 {
     Mat4 result = mat4Zero();
@@ -320,7 +320,7 @@ inline Mat4 mat4ScaleVec(Vec3 scale)
     result.m[3][3] = 1.0f;
     return result;
 }
-*/
+
 //Create rotation matrix around X axis
 inline Mat4 mat4RotateX(float angleRadians) 
 {
@@ -470,7 +470,7 @@ inline Mat4 mat4ScaleVal(Mat4 a, float scale)
 }
 
 
-Mat3 Mat4ToMat3(const Mat4 m4) 
+Mat3 mat4ToMat3(const Mat4 m4) 
 {
     Mat3 m3;
     for (int i = 0; i < 3; i++) 

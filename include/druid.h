@@ -516,8 +516,8 @@ DAPI void cleanUpGraphicsState(GraphicsState* state);
 
 //Shaders
 DAPI u32 initShader(const char* filename);
-//reads in the actual code text to be compiled`
-DAPI char* loadShader(const char* fileName);
+//returns the text of a file
+DAPI char* loadFileText(const char* fileName);
 //takes the code of a shader and creates said shader
 DAPI u32 createShader(const char* text, u32 type);
 DAPI u32 createProgram(u32 shader);
