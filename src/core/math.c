@@ -227,30 +227,32 @@ inline Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ)
     return result;
 }
 
-inline Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) 
-{
+inline Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) {
     Vec3 f = v3Norm(v3Sub(center, eye));
     Vec3 s = v3Norm(v3Cross(f, up));
     Vec3 u = v3Cross(s, f);
 
-    Mat4 result = {0};
+    Mat4 result = mat4Identity();
 
-    // Column-major
+    // Row-major layout:
     result.m[0][0] = s.x;
     result.m[0][1] = s.y;
     result.m[0][2] = s.z;
+    result.m[0][3] = -v3Dot(s, eye);
 
     result.m[1][0] = u.x;
     result.m[1][1] = u.y;
     result.m[1][2] = u.z;
+    result.m[1][3] = -v3Dot(u, eye);
 
     result.m[2][0] = -f.x;
     result.m[2][1] = -f.y;
     result.m[2][2] = -f.z;
+    result.m[2][3] = v3Dot(f, eye);
 
-    result.m[3][0] = -v3Dot(s, eye);
-    result.m[3][1] = -v3Dot(u, eye);
-    result.m[3][2] = v3Dot(f, eye);
+    result.m[3][0] = 0.0f;
+    result.m[3][1] = 0.0f;
+    result.m[3][2] = 0.0f;
     result.m[3][3] = 1.0f;
 
     return result;
@@ -285,16 +287,22 @@ inline Mat4 mat4Zero()
 }
 
 //Create a translation matrix
-inline Mat4 mat4Translate(Mat4 in, Vec3 translation) 
+inline Mat4 mat4Translate(Mat4 in, Vec3 translation)
 {
-   	Mat4 out = in;
-	
-	out.m[3][0] += in.m[0][0] * translation.x + in.m[1][0] * translation.y + in.m[2][0] * translation.z;
-	out.m[3][1] += in.m[0][1] * translation.x + in.m[1][1] * translation.y + in.m[2][1] * translation.z;
-	out.m[3][2] += in.m[0][2] * translation.x + in.m[1][2] * translation.y + in.m[2][2] * translation.z;
-	out.m[3][3] += in.m[0][3] * translation.x + in.m[1][3] * translation.y + in.m[2][3] * translation.z;
+    Mat4 out = in;
 
-	return (Mat4)out;
+    out.m[0][3] += in.m[0][0] * translation.x + in.m[0][1] * translation.y + in.m[0][2] * translation.z;
+    out.m[1][3] += in.m[1][0] * translation.x + in.m[1][1] * translation.y + in.m[1][2] * translation.z;
+    out.m[2][3] += in.m[2][0] * translation.x + in.m[2][1] * translation.y + in.m[2][2] * translation.z;
+    out.m[3][3] += in.m[3][0] * translation.x + in.m[3][1] * translation.y + in.m[3][2] * translation.z;
+	/*
+	    Mat4 result = mat4Identity();
+    result.m[0][3] = translation.x;
+    result.m[1][3] = translation.y;
+    result.m[2][3] = translation.z;
+    return result;
+*/
+    return out;
 }
 
 
@@ -404,19 +412,15 @@ inline Mat4 mat4Mul(Mat4 a, Mat4 b)
 {
 
     Mat4 result = mat4Zero();
-
-    for (int col = 0; col < 4; ++col) 
-    {
-        for (int row = 0; row < 4; ++row) 
-        {
-            for (int i = 0; i < 4; ++i) 
-            {
-                result.m[col][row] += a.m[i][row] * b.m[col][i];
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            for (int i = 0; i < 4; ++i) {
+                result.m[row][col] += a.m[row][i] * b.m[i][col];
             }
         }
     }
-
     return result;
+
 }
 
 

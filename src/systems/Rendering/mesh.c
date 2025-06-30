@@ -17,7 +17,7 @@ Mesh* createMesh(Vertices* vertices, u32 numVertices, u32* indices, u32 numIndic
 	model.indices = (u32*)malloc(sizeof(u32) * numIndices);
 
 	if(vertices != NULL)
-    { 
+	{ 
 		vertices->ammount = numVertices;
 		for (u32 i = 0; i < numVertices; i++)
 		{
@@ -103,10 +103,13 @@ Mesh* loadModel(const char* filename)
 	assert(mesh != NULL && "Mesh could not be created");
 	
 	//get the obj from the file
-	OBJModel* obj = OBJModelCreate(filename);
+	OBJModel* obj = objModelCreate(filename);
 	
+	assert(obj != NULL && "Obj wasnt loaded");
+	
+
 	//get the indexed model
-	IndexedModel* model = OBJModelToIndexedModel(obj);
+	IndexedModel* model = objModelToIndexedModel(obj);
 	
 	
 	initModel(mesh,*model);

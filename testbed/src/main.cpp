@@ -53,10 +53,55 @@ DEFINE_ARCHETYPE(WorldObject,
 		FIELD(Vec3, scale)
 		);
 
+// Print matrix in row-major order
+void printMatrixRowMajor(const Mat4* mat) {
+	printf("Matrix (row-major):\n");
+	for (int row = 0; row < 4; ++row) {
+		printf("[ ");
+		for (int col = 0; col < 4; ++col) {
+			printf("%10.6f ", mat->m[row][col]);
+		}
+		printf("]\n");
+	}
+}
 
+// Convert row-major matrix to column-major (for OpenGL)
+void convertToColumnMajor(const Mat4* src, float dest[16]) {
+	// dest is a flat array of 16 floats in column-major order:
+	// dest[0..3] = first column, dest[4..7] = second column, etc.
+	for (int row = 0; row < 4; ++row) {
+		for (int col = 0; col < 4; ++col) {
+			dest[col * 4 + row] = src->m[row][col];
+		}
+	}
+}
+
+void printMatrixColumnMajor(const float* mat) {
+	printf("Matrix (column-major):\n");
+	for (int row = 0; row < 4; ++row) {
+		printf("[ ");
+		for (int col = 0; col < 4; ++col) {
+			printf("%10.6f ", mat[col * 4 + row]);
+		}
+		printf("]\n");
+	}
+}
 EntityArena* WorldObjects;
 void init()
 {
+	float fovDegrees = 60.0f;
+	float aspect = 16.0f / 9.0f;
+	float nearZ = 0.1f;
+	float farZ = 100.0f;
+
+	Mat4 persp = mat4Perspective(fovDegrees * (3.14159265f / 180.0f), aspect, nearZ, farZ);
+
+	printMatrixRowMajor(&persp);
+
+	float columnMajor[16];
+	convertToColumnMajor(&persp, columnMajor);
+
+	printMatrixColumnMajor(columnMajor);
 	WorldObjects = createEntityArena(&WorldObject,MAX);	
 	printEntityArena(WorldObjects);
 	
@@ -75,16 +120,16 @@ void init()
 
 	
 	
-	knight = loadModel("..\\res\\Models\\Knight.obj");
+	knight = loadModel("../res/Models/Knight.obj");
 	//ooh look a fancy c++ feature,
 	const char* faces[6] = 
 	{
-		"..\\res\\Textures\\Skybox\\right.jpg",
-		"..\\res\\Textures\\Skybox\\left.jpg",
-		"..\\res\\Textures\\Skybox\\top.jpg",
-		"..\\res\\Textures\\Skybox\\bottom.jpg",
-		"..\\res\\Textures\\Skybox\\front.jpg",
-		"..\\res\\Textures\\Skybox\\back.jpg"
+		"../res/Textures/Skybox/right.jpg",
+		"../res/Textures/Skybox/left.jpg",
+		"../res/Textures/Skybox/top.jpg",
+		"../res/Textures/Skybox/bottom.jpg",
+		"../res/Textures/Skybox/front.jpg",
+		"../res/Textures/Skybox/back.jpg"
 	};
 
 	
@@ -94,7 +139,7 @@ void init()
 	
 	cubeMapMesh = createSkyboxMesh();
 	
-	skyboxShader = createGraphicsProgram("..\\res\\Skybox.vert","..\\res\\Skybox.frag");
+	skyboxShader = createGraphicsProgram("../res/Skybox.vert","../res/Skybox.frag");
 
 	//get uniform locations 
 	viewLoc = glGetUniformLocation(skyboxShader, "view");
@@ -114,7 +159,7 @@ void init()
 		64, 
 		tileSize, 
 		50.0f,
-		"..\\res\\terrain.comp",
+		"../res/terrain.comp",
 		&terrainMap
 	);
 		
@@ -137,7 +182,7 @@ void init()
 	};
 
     	//create shaders for graphics
-	terrainShader = createGraphicsProgram("..\\res\\terrain.vert","..\\res\\terrain.frag");
+	terrainShader = createGraphicsProgram("../res/terrain.vert","../res/terrain.frag");
 
 
     //get uniform locations
@@ -151,7 +196,7 @@ void init()
 	glUniform1i(snowTextureLoc, 2);
 
 
-	waterShader = createGraphicsProgram("..\\res\\water.vert","..\\res\\water.frag");
+	waterShader = createGraphicsProgram("../res/water.vert","../res/water.frag");
 	
     //get a random grass texture, random int and then format it to a string	: "..\\res\\Textures\\Grass({insert index}).png"
 	u32 randomGrass = rand() % 2;
@@ -159,18 +204,18 @@ void init()
 	//format the string
 	printf("Random Grass Texture: %u\n", randomGrass);
 	char grassTexturePath[50];
-	sprintf_s(grassTexturePath, "..\\res\\Textures\\Grass(%u).png", randomGrass);
+	sprintf_s(grassTexturePath, "../res/Textures/Grass(%u).png", randomGrass);
 	
 	grassTexture = initTexture(grassTexturePath);
 	
 	char stoneTexturePath[50];
-	sprintf_s(stoneTexturePath, "..\\res\\Textures\\Stone(%u).png", randomStone);
+	sprintf_s(stoneTexturePath, "../res/Textures/Stone(%u).png", randomStone);
 	stoneTexture = initTexture(stoneTexturePath);
-	snowTexture = initTexture("..\\res\\Textures\\Snow.png");	
-	waterTexture = initTexture("..\\res\\Textures\\water.png");
+	snowTexture = initTexture("../res/Textures/Snow.png");	
+	waterTexture = initTexture("../res/Textures/water.png");
 
 	//create monkey mesh
-	regularShader = createGraphicsProgram("..\\res\\shader.vert","..\\res\\shader.frag");
+	regularShader = createGraphicsProgram("../res/shader.vert","../res/shader.frag");
 
 	initCamera(
 		&camera,

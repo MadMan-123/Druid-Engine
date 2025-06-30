@@ -5,8 +5,9 @@ Mat4 getModel(const Transform* transform)
 {
     if (!transform) return mat4Identity();
     
-    //position matrix
-    Mat4 posMat = mat4Translate(posMat,transform->pos);
+	Mat4 posMat = mat4Identity();
+	posMat = mat4Translate(posMat, transform->pos);
+
     
     //rotation matrix from quaternion
     Mat4 rotMat = quatToRotationMatrix(transform->rot);

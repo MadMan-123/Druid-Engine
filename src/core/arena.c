@@ -1,21 +1,23 @@
 ﻿    
 #include "../../include/druid.h"
 
-bool arenaCreate(Arena* arena, size_t maxSize)
+bool arenaCreate(Arena* arena, u32 maxSize)
 {
-    if (!arena)
-    {
-	arena = malloc(sizeof(Arena));
-    }	
-	
+    if (!arena) return false;
 
-    //set initial data for arena
     arena->size = maxSize;
     arena->used = 0;
-    //allocate memory for arena
-    arena->data = malloc(arena->size);
-    return (arena->data != NULL);
+    arena->data = malloc(maxSize);
+    return arena->data != NULL;
 }
+
+void arenaDestroy(Arena* arena)
+{
+    if (!arena) return;
+    free(arena->data);
+    arena->data = NULL;
+}
+
 
 void* aalloc(Arena* arena, size_t size)
 {
@@ -30,11 +32,4 @@ void* aalloc(Arena* arena, size_t size)
     return ptr;
 }
 
-void arenaDestroy(Arena* arena)
-{
-    //free memory
-    free(arena->data);
-    //set data to null
-    arena->data = NULL;
-    free(arena);
-}
+

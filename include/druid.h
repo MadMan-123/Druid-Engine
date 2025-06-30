@@ -330,7 +330,7 @@ typedef struct{
     size_t used;
 }Arena;
 
-DAPI bool arenaCreate(Arena* arena, size_t maxSize);
+DAPI bool arenaCreate(Arena* arena, u32 maxSize);
 DAPI void* aalloc(Arena* arena, size_t size);
 DAPI void arenaDestroy(Arena* arena);
 
@@ -404,37 +404,37 @@ typedef struct
 // obj model
 typedef struct
 {
-    OBJIndex* OBJIndices;
+    OBJIndex* objIndices;
     Vec3* vertices;
     Vec2* uvs;
     Vec3* normals;
     bool hasUVs;
     bool hasNormals;
 
-    u32 OBJIndicesCount;
+    u32 objIndicesCount;
     u32 verticesCount;
     u32 uvsCount;
     u32 normalsCount;
 
-    u32 OBJIndicesCapacity;
+    u32 objIndicesCapacity;
     u32 verticesCapacity;
     u32 uvsCapacity;
     u32 normalsCapacity;
 } OBJModel;
 
-DAPI void IndexedModelCalcNormals(IndexedModel* model);
-DAPI OBJModel* OBJModelCreate(const char* fileName);
-DAPI void OBJModelDestroy(OBJModel* model);
-DAPI IndexedModel* OBJModelToIndexedModel(OBJModel* objModel);
+DAPI void indexedModelCalcNormals(IndexedModel* model);
+DAPI OBJModel* objModelCreate(const char* fileName);
+DAPI void objModelDestroy(OBJModel* model);
+DAPI IndexedModel* objModelToIndexedModel(OBJModel* objModel);
 
 // helpers
-DAPI void OBJModelCreateOBJFace(OBJModel* model, const char* line);
-DAPI OBJIndex OBJModelParseOBJIndex(const char* token, bool* hasUVs, bool* hasNormals);
-DAPI Vec2 OBJModelParseOBJVec2(const char* line);
-DAPI Vec3 OBJModelParseOBJVec3(const char* line);
+DAPI void objModelCreateOBJFace(OBJModel* model, const char* line);
+DAPI OBJIndex objModelParseOBJIndex(const char* token, bool* hasUVs, bool* hasNormals);
+DAPI Vec2 objModelParseVec2(const char* line);
+DAPI Vec3 objModelParseVec3(const char* line);
 DAPI u32 FindNextChar(u32 start, const char* str, u32 length, char token);
-DAPI u32 ParseOBJIndexValue(const char* token, u32 start, u32 end);
-DAPI f32 ParseOBJFloatValue(const char* token, u32 start, u32 end);
+DAPI u32 parseOBJIndexValue(const char* token, u32 start, u32 end);
+DAPI f32 parseOBJFloatValue(const char* token, u32 start, u32 end);
 DAPI char** SplitString(const char* s, char delim, u32* count);
 DAPI u32 CompareOBJIndexPtr(const void* a, const void* b);
 //=====================================================================================================================

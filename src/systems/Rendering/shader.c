@@ -10,6 +10,7 @@ char* loadFileText(const char* fileName)
 	if(file == NULL)
 	{
 		printf("The File has not opened\n");
+		return NULL;
 	}
 	
 	//determine how big the file is
@@ -98,6 +99,11 @@ u32 createProgram(u32 shader)
 u32 createComputeProgram(const char* computePath)
 {
     char* code = loadFileText(computePath);
+    if(!code)
+    {
+	    fprintf(stderr,"failed to load Compute Shader\n");
+	    return NULL;
+    }
     u32 shader = createShader(code, GL_COMPUTE_SHADER);
     free(code);
     if(shader == 0)
@@ -133,6 +139,12 @@ u32 createGraphicsProgram(const char* vertPath, const char* fragPath)
    
     char* vertexShaderText = loadFileText(vertPath);
     char* fragShaderText = loadFileText(fragPath); 
+	
+    if(!fragShaderText || !vertexShaderText)
+    {
+	    fprintf(stderr,"Failed to load vertex or frag shader\n");
+    }
+
     u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);
     u32 fragmentShader = createShader(fragShaderText, GL_FRAGMENT_SHADER);
 

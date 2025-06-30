@@ -16,26 +16,36 @@ bool createMap(HashMap* map, size_t capacity, size_t keySize, size_t valueSize,
     map->hashFunc = hashFunc;
     map->equalsFunc = equalsFunc;
 
-    map->arena = malloc(sizeof(Arena));
-    if (!map->arena) return false;
+	map->arena = malloc(sizeof(Arena));
+	if(!map->arena) return false;
+	
 
-    if (!arenaCreate(map->arena, capacity * (keySize + valueSize + sizeof(bool) /* for occupied */)))
-        return false;
+    size_t arenaSize = capacity * (keySize + valueSize + sizeof(bool) + sizeof(Pair));
+    if (!arenaCreate(map->arena, arenaSize)) {
+        
+	return false;
+    }
 
     map->pairs = (Pair*)aalloc(map->arena, capacity * sizeof(Pair));
-    if (!map->pairs) return false;
-
-    // Initialize pairs: allocate storage for key and value buffers in arena
-    // But since Pair stores pointers to key/value, we must allocate key and value buffers per pair
+    if (!map->pairs) {
+        arenaDestroy(map->arena);
+        free(map->arena);
+        return false;
+    }
 
     for (size_t i = 0; i < capacity; i++) {
         map->pairs[i].key = aalloc(map->arena, keySize);
+        if (!map->pairs[i].key) return false;
+
         map->pairs[i].value = aalloc(map->arena, valueSize);
+        if (!map->pairs[i].value) return false;
+
         map->pairs[i].occupied = false;
     }
 
     return true;
 }
+
 
 void destroyMap(HashMap* map)
 {
