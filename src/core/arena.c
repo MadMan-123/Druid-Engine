@@ -1,4 +1,6 @@
-﻿    
+﻿// Arena allocator for Druid engine
+// Provides fast memory allocation for entities and subsystems
+
 #include "../../include/druid.h"
 
 bool arenaCreate(Arena* arena, u32 maxSize)

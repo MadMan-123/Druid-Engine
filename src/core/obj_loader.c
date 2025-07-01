@@ -1,3 +1,5 @@
+// OBJ model loader for Druid engine
+// Loads and parses .obj files for mesh data
 #include "../../include/druid.h"
 
 //hash functions for objkey

@@ -1,3 +1,5 @@
+// Input handling for Druid engine
+// Provides keyboard and mouse input utilities
 #include "../../include/druid.h"
 
 static SDL_Event evnt;
