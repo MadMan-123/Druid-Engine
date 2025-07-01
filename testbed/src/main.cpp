@@ -51,47 +51,7 @@ DEFINE_ARCHETYPE(WorldObject,
 		FIELD(Vec3, scale)
 		);
 
-// Helper to print a 4x4 matrix
-void printMat4(const char* name, Mat4 m) {
-	printf("%s:\n", name);
-	for (int row = 0; row < 4; row++) {
-		printf("[ ");
-		for (int col = 0; col < 4; col++) {
-			printf("%10.6f ", m.m[row][col]);
-		}
-		printf("]\n");
-	}
-	printf("\n");
-}
 
-// Helper to print a Vec4
-void printVec4(const char* name, Vec4 v) {
-	printf("%s: (%f, %f, %f, %f)\n", name, v.x, v.y, v.z, v.w);
-}
-
-
-
-// Convert row-major matrix to column-major (for OpenGL)
-void convertToColumnMajor(const Mat4* src, float dest[16]) {
-	// dest is a flat array of 16 floats in column-major order:
-	// dest[0..3] = first column, dest[4..7] = second column, etc.
-	for (int row = 0; row < 4; ++row) {
-		for (int col = 0; col < 4; ++col) {
-			dest[col * 4 + row] = src->m[row][col];
-		}
-	}
-}
-
-void printMatrixColumnMajor(const float* mat) {
-	printf("Matrix (column-major):\n");
-	for (int row = 0; row < 4; ++row) {
-		printf("[ ");
-		for (int col = 0; col < 4; ++col) {
-			printf("%10.6f ", mat[col * 4 + row]);
-		}
-		printf("]\n");
-	}
-}
 EntityArena* WorldObjects;
 void init()
 {
