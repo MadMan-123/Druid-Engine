@@ -32,7 +32,11 @@ typedef int b32;
 typedef bool b8;
 
 //Compile-time assertion macro
-#define STATIC_ASSERT(COND, MSG) static_assert(COND, MSG)
+#ifdef __cplusplus
+    #define STATIC_ASSERT(COND, MSG) static_assert(COND, MSG)
+#else
+    #define STATIC_ASSERT(COND, MSG) _Static_assert(COND, MSG)
+#endif
 
 //Ensure all types are of the correct size.
 STATIC_ASSERT(sizeof(u8) == 1, "Expected u8 to be 1 byte.");
