@@ -2,16 +2,12 @@
 
 Mat4 getViewProjection(const Camera* camera)
 {
-    //get the forward and up vectors
     Vec3 forward = quatTransform(camera->orientation, v3Forward);
     Vec3 up = quatTransform(camera->orientation, v3Up);
-
-    //get the target position
     Vec3 target = v3Add(camera->pos, forward);
-    //calculate the view matrix
+    
     Mat4 view = mat4LookAt(camera->pos, target, up);
     
-    //return the view projection matrix
     return mat4Mul(camera->projection, view);
 }
 Mat4 getView(const Camera* camera, bool removeTranslation) 

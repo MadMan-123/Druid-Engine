@@ -1,5 +1,4 @@
-﻿
-#include <math.h>
+﻿#include <math.h>
 #include <stdio.h>
 
 #include "../../include/druid.h"
@@ -211,19 +210,120 @@ void freeMat(f32** mat, Vec2i size)
 }
 
 
-inline Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ) 
-{
-    f32 f = 1.0f / tanf(fovRadians / 2.0f);
-    f32 nf = 1.0f / (nearZ - farZ);
+// COLUMN-MAJOR IMPLEMENTATION FOR OPENGL
 
-    Mat4 result = {0}; // zero-init
+inline Mat4 mat4Identity() {
+    Mat4 result = {0};
+    for (int i = 0; i < 4; i++)
+        result.m[i][i] = 1.0f;
+    return result;
+}
 
+inline Mat4 mat4Zero() {
+    Mat4 result = {0};
+    return result;
+}
+
+inline Mat4 mat4Translate(Mat4 in, Vec3 t) {
+    Mat4 result = mat4Identity();
+    result.m[3][0] = t.x;
+    result.m[3][1] = t.y;
+    result.m[3][2] = t.z;
+    return result;
+}
+
+inline Mat4 mat4Scale(float scale) {
+    Mat4 result = mat4Identity();
+    result.m[0][0] = scale;
+    result.m[1][1] = scale;
+    result.m[2][2] = scale;
+    return result;
+}
+
+inline Mat4 mat4ScaleVec(Vec3 s) {
+    Mat4 result = mat4Identity();
+    result.m[0][0] = s.x;
+    result.m[1][1] = s.y;
+    result.m[2][2] = s.z;
+    return result;
+}
+
+inline Mat4 mat4RotateX(float angleRadians) {
+    Mat4 result = mat4Identity();
+    float c = cosf(angleRadians);
+    float s = sinf(angleRadians);
+    result.m[1][1] = c;
+    result.m[2][1] = -s;
+    result.m[1][2] = s;
+    result.m[2][2] = c;
+    return result;
+}
+
+inline Mat4 mat4RotateY(float angleRadians) {
+    Mat4 result = mat4Identity();
+    float c = cosf(angleRadians);
+    float s = sinf(angleRadians);
+    result.m[0][0] = c;
+    result.m[2][0] = s;
+    result.m[0][2] = -s;
+    result.m[2][2] = c;
+    return result;
+}
+
+inline Mat4 mat4RotateZ(float angleRadians) {
+    Mat4 result = mat4Identity();
+    float c = cosf(angleRadians);
+    float s = sinf(angleRadians);
+    result.m[0][0] = c;
+    result.m[1][0] = -s;
+    result.m[0][1] = s;
+    result.m[1][1] = c;
+    return result;
+}
+
+inline Mat4 mat4Rotate(float angleRadians, Vec3 axis) {
+    Mat4 result = mat4Identity();
+    float c = cosf(angleRadians);
+    float s = sinf(angleRadians);
+    float t = 1.0f - c;
+    float x = axis.x, y = axis.y, z = axis.z;
+    float len = sqrtf(x * x + y * y + z * z);
+    if (len > 0.0001f) {
+        x /= len; y /= len; z /= len;
+    }
+    result.m[0][0] = t*x*x + c;
+    result.m[1][0] = t*x*y + s*z;
+    result.m[2][0] = t*x*z - s*y;
+    result.m[0][1] = t*x*y - s*z;
+    result.m[1][1] = t*y*y + c;
+    result.m[2][1] = t*y*z + s*x;
+    result.m[0][2] = t*x*z + s*y;
+    result.m[1][2] = t*y*z - s*x;
+    result.m[2][2] = t*z*z + c;
+    return result;
+}
+
+inline Mat4 mat4Mul(Mat4 a, Mat4 b) {
+    Mat4 result = mat4Zero();
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            for (int i = 0; i < 4; ++i) {
+                result.m[col][row] += a.m[i][row] * b.m[col][i];
+            }
+        }
+    }
+    return result;
+}
+
+inline Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ) {
+    float f = 1.0f / tanf(fovRadians / 2.0f);
+    float nf = 1.0f / (nearZ - farZ);
+    Mat4 result = mat4Zero();
     result.m[0][0] = f / aspect;
     result.m[1][1] = f;
     result.m[2][2] = (farZ + nearZ) * nf;
     result.m[2][3] = -1.0f;
     result.m[3][2] = (2.0f * farZ * nearZ) * nf;
-
     return result;
 }
 
@@ -231,199 +331,21 @@ inline Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) {
     Vec3 f = v3Norm(v3Sub(center, eye));
     Vec3 s = v3Norm(v3Cross(f, up));
     Vec3 u = v3Cross(s, f);
-
     Mat4 result = mat4Identity();
-
-    // Row-major layout:
     result.m[0][0] = s.x;
-    result.m[0][1] = s.y;
-    result.m[0][2] = s.z;
-    result.m[0][3] = -v3Dot(s, eye);
-
-    result.m[1][0] = u.x;
+    result.m[1][0] = s.y;
+    result.m[2][0] = s.z;
+    result.m[0][1] = u.x;
     result.m[1][1] = u.y;
-    result.m[1][2] = u.z;
-    result.m[1][3] = -v3Dot(u, eye);
-
-    result.m[2][0] = -f.x;
-    result.m[2][1] = -f.y;
+    result.m[2][1] = u.z;
+    result.m[0][2] = -f.x;
+    result.m[1][2] = -f.y;
     result.m[2][2] = -f.z;
-    result.m[2][3] = v3Dot(f, eye);
-
-    result.m[3][0] = 0.0f;
-    result.m[3][1] = 0.0f;
-    result.m[3][2] = 0.0f;
-    result.m[3][3] = 1.0f;
-
+    result.m[3][0] = -v3Dot(s, eye);
+    result.m[3][1] = -v3Dot(u, eye);
+    result.m[3][2] = v3Dot(f, eye);
     return result;
 }
-
-//Create an identity matrix
-inline Mat4 mat4Identity() 
-{
-    Mat4 result = {0};
-    for (int i = 0; i < 4; i++)
-    {
-        for (int j = 0; j < 4; j++) 
-        {
-            result.m[i][j] = (i == j) ? 1.0f : 0.0f;
-        }
-    }
-    return result;
-}
-
-//Create a zero matrix
-inline Mat4 mat4Zero() 
-{
-    Mat4 result;
-    for (int i = 0; i < 4; i++) 
-    {
-        for (int j = 0; j < 4; j++)
-        {
-            result.m[i][j] = 0.0f;
-        }
-    }
-    return result;
-}
-
-//Create a translation matrix
-inline Mat4 mat4Translate(Mat4 in, Vec3 translation)
-{
-    Mat4 out = in;
-
-    out.m[0][3] += in.m[0][0] * translation.x + in.m[0][1] * translation.y + in.m[0][2] * translation.z;
-    out.m[1][3] += in.m[1][0] * translation.x + in.m[1][1] * translation.y + in.m[1][2] * translation.z;
-    out.m[2][3] += in.m[2][0] * translation.x + in.m[2][1] * translation.y + in.m[2][2] * translation.z;
-    out.m[3][3] += in.m[3][0] * translation.x + in.m[3][1] * translation.y + in.m[3][2] * translation.z;
-	/*
-	    Mat4 result = mat4Identity();
-    result.m[0][3] = translation.x;
-    result.m[1][3] = translation.y;
-    result.m[2][3] = translation.z;
-    return result;
-*/
-    return out;
-}
-
-
-//Create a scale matrix
-inline Mat4 mat4Scale(float scale) 
-{
-    Mat4 result = mat4Zero();
-    result.m[0][0] = scale;
-    result.m[1][1] = scale;
-    result.m[2][2] = scale;
-    result.m[3][3] = 1.0f;
-    return result;
-}
-
-//Create a scale matrix with different scales per axis
-
-inline Mat4 mat4ScaleVec(Vec3 scale) 
-{
-    Mat4 result = mat4Zero();
-    result.m[0][0] = scale.x;
-    result.m[1][1] = scale.y;
-    result.m[2][2] = scale.z;
-    result.m[3][3] = 1.0f;
-    return result;
-}
-
-//Create rotation matrix around X axis
-inline Mat4 mat4RotateX(float angleRadians) 
-{
-    Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
-    
-    result.m[1][1] = c;
-    result.m[1][2] = -s;
-    result.m[2][1] = s;
-    result.m[2][2] = c;
-    
-    return result;
-}
-
-//Create rotation matrix around Y axis
-inline Mat4 mat4RotateY(float angleRadians) 
-{
-    Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
-    
-    result.m[0][0] = c;
-    result.m[0][2] = s;
-    result.m[2][0] = -s;
-    result.m[2][2] = c;
-    
-    return result;
-}
-
-//Create rotation matrix around Z axis
-inline Mat4 mat4RotateZ(float angleRadians) 
-{
-    Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
-    
-    result.m[0][0] = c;
-    result.m[0][1] = -s;
-    result.m[1][0] = s;
-    result.m[1][1] = c;
-    
-    return result;
-}
-
-//Create rotation matrix for arbitrary axis
-inline Mat4 mat4Rotate(float angleRadians, Vec3 axis) 
-{
-    Mat4 result = mat4Identity();
-    
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
-    float t = 1.0f - c;
-    
-    //Normalize axis
-    float len = sqrtf(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-    if (len > 0.0001f) 
-    {
-        axis.x /= len;
-        axis.y /= len;
-        axis.z /= len;
-    }
-    
-    result.m[0][0] = t * axis.x * axis.x + c;
-    result.m[0][1] = t * axis.x * axis.y - s * axis.z;
-    result.m[0][2] = t * axis.x * axis.z + s * axis.y;
-    
-    result.m[1][0] = t * axis.x * axis.y + s * axis.z;
-    result.m[1][1] = t * axis.y * axis.y + c;
-    result.m[1][2] = t * axis.y * axis.z - s * axis.x;
-    
-    result.m[2][0] = t * axis.x * axis.z - s * axis.y;
-    result.m[2][1] = t * axis.y * axis.z + s * axis.x;
-    result.m[2][2] = t * axis.z * axis.z + c;
-    
-    return result;
-}
-
-//Matrix multiplication
-inline Mat4 mat4Mul(Mat4 a, Mat4 b)
-{
-
-    Mat4 result = mat4Zero();
-    for (int row = 0; row < 4; ++row) {
-        for (int col = 0; col < 4; ++col) {
-            for (int i = 0; i < 4; ++i) {
-                result.m[row][col] += a.m[row][i] * b.m[i][col];
-            }
-        }
-    }
-    return result;
-
-}
-
-
 
 //Matrix addition
 inline Mat4 mat4Add(Mat4 a, Mat4 b)
@@ -506,7 +428,7 @@ Mat4 mat3ToMat4(const Mat3 m3)
 
 
 //Transform a vector by a matrix
-inline Vec4 Mat4TransformVec4(Mat4 m, Vec4 v)
+inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
 {
     Vec4 result;
     
@@ -518,7 +440,7 @@ inline Vec4 Mat4TransformVec4(Mat4 m, Vec4 v)
     return result;
 }
 
-inline Vec3 Mat4TransformPoint(Mat4 m, Vec3 p) 
+inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p) 
 {
     Vec4 temp;
     
@@ -535,7 +457,7 @@ inline Vec3 Mat4TransformPoint(Mat4 m, Vec3 p)
     return (Vec3){temp.x, temp.y, temp.z};
 }
 
-inline Vec3 Mat4TransformDirection(Mat4 m, Vec3 d) 
+inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d) 
 {
     Vec3 result;
     
@@ -546,7 +468,7 @@ inline Vec3 Mat4TransformDirection(Mat4 m, Vec3 d)
     return result;
 }
 
-inline float Mat4Determinant(Mat4 m) 
+inline float mat4Determinant(Mat4 m) 
 {
     //Calculate the cofactors of the first row
     float c00 = m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
@@ -572,7 +494,7 @@ inline float Mat4Determinant(Mat4 m)
 //Invert a 4x4 matrix
 inline Mat4 mat4Inverse(Mat4 m)
 {
-    float det = Mat4Determinant(m);
+    float det = mat4Determinant(m);
     
     if (fabs(det) < 0.0001f)
     {
@@ -604,7 +526,7 @@ inline Mat4 mat4Inverse(Mat4 m)
     result.m[0][3] = -invDet * (
         m.m[0][1] * (m.m[1][2] * m.m[2][3] - m.m[1][3] * m.m[2][2]) -
         m.m[0][2] * (m.m[1][1] * m.m[2][3] - m.m[1][3] * m.m[2][1]) +
-        m.m[0][3] * (m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1])
+        m.m[0][3] * (m.m[1][0] * m.m[2][2] - m.m[1][2] * m.m[2][0])
     );
     
     result.m[1][0] = -invDet * (

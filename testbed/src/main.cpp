@@ -42,10 +42,8 @@ Vec4* rotations;
 Vec3* scales;
 		
 
-//compilation of 3 songs
 
-
-#define MAX 10000
+#define MAX 10
 DEFINE_ARCHETYPE(WorldObject,
 		//position
 		FIELD(Vec3, pos),
@@ -53,17 +51,25 @@ DEFINE_ARCHETYPE(WorldObject,
 		FIELD(Vec3, scale)
 		);
 
-// Print matrix in row-major order
-void printMatrixRowMajor(const Mat4* mat) {
-	printf("Matrix (row-major):\n");
-	for (int row = 0; row < 4; ++row) {
+// Helper to print a 4x4 matrix
+void printMat4(const char* name, Mat4 m) {
+	printf("%s:\n", name);
+	for (int row = 0; row < 4; row++) {
 		printf("[ ");
-		for (int col = 0; col < 4; ++col) {
-			printf("%10.6f ", mat->m[row][col]);
+		for (int col = 0; col < 4; col++) {
+			printf("%10.6f ", m.m[row][col]);
 		}
 		printf("]\n");
 	}
+	printf("\n");
 }
+
+// Helper to print a Vec4
+void printVec4(const char* name, Vec4 v) {
+	printf("%s: (%f, %f, %f, %f)\n", name, v.x, v.y, v.z, v.w);
+}
+
+
 
 // Convert row-major matrix to column-major (for OpenGL)
 void convertToColumnMajor(const Mat4* src, float dest[16]) {
@@ -89,19 +95,6 @@ void printMatrixColumnMajor(const float* mat) {
 EntityArena* WorldObjects;
 void init()
 {
-	float fovDegrees = 60.0f;
-	float aspect = 16.0f / 9.0f;
-	float nearZ = 0.1f;
-	float farZ = 100.0f;
-
-	Mat4 persp = mat4Perspective(fovDegrees * (3.14159265f / 180.0f), aspect, nearZ, farZ);
-
-	printMatrixRowMajor(&persp);
-
-	float columnMajor[16];
-	convertToColumnMajor(&persp, columnMajor);
-
-	printMatrixColumnMajor(columnMajor);
 	WorldObjects = createEntityArena(&WorldObject,MAX);	
 	printEntityArena(WorldObjects);
 	
@@ -230,7 +223,6 @@ void init()
 
 
 
-
 	
 }
 
@@ -306,7 +298,6 @@ void update(f32 dt)
 
 void render(f32 dt) 
 {
-
 
 	// Clear and setup
 	clearDisplay(0.1f, 0.1f, 0.1f, 0.0f);
