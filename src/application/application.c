@@ -83,46 +83,35 @@ void initSystems(const Application* app)
 
 
 
-
-
-
 void startApplication(Application* app)
 {
-	u64 current = SDL_GetPerformanceCounter();
-      	float dt = (float)((double)(current - previousTime) / performanceFreq);
-	
-	u64 fpsTime = current;
-	previousTime = current;
-	double elapsedTime = (double)(current - previousTime);	
+	//prime timers
+	previousTime = SDL_GetPerformanceCounter();
+	u64 fpsTime   = previousTime;
 	while (app->state != EXIT)
 	{
+		//calculate delta time for this frame (in seconds)
+		u64 current = SDL_GetPerformanceCounter();
+		f32 dt = (f32)((f64)(current - previousTime) / performanceFreq);
+		previousTime = current;
 
-
-	
-		if(app->inputProcess != NULL)
-		{
+		//process input if handler provided
+		if (app->inputProcess)
 			app->inputProcess(app);
-		}
 
-		//update the application
+		//update & render – pass freshly computed dt
 		app->update(dt);
-		//render the application
-		render(app,dt);
-	
+		render(app, dt);
+
+		//fps counter
 		frameCount++;
-		current = SDL_GetPerformanceCounter();
-		
-		elapsedTime = (double)(current - fpsTime) / performanceFreq;
-		
-		if(elapsedTime >= 1.0)
+		f64 elapsedTime = (double)(current - fpsTime) / performanceFreq;
+		if (elapsedTime >= 1.0)
 		{
 			FPS = frameCount / elapsedTime;
 			frameCount = 0;
-
 			fpsTime = current;
-
-		}	
-			
+		}
 		app->fps = FPS;
 	}
 }
