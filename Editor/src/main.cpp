@@ -36,6 +36,7 @@ static const f32 camMoveSpeed   = 1.0f;  //units per second
 static const f32 camRotateSpeed = 5.0f;   //degrees per second
 
 //helper – move camera with wasd keys
+//move camera with wasd keys
 static void moveCamera(f32 dt)
 {
     if (isInputDown(KEY_W))
@@ -75,6 +76,7 @@ void rotateCamera(f32 dt)
 }
 
 // Helper that (re)creates the framebuffer and attached texture when the viewport size changes
+//recreates viewport framebuffer when size changes
 static void resizeViewportFramebuffer(int width, int height)
 {
     if (width <= 0 || height <= 0) return;                   // Ignore invalid sizes
@@ -115,6 +117,7 @@ static void resizeViewportFramebuffer(int width, int height)
 
 void processInput(void* appData)
 {
+	//process sdl events and forward to imgui
 	//void* should be Application
 	Application* app = (Application*)appData;
     	//tell SDL to process events
@@ -139,6 +142,7 @@ void processInput(void* appData)
 
 void init()
 {
+	//initializes imgui, resources and default scene
 	// After SDL window and OpenGL context creation:
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -164,7 +168,7 @@ void init()
 
     //setup camera that looks at the origin from z = +5
     initCamera(&sceneCam,
-               (Vec3){0.0f, 0.0f, -5.0f},   //position
+               (Vec3){0.0f, 0.0f, 5.0f},   //position
                70.0f,             //field of view
                1.0f,                       //aspect (real aspect fixed every frame)
                0.1f, 100.0f);              //near/far clip planes
@@ -195,6 +199,7 @@ void init()
 
 void update(f32 dt)
 {
+	//per-frame simulation update and camera motion
 	//spin the cube so we have something moving
     rotationAngle += (45.0f)* dt;
     cubeXform.rot = quatFromAxisAngle(v3Up, radians(rotationAngle));
@@ -204,80 +209,29 @@ void update(f32 dt)
     rotateCamera(dt);
 }
 
-void render(f32 dt)
+// Rendering helper functions to declutter render()
+static void renderGameScene()
 {
-	// Start new ImGui frame
-    // Note: we bind the viewportFBO later after we know the required size.
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplSDL3_NewFrame();
-	ImGui::NewFrame();
+    //render the 3d scene to the off-screen framebuffer
+    glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
+    glViewport(0, 0, viewportWidth, viewportHeight);
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	static bool dockspaceOpen = true;
-	static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
-	ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+    //cube
+    glUseProgram(cubeShader);
+    updateShaderMVP(cubeShader, cubeXform, sceneCam);
+    glUniform3f(glGetUniformLocation(cubeShader, "lightPos"), 1.0f, 2.0f, 1.0f);
+    draw(cubeMesh);
+    glUseProgram(0);
 
-	ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(viewport->WorkPos);
-	ImGui::SetNextWindowSize(viewport->WorkSize);
-	ImGui::SetNextWindowViewport(viewport->ID);
-	window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-	window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-
-	ImGui::Begin("MainDockSpace", &dockspaceOpen, window_flags);
-	ImGui::PopStyleVar(3);
-
-	ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceID");
-	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
-
-	// --- DockBuilder: Set up default layout once ---
-	static bool first_time = true;
-	if (first_time)
-	{
-		first_time = false;
-		ImGui::DockBuilderRemoveNode(dockspace_id); // clear any previous layout
-		ImGui::DockBuilderAddNode(dockspace_id, dockspace_flags | ImGuiDockNodeFlags_DockSpace);
-		ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
-
-		// Split the dockspace: right for Inspector, left for Viewport
-		ImGuiID dock_main_id = dockspace_id;
-		ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
-
-		ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
-		ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
-
-		ImGui::DockBuilderFinish(dockspace_id);
-	}
-
-	// --- Panels ---
-	ImGui::Begin("Viewport");
-	ImVec2 size = ImGui::GetContentRegionAvail();
-	resizeViewportFramebuffer((int)size.x, (int)size.y);
-
-	// Render the game scene to the off-screen framebuffer
-	glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-	glViewport(0, 0, viewportWidth, viewportHeight);
-	glEnable(GL_DEPTH_TEST); //depth required for 3d
-	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	//draw the cube
-	glUseProgram(cubeShader);
-	updateShaderMVP(cubeShader, cubeXform, sceneCam); //upload matrices
-	glUniform3f(glGetUniformLocation(cubeShader, "lightPos"), 5.0f,5.0f,5.0f); //simple light
-	draw(cubeMesh);
-	glUseProgram(0);
-
-
-    //draw skybox first (no depth write, depth compare lequal)
+    //skybox
     glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_FALSE);
     glUseProgram(skyboxShader);
 
-    Mat4 sbView = getView(&sceneCam, true); //remove translation component
+    Mat4 sbView = getView(&sceneCam, true);
     glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, &sbView.m[0][0]);
     glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, &sceneCam.projection.m[0][0]);
 
@@ -289,24 +243,137 @@ void render(f32 dt)
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
 
-	// Display the framebuffer texture inside the ImGui Viewport window
-	ImGui::Image((void*)(intptr_t)viewportTexture, size, ImVec2(0, 1), ImVec2(1, 0));
-	ImGui::End();
+static void drawViewportWindow()
+{
+    ImGui::Begin("Viewport");
+    ImVec2 avail = ImGui::GetContentRegionAvail();
 
-	ImGui::Begin("Inspector");
-	ImGui::Text("Component data here");
-	ImGui::End();
+    const f32 targetAspect = 16.0f / 9.0f;
+    f32 targetW = avail.x;
+    f32 targetH = avail.x / targetAspect;
+    if (targetH > avail.y)
+    {
+        targetH = avail.y;
+        targetW = targetH * targetAspect;
+    }
 
-	ImGui::End(); // End MainDockSpace
+    resizeViewportFramebuffer((int)targetW, (int)targetH);
 
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    ImVec2 cursor = ImGui::GetCursorPos();
+    ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - targetW) * 0.5f,
+                               cursor.y + (avail.y - targetH) * 0.5f));
 
-	// Add these lines for multi-viewport support!
-	ImGui::UpdatePlatformWindows();
-	ImGui::RenderPlatformWindowsDefault();
+    //update camera projection for this aspect ratio
+    sceneCam.projection = mat4Perspective(radians(70.0f), targetAspect, 0.1f, 100.0f);
+
+    renderGameScene();
+
+    ImGui::Image((void*)(intptr_t)viewportTexture, ImVec2(targetW, targetH), ImVec2(0, 1), ImVec2(1, 0));
+    ImGui::End();
+}
+
+static void drawDebugWindow()
+{
+    ImGui::Begin("Debug");
+    ImGui::Text("FPS %lf", editor->fps);
+    ImGui::End();
+}
+
+static void drawPrefabsWindow()
+{
+    ImGui::Begin("Prefabs");
+    ImGui::Text("(Archetype designer coming soon)");
+    ImGui::End();
+}
+
+static void drawSceneListWindow()
+{
+    ImGui::Begin("Scene List");
+    ImGui::Text("(Scene hierarchy will appear here)");
+    ImGui::End();
+}
+
+static void drawInspectorWindow()
+{
+    ImGui::Begin("Inspector");
+    ImGui::Text("Component data here");
+    ImGui::End();
+}
+
+static void drawDockspaceAndPanels()
+{
+    static bool dockspaceOpen = true;
+    static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.25f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+    ImGui::Begin("MainDockSpace", &dockspaceOpen, window_flags);
+    ImGui::PopStyleVar(3);
+
+    ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceID");
+    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+
+    //build default layout once
+    static bool first_time = true;
+    if (first_time)
+    {
+        first_time = false;
+        ImGui::DockBuilderRemoveNode(dockspace_id);
+        ImGui::DockBuilderAddNode(dockspace_id, dockspace_flags | ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+
+        ImGuiID dock_main_id = dockspace_id;
+        ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
+
+        ImGuiID dock_id_middle = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.20f, nullptr, &dock_main_id);
+        ImGuiID dock_id_prefabs = ImGui::DockBuilderSplitNode(dock_id_middle, ImGuiDir_Up, 0.5f, nullptr, &dock_id_middle);
+
+        ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
+        ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
+        ImGui::DockBuilderDockWindow("Scene List", dock_id_prefabs);
+        ImGui::DockBuilderDockWindow("Prefabs", dock_id_middle);
+        ImGui::DockBuilderFinish(dockspace_id);
+    }
+
+    //--actual docked windows--
+    drawViewportWindow();
+    drawDebugWindow();
+    drawPrefabsWindow();
+    drawSceneListWindow();
+    drawInspectorWindow();
+
+    ImGui::End(); // MainDockSpace
+}
+
+void render(f32 dt)
+{
+    //begin new imgui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    drawDockspaceAndPanels();
+
+    //render everything
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    //multi-viewport support
+    ImGui::UpdatePlatformWindows();
+    ImGui::RenderPlatformWindowsDefault();
 }
 
 void destroy()
