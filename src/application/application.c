@@ -99,8 +99,10 @@ void startApplication(Application* app)
 
 
 	
-
-		processInput(app);
+		if(app->inputProcess != NULL)
+		{
+			app->inputProcess(app);
+		}
 
 		//update the application
 		app->update(dt);

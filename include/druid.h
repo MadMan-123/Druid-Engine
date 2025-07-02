@@ -770,7 +770,7 @@ typedef struct
 	void(*update)(f32);
 	void(*render)(f32);
 	void(*destroy)();
-	
+	void(*inputProcess)(void*);	
 	//open gl context with sdl within the display	
 	Display* display;
 	enum ApplicationState state;
