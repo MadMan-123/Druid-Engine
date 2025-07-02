@@ -1,7 +1,7 @@
 # Druid Engine
 
 ## Overview
-Druid is a lightweight game engine and editor built with C++, SDL3, OpenGL, and ImGui. The project is organized into several components:
+Druid is a lightweight game engine and editor built with C++, SDL3, OpenGL, and ImGui. The project is organized into different components:
 - **Core Engine** (in `src/`): Handles application logic, math, input, rendering, and systems like physics and world modeling.
 - **Editor** (in `Editor/`): A dockable ImGui-based editor for scene and asset management, with a real-time viewport and inspector.
 - **Testbed** (in `testbed/`): A sandbox for running engine demos and experiments.
