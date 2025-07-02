@@ -4,11 +4,12 @@
 #include "..\deps\imgui\imgui.h"
 #include "..\deps\imgui\imgui_impl_sdl3.h"
 #include "..\deps\imgui\imgui_impl_opengl3.h"
+#include "..\deps\imgui\imgui_internal.h"
 
 
 Application* editor;
 static SDL_Event evnt;
-
+SDL_Joystick* joystick = NULL;
 
 void processInput(void* appData)
 {
@@ -41,7 +42,9 @@ void init()
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 	ImGui::StyleColorsDark();
 
 	// Initialize ImGui backends
@@ -58,26 +61,67 @@ void update(f32 dt)
 
 void render(f32 dt)
 {
-	
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL3_NewFrame();
-
 	ImGui::NewFrame();
 
-	// Your ImGui code here
-	ImGui::Begin("Editor");
-	ImGui::Text("This is your editor!");
-	if(ImGui::Button("Click this"))
+	static bool dockspaceOpen = true;
+	static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+	ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+
+	ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(viewport->WorkPos);
+	ImGui::SetNextWindowSize(viewport->WorkSize);
+	ImGui::SetNextWindowViewport(viewport->ID);
+	window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+	window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+	ImGui::Begin("MainDockSpace", &dockspaceOpen, window_flags);
+	ImGui::PopStyleVar(3);
+
+	ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceID");
+	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+
+	// --- DockBuilder: Set up default layout once ---
+	static bool first_time = true;
+	if (first_time)
 	{
-		printf("I be clickin n shit\n");
+		first_time = false;
+		ImGui::DockBuilderRemoveNode(dockspace_id); // clear any previous layout
+		ImGui::DockBuilderAddNode(dockspace_id, dockspace_flags | ImGuiDockNodeFlags_DockSpace);
+		ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+
+		// Split the dockspace: right for Inspector, left for Viewport
+		ImGuiID dock_main_id = dockspace_id;
+		ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
+
+		ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
+		ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
+
+		ImGui::DockBuilderFinish(dockspace_id);
 	}
 
-	ImGui::ShowDemoWindow();
-	
+	// --- Panels ---
+	ImGui::Begin("Viewport");
+	ImGui::Text("Render texture output here");
 	ImGui::End();
+
+	ImGui::Begin("Inspector");
+	ImGui::Text("Component data here");
+	ImGui::End();
+
+	ImGui::End(); // End MainDockSpace
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+	// Add these lines for multi-viewport support!
+	ImGui::UpdatePlatformWindows();
+	ImGui::RenderPlatformWindowsDefault();
 }
 
 void destroy()
