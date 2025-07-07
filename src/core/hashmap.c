@@ -5,8 +5,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-bool createMap(HashMap* map, size_t capacity, size_t keySize, size_t valueSize,
-               u32 (*hashFunc)(const void*, size_t),
+bool createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
+               u32 (*hashFunc)(const void*, u32),
                bool (*equalsFunc)(const void*, const void*))
 {
     if (!map) return false;
@@ -22,7 +22,7 @@ bool createMap(HashMap* map, size_t capacity, size_t keySize, size_t valueSize,
 	if(!map->arena) return false;
 	
 
-    size_t arenaSize = capacity * (keySize + valueSize + sizeof(bool) + sizeof(Pair));
+    u32 arenaSize = capacity * (keySize + valueSize + sizeof(bool) + sizeof(Pair));
     if (!arenaCreate(map->arena, arenaSize)) {
         
 	return false;
@@ -35,7 +35,7 @@ bool createMap(HashMap* map, size_t capacity, size_t keySize, size_t valueSize,
         return false;
     }
 
-    for (size_t i = 0; i < capacity; i++) {
+    for (u32 i = 0; i < capacity; i++) {
         map->pairs[i].key = aalloc(map->arena, keySize);
         if (!map->pairs[i].key) return false;
 
@@ -66,8 +66,8 @@ bool insertMap(HashMap* map, const void* key, const void* value)
 
     u32 hashIndex = map->hashFunc(key, map->capacity);
 
-    for (size_t i = 0; i < map->capacity; i++) {
-        size_t tryIndex = (hashIndex + i) % map->capacity;
+    for (u32 i = 0; i < map->capacity; i++) {
+        u32 tryIndex = (hashIndex + i) % map->capacity;
         Pair* pair = &map->pairs[tryIndex];
 
         if (!pair->occupied) {
@@ -94,8 +94,8 @@ bool findInMap(HashMap* map, const void* key, void* outValue)
 
     u32 hashIndex = map->hashFunc(key, map->capacity);
 
-    for (size_t i = 0; i < map->capacity; i++) {
-        size_t tryIndex = (hashIndex + i) % map->capacity;
+    for (u32 i = 0; i < map->capacity; i++) {
+        u32 tryIndex = (hashIndex + i) % map->capacity;
         Pair* pair = &map->pairs[tryIndex];
 
         if (!pair->occupied) {

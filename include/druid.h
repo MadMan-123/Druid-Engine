@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>  // For size_t
+#include <stddef.h>  // For u32
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
@@ -252,23 +252,6 @@ static const Vec3 v3Left    = { -1.0f,  0.0f,  0.0f };
 static const Vec3 v3Forward = {  0.0f,  0.0f, -1.0f };
 static const Vec3 v3Back    = {  0.0f,  0.0f,  1.0f };
 
-static inline Mat4 Mat4Identity = 
-{
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1
-};
-
-static inline Mat4 Mat4Zero = 
-{
-    0, 0, 0, 0,
-    0, 0, 0, 0,
-    0, 0, 0, 0,
-    0, 0, 0, 0
-};
-
-
 //=====================================================================================================================
 //SOA ECS
 typedef struct {
@@ -330,12 +313,12 @@ DAPI u32 getEntitySize(StructLayout* layout);
 //Arenas
 typedef struct{
     void* data;
-    size_t size;
-    size_t used;
+    u32 size;
+    u32 used;
 }Arena;
 
 DAPI bool arenaCreate(Arena* arena, u32 maxSize);
-DAPI void* aalloc(Arena* arena, size_t size);
+DAPI void* aalloc(Arena* arena, u32 size);
 DAPI void arenaDestroy(Arena* arena);
 
 
@@ -353,23 +336,28 @@ typedef struct {
 } Pair;
 
 typedef struct {
-    size_t capacity;
-    size_t count;
+    u32 capacity;
+    u32 count;
     Pair* pairs;
-    size_t keySize;
-    size_t valueSize;
+    u32 keySize;
+    u32 valueSize;
     Arena* arena;
 
-    u32 (*hashFunc)(const void* key, size_t capacity);
+    u32 (*hashFunc)(const void* key, u32 capacity);
     bool (*equalsFunc)(const void* keyA, const void* keyB);
 } HashMap;
 
-
-DAPI bool createHashMap(HashMap* map, size_t mapSize);
-DAPI u32 hash(char* name,size_t mapSize);
+DAPI bool createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
+               u32 (*hashFunc)(const void*, u32),
+               bool (*equalsFunc)(const void*, const void*));
+DAPI u32 hash(char* name,u32 mapSize);
 DAPI void printMap(HashMap* map);
 DAPI bool insertMap(HashMap* map, const void* key, const void* value);
-DAPI void cleanMap(HashMap* map);
+DAPI void destroyMap(HashMap* map);
+
+DAPI bool findInMap(HashMap* map, const void* key, void* outValue);
+
+
 //=====================================================================================================================
 
 typedef struct {
@@ -432,7 +420,7 @@ DAPI void objModelDestroy(OBJModel* model);
 DAPI IndexedModel* objModelToIndexedModel(OBJModel* objModel);
 
 // helpers
-DAPI void objModelCreateOBJFace(OBJModel* model, const char* line);
+DAPI void objModelCreateFace(OBJModel* model, const char* line);
 DAPI OBJIndex objModelParseOBJIndex(const char* token, bool* hasUVs, bool* hasNormals);
 DAPI Vec2 objModelParseVec2(const char* line);
 DAPI Vec3 objModelParseVec3(const char* line);
@@ -560,7 +548,7 @@ typedef struct{
 //Mesh
 typedef struct 
 {
-	size_t ammount;
+	u32 ammount;
 	Vec3* positions;
 	Vec2* texCoords;
 	Vec3* normals;
@@ -748,19 +736,19 @@ typedef enum {
 } KeyCode;
 
 //Mouse buttons enum
-typedef enum {
+enum MouseButton {
     MOUSE_LEFT = 0,
     MOUSE_RIGHT = 1,
     MOUSE_MIDDLE = 2,
     MOUSE_X1 = 3,
     MOUSE_X2 = 4,
     MOUSE_BUTTON_COUNT = 5
-} MouseButton;
+};
 
 
 //APPLICATION
 
-typedef enum ApplicationState{RUN, EXIT};
+enum ApplicationState{RUN, EXIT};
 
 extern double FPS;
 typedef struct 

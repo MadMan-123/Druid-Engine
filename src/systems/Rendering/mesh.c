@@ -89,7 +89,7 @@ void freeMesh(Mesh *mesh)
 void destroyMesh(Mesh* mesh)
 {
 	
-	mesh->drawCount = NULL;
+	mesh->drawCount = 0;
 	glDeleteVertexArrays(1, &mesh->vao);
 	glDeleteBuffers(NUM_BUFFERS, mesh->vab);
 	free(mesh);

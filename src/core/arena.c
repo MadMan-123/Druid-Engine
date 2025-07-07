@@ -21,7 +21,7 @@ void arenaDestroy(Arena* arena)
 }
 
 
-void* aalloc(Arena* arena, size_t size)
+void* aalloc(Arena* arena, u32 size)
 {
     if (!arena) return NULL;
 

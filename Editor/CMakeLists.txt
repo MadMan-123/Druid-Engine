@@ -18,6 +18,7 @@ include_directories(
 # Source files
 file(GLOB EDITOR_SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_SOURCE_DIR}/*.cpp
 )
 
 file(GLOB IMGUI_SOURCES

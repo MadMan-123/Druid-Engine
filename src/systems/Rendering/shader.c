@@ -102,7 +102,7 @@ u32 createComputeProgram(const char* computePath)
     if(!code)
     {
 	    fprintf(stderr,"failed to load Compute Shader\n");
-	    return NULL;
+	    return 0;
     }
     u32 shader = createShader(code, GL_COMPUTE_SHADER);
     free(code);
