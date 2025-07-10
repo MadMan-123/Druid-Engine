@@ -1,6 +1,8 @@
 // Bare-bones Editor main.cpp
 #include <iostream>
+#include "druid.h"
 #include "editor.h"
+#include "scene.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
@@ -9,8 +11,8 @@
 
 static SDL_Event evnt;
 // ── Rendering resources ───────────────────────────────────────
-static Mesh* cubeMesh   = nullptr;  //cube mesh
-static u32   cubeShader = 0;        //cube shader
+Mesh* cubeMesh   = nullptr;  //cube mesh
+u32   cubeShader = 0;        //cube shader
                // engine camera
 static Transform cubeXform;               // model matrix data
 static f32 rotationAngle = 0.0f;          //degrees – used to spin the cube
@@ -19,9 +21,13 @@ f32 currentPitch = 0;
 //constants for camera motion
 static const f32 camMoveSpeed   = 1.0f;  //units per second
 static const f32 camRotateSpeed = 5.0f;   //degrees per second
+static const u32 entityDefaultCount = 128;
 
+EntityArena* sceneEntities;
+char inputBoxBuffer[100]; //this will be in numbers 
+i32 entitySize = 0;
 //helper – move camera with wasd keys
-//move camera with wasd keys
+
 static void moveCamera(f32 dt)
 {
     if (isInputDown(KEY_W))
@@ -85,10 +91,32 @@ void processInput(void* appData)
 	
 }
 
-void init()
+void reallocateSceneArena()
 {
 
-	//initializes imgui, resources and default scene
+}
+
+bool* isActive = nullptr;
+Vec3* positions = nullptr;
+Vec4* rotations = nullptr;
+Vec3* scales = nullptr;
+
+void init()
+{
+    
+    entitySize = entityDefaultCount;
+    entitySizeCache = entitySize;
+	//create the scene entity EntityArena
+    sceneEntities = createEntityArena(&SceneEntity, entitySizeCache);
+  
+    printf("Entity Arena created size: %d",entitySizeCache);
+    
+    positions = (Vec3*)sceneEntities->fields[0];
+    rotations = (Vec4*)sceneEntities->fields[1];
+    scales = (Vec3*)sceneEntities->fields[2];
+    isActive = (bool*)sceneEntities->fields[3];
+
+    //initializes imgui, resources and default scene
 	// After SDL window and OpenGL context creation:
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -103,7 +131,6 @@ void init()
 	ImGui_ImplSDL3_InitForOpenGL(editor->display->sdlWindow, editor->display->glContext);
 	ImGui_ImplOpenGL3_Init("#version 410"); // Or your GL version string
 
-	editor->inputProcess = processInput;	
 
     //create demo cube mesh (defined in src/systems/Rendering/mesh.c)
     cubeMesh = createBoxMesh();
@@ -141,6 +168,14 @@ void init()
 
 void update(f32 dt)
 {
+    if(entitySize != entitySizeCache)
+    {
+        printf("changed size %d", entitySize);
+        //this means we need to re allocate the Entity EntityArena
+        reallocateSceneArena();
+        //set the cache
+        entitySizeCache = entitySize;
+    }
 	//per-frame simulation update and camera motion
 	//spin the cube so we have something moving
     rotationAngle += (45.0f)* dt;
@@ -150,37 +185,6 @@ void update(f32 dt)
     moveCamera(dt);
     rotateCamera(dt);
 }
-
-// Rendering helper functions to declutter render()
-static void renderGameScene()
-{
-    //render the 3d scene to the off-screen framebuffer
-    glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-    glViewport(0, 0, viewportWidth, viewportHeight);
-    glEnable(GL_DEPTH_TEST);
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    //skybox
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_FALSE);
-    glUseProgram(skyboxShader);
-
-    Mat4 sbView = getView(&sceneCam, true);
-    glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, &sbView.m[0][0]);
-    glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, &sceneCam.projection.m[0][0]);
-
-    glBindVertexArray(skyboxMesh->vao);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    glBindVertexArray(0);
-
-    glDepthMask(GL_TRUE);
-    glDepthFunc(GL_LESS);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
 
 
 void render(f32 dt)
@@ -203,6 +207,7 @@ void render(f32 dt)
 
 void destroy()
 {
+    freeEntityArena(sceneEntities);
     //free editor resources before exiting
     freeMesh(cubeMesh);
     freeShader(cubeShader);
@@ -211,7 +216,6 @@ void destroy()
     freeMesh(skyboxMesh);
     freeTexture(cubeMapTexture);
     freeShader(skyboxShader);
-
     ImGui_ImplOpenGL3_Shutdown(); //shutdown imgui opengl backend
     ImGui_ImplSDL3_Shutdown();    //shutdown imgui sdl backend
     ImGui::DestroyContext();      //destroy imgui core
@@ -222,9 +226,10 @@ void destroy()
 int main(int argc, char** argv) 
 {
 	editor = createApplication(init, update, render, destroy);
-	editor->width = 1920;
-	editor->height = 1080;	
-		
-	run(editor); 
+	editor->width = 1920;	
+    editor->height = 1080;	
+	editor->inputProcess = processInput;	
+	
+    run(editor); 
 	return 0;
 }

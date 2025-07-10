@@ -51,7 +51,7 @@ target_include_directories(druid PUBLIC
 target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32)
 target_compile_options(druid PRIVATE -Wall -O2 -std=c11 -fPIC -g)
 
-target_link_libraries(druid PRIVATE
+target_link_libraries(druid PUBLIC
     ${CMAKE_SOURCE_DIR}/deps/libglew32.dll.a
     ${CMAKE_SOURCE_DIR}/deps/libSDL3.dll.a
     opengl32
@@ -74,4 +74,5 @@ add_custom_target(clean_cache
     COMMENT "Clearing CMake cache and configuration files..."
 )
 
+add_subdirectory(Editor)
 

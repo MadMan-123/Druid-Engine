@@ -8,7 +8,6 @@
 // All types use custom typedefs (f32, u32, etc.)
 // All functions use C camel case
 //
-// Author: [Your Name]
 
 inline Vec2 v2Add(Vec2 a, Vec2 b)
 {
@@ -777,6 +776,15 @@ inline Vec3 quatTransform(Vec4 q, Vec3 v)
     Vec4 result = quatMul(quatMul(q, qv), qInv);
 
     return (Vec3){ result.x, result.y, result.z };
+}
+
+inline Vec4 quatFromEuler(const Vec3 axis)
+{
+    Vec4 qx = quatFromAxisAngle(v3Right,axis.x);
+    Vec4 qy = quatFromAxisAngle(v3Up, axis.y);
+    Vec4 qz = quatFromAxisAngle(v3Left,axis.z);
+    return quatMul(qy,quatMul(qx,qz)); 
+
 }
 
 inline Vec4 quatConjugate(const Vec4 q)

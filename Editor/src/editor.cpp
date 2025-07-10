@@ -1,13 +1,16 @@
 #include "editor.h"
+#include <cstdio>
 #include <iostream>
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
 
 #include "../deps/imgui/imgui_internal.h"
+#include "druid.h"
 
 // Allocate the storage here
 Application* editor = nullptr;
+
 
 u32 viewportFBO      = 0;
 u32 viewportTexture  = 0;
@@ -21,7 +24,13 @@ u32   skyboxShader   = 0;
 u32   skyboxViewLoc  = 0;
 u32   skyboxProjLoc  = 0;
 
-Camera sceneCam      {};   // default-constructed
+
+Camera sceneCam = {0};  
+u32 entitySizeCache = 0;
+u32 entityCount = 0;
+InspectorState CurrentInspectorState = EMPTY_VIEW; //set inital inspector view to be empty
+
+u32 inspectorEntityID = 0; //holds the index for the inspector to load component data  
 
 // Helper that (re)creates the framebuffer and attached texture when the viewport size changes
 //recreates viewport framebuffer when size changes
@@ -63,7 +72,6 @@ static void resizeViewportFramebuffer(int width, int height)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-// Rendering helper functions to declutter render()
 static void renderGameScene()
 {
     //render the 3d scene to the off-screen framebuffer
@@ -86,9 +94,43 @@ static void renderGameScene()
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
-
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
+
+
+    glUseProgram(cubeShader);
+    Transform newTransform = {0};
+    //draw each scene entity
+    for(u32 id = 0; id < entitySizeCache; id++)
+    {
+        if(!isActive[id]) continue;
+
+        //get transform ready
+        newTransform = {
+            positions[id],
+            rotations[id],
+            scales[id]
+        };
+        
+        //printf("pos: %f,%f,%f \n",positions[id].x,positions[id].y,positions[id].z);
+
+        //printf("rot: %f,%f,%f,%f \n",rotations[id].x,rotations[id].y,rotations[id].z,rotations[id].w);
+    
+        //printf("scale: %f,%f,%f \n",scales[id].x,scales[id].y,scales[id].z);
+        //update mvp
+        updateShaderMVP(cubeShader, newTransform, sceneCam);
+
+        //draw the mesh
+        draw(cubeMesh);
+
+
+    }
+
+
+
+
+    
+
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -139,18 +181,61 @@ static void drawPrefabsWindow()
 static void drawSceneListWindow()
 {
     ImGui::Begin("Scene List");
+    ImGui::InputInt("Max Entity Size", &entitySize);
+
     if(ImGui::Button("Add Entity"))
     {
+        isActive[entityCount] = true;
+        scales[entityCount] = {1,1,1};
+        positions[entityCount] = {0,0,0};
+        rotations[entityCount] = quatIdentity();
+
+        entityCount++;
         
+        printf("Added Entity %d\n",entityCount);
     }
-    ImGui::Text("(Scene hierarchy will appear here)");
+
+    char entityString[16]; //16 chars for saftey
+    for(int i = 0; i < entityCount; i++)
+    {
+        sprintf(entityString, "Entity %d",i);
+        //draw list of entities
+        if(ImGui::Button(entityString))
+        {
+            //load details tp Inspector
+            printf("%s inspector request\n",entityString);
+            //tell the inspector what to read
+            CurrentInspectorState = ENTITY_VIEW;
+            inspectorEntityID = i;
+        
+        
+        }
+    }
     ImGui::End();
 }
 
+Vec3 EulerAngles = v3Zero;
 static void drawInspectorWindow()
 {
     ImGui::Begin("Inspector");
-    ImGui::Text("Component data here");
+    switch (CurrentInspectorState) 
+    {
+        case InspectorState::ENTITY_VIEW:
+            //draw the scene entity basic data
+            ImGui::InputFloat3("position",(float*)&positions[inspectorEntityID]);
+            ImGui::InputFloat3("rotation",(float*)&EulerAngles);
+            ImGui::InputFloat3("scale",(float*)&scales[inspectorEntityID]);
+
+            //set the rotation element
+            rotations[inspectorEntityID] = quatFromEuler(EulerAngles);
+
+        break;
+
+        default:
+        case InspectorState::EMPTY_VIEW:
+            ImGui::Text("Nout to see here");
+    }
+
     ImGui::End();
 }
 

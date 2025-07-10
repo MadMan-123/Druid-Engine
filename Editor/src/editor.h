@@ -23,6 +23,25 @@ extern u32 skyboxProjLoc;
 
 // Scene camera accessible from multiple files
 extern Camera sceneCam;
+extern i32 entitySize;
+extern u32 entitySizeCache;
+extern u32 entityCount;
+extern bool* isActive;
+extern Vec3* positions;
+extern Vec4* rotations;
+extern Vec3* scales;
+extern Mesh* cubeMesh;
+extern u32 cubeShader;
+
+
+enum InspectorState{
+    EMPTY_VIEW = -1,
+    ENTITY_VIEW = 0,  //view entities component data
+    MAX_STATE
+};
+extern InspectorState currentInspectorState; 
+extern u32 inspectorEntityID; //holds the index for the inspector to load component data  
+
 
 // Application lifecycle hooks implemented for the Editor
 void processInput(void* appData);

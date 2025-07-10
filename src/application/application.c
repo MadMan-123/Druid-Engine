@@ -123,10 +123,6 @@ void render(Application* app, float dt)
 	clearDisplay(0.0f, 0.0f, 0.0f, 1.0f);
 	
 	app->render(dt);
-	
-				
-	glEnableClientState(GL_COLOR_ARRAY); 
-	glEnd();
 
 	swapBuffer(app->display);
 } 

@@ -112,11 +112,11 @@ extern "C" {
 //=====================================================================================================================
 //MATHS
 typedef struct {
-	u32 x, y;
+	i32 x, y;
 }Vec2i;
 
 typedef struct{
-	u32 x,y,z;
+	i32 x,y,z;
 }Vec3i;
 
 typedef struct {
@@ -181,7 +181,7 @@ DAPI Mat4 quatToRotationMatrix(Vec4 q);
 DAPI Vec3 quatTransform(Vec4 q, Vec3 v);
 
 DAPI Vec4 quatConjugate(const Vec4 q);
-
+DAPI Vec4 quatFromEuler(const Vec3 axis);
 
 //Matrix methods
 DAPI  void matAdd(f32** a,f32** b, Vec2i aSize);
@@ -291,21 +291,40 @@ DAPI u32 getEntitySize(StructLayout* layout);
 
 
 #define FIELD_OF(Type, field) \
-    (FieldInfo){ #field, sizeof(((Type*)0)->field) }
+    { #field, sizeof(((Type*)0)->field) }
 
-#define FIELD(type,name) (FieldInfo){#name,sizeof(type)}
+#define FIELD(type,name) {#name,sizeof(type)}
+
+
+#define VEC3_FIELDS(name)                          \
+    { #name "X", sizeof(float) },       \
+    { #name "Y", sizeof(float) },       \
+    { #name "Z", sizeof(float) }
+
+#define VEC4_FIELDS(name)                          \
+    { #name "X", sizeof(float) },       \
+    { #name "Y", sizeof(float) },       \
+    { #name "Z", sizeof(float) },       \
+    { #name "W", sizeof(float) }
 
 
 
+
+#ifdef DRUID_H
 #define DEFINE_ARCHETYPE(name, ...)            \
-    static FieldInfo name##_fields[] = {       \
+    FieldInfo name##_fields[] = {       \
         __VA_ARGS__                            \
     };                                         \
-    static StructLayout name = {               \
+    StructLayout name = {               \
         #name,                                 \
         name##_fields,                         \
         (u32)(sizeof(name##_fields) / sizeof(FieldInfo)) \
     };
+#else
+#define DEFINE_ARCHETYPE(name, ...) \
+    extern FieldInfo name##_fields[]; \
+    extern StructLayout name;
+#endif
 
 
  
