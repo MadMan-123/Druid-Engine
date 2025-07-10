@@ -100,6 +100,7 @@ bool* isActive = nullptr;
 Vec3* positions = nullptr;
 Vec4* rotations = nullptr;
 Vec3* scales = nullptr;
+char* names = nullptr;
 
 void init()
 {
@@ -115,6 +116,7 @@ void init()
     rotations = (Vec4*)sceneEntities->fields[1];
     scales = (Vec3*)sceneEntities->fields[2];
     isActive = (bool*)sceneEntities->fields[3];
+    names = (char*)sceneEntities->fields[4];
 
     //initializes imgui, resources and default scene
 	// After SDL window and OpenGL context creation:

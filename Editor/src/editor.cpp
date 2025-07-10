@@ -7,6 +7,7 @@
 
 #include "../deps/imgui/imgui_internal.h"
 #include "druid.h"
+#include "scene.h"
 
 // Allocate the storage here
 Application* editor = nullptr;
@@ -27,10 +28,13 @@ u32   skyboxProjLoc  = 0;
 
 Camera sceneCam = {0};  
 u32 entitySizeCache = 0;
+
+//entity data
 u32 entityCount = 0;
 InspectorState CurrentInspectorState = EMPTY_VIEW; //set inital inspector view to be empty
 
 u32 inspectorEntityID = 0; //holds the index for the inspector to load component data  
+
 
 // Helper that (re)creates the framebuffer and attached texture when the viewport size changes
 //recreates viewport framebuffer when size changes
@@ -189,21 +193,24 @@ static void drawSceneListWindow()
         scales[entityCount] = {1,1,1};
         positions[entityCount] = {0,0,0};
         rotations[entityCount] = quatIdentity();
+        
+        //make the inital name this
+        sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d",entityCount);
+        
 
         entityCount++;
-        
         printf("Added Entity %d\n",entityCount);
     }
 
-    char entityString[16]; //16 chars for saftey
+    char* entityName;
     for(int i = 0; i < entityCount; i++)
     {
-        sprintf(entityString, "Entity %d",i);
+        entityName = &names[i * MAX_NAME_SIZE];
         //draw list of entities
-        if(ImGui::Button(entityString))
+        if(ImGui::Button(entityName))
         {
             //load details tp Inspector
-            printf("%s inspector request\n",entityString);
+            printf("%s inspector request\n",entityName);
             //tell the inspector what to read
             CurrentInspectorState = ENTITY_VIEW;
             inspectorEntityID = i;
@@ -221,6 +228,7 @@ static void drawInspectorWindow()
     switch (CurrentInspectorState) 
     {
         case InspectorState::ENTITY_VIEW:
+            ImGui::InputText("Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
             //draw the scene entity basic data
             ImGui::InputFloat3("position",(float*)&positions[inspectorEntityID]);
             ImGui::InputFloat3("rotation",(float*)&EulerAngles);

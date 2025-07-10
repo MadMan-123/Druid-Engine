@@ -26,12 +26,18 @@ extern Camera sceneCam;
 extern i32 entitySize;
 extern u32 entitySizeCache;
 extern u32 entityCount;
+
 extern bool* isActive;
 extern Vec3* positions;
 extern Vec4* rotations;
 extern Vec3* scales;
+extern char* names;
+
 extern Mesh* cubeMesh;
+
+
 extern u32 cubeShader;
+
 
 
 enum InspectorState{
