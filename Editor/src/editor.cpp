@@ -28,6 +28,8 @@ u32   skyboxProjLoc  = 0;
 
 Camera sceneCam = {0};  
 u32 entitySizeCache = 0;
+Vec3 EulerAngles = v3Zero;
+
 
 //entity data
 u32 entityCount = 0;
@@ -181,6 +183,7 @@ static void drawPrefabsWindow()
     ImGui::Text("(Archetype designer coming soon)");
     ImGui::End();
 }
+static Vec3 EulerAnglesDegrees = v3Zero;
 
 static void drawSceneListWindow()
 {
@@ -206,36 +209,47 @@ static void drawSceneListWindow()
     for(int i = 0; i < entityCount; i++)
     {
         entityName = &names[i * MAX_NAME_SIZE];
+        
+        ImGui::PushID(i);
+        const char* button_label = (entityName[0] == '\0') ? "[Unnamed Entity]" : entityName;
+
         //draw list of entities
-        if(ImGui::Button(entityName))
+        if(ImGui::Button(button_label))
         {
-            //load details tp Inspector
-            printf("%s inspector request\n",entityName);
             //tell the inspector what to read
             CurrentInspectorState = ENTITY_VIEW;
             inspectorEntityID = i;
         
-        
+            Vec3 eulerRadians = eulerFromQuat(rotations[inspectorEntityID]);
+            EulerAnglesDegrees.x = degrees(eulerRadians.x);
+            EulerAnglesDegrees.y = degrees(eulerRadians.y);
+            EulerAnglesDegrees.z = degrees(eulerRadians.z);
         }
+        ImGui::PopID();
     }
     ImGui::End();
 }
 
-Vec3 EulerAngles = v3Zero;
 static void drawInspectorWindow()
 {
     ImGui::Begin("Inspector");
     switch (CurrentInspectorState) 
     {
         case InspectorState::ENTITY_VIEW:
-            ImGui::InputText("Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
+            ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
             //draw the scene entity basic data
             ImGui::InputFloat3("position",(float*)&positions[inspectorEntityID]);
-            ImGui::InputFloat3("rotation",(float*)&EulerAngles);
+            
+            if(ImGui::InputFloat3("rotation",(float*)&EulerAnglesDegrees))
+            {
+                Vec3 eulerRadians;
+                eulerRadians.x = radians(EulerAnglesDegrees.x);
+                eulerRadians.y = radians(EulerAnglesDegrees.y);
+                eulerRadians.z = radians(EulerAnglesDegrees.z);
+                //set the rotation element
+                rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
+            }
             ImGui::InputFloat3("scale",(float*)&scales[inspectorEntityID]);
-
-            //set the rotation element
-            rotations[inspectorEntityID] = quatFromEuler(EulerAngles);
 
         break;
 

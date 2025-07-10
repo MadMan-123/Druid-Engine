@@ -778,13 +778,22 @@ inline Vec3 quatTransform(Vec4 q, Vec3 v)
     return (Vec3){ result.x, result.y, result.z };
 }
 
-inline Vec4 quatFromEuler(const Vec3 axis)
+inline Vec4 quatFromEuler(const Vec3 euler) // z: yaw, y: pitch, x: roll
 {
-    Vec4 qx = quatFromAxisAngle(v3Right,axis.x);
-    Vec4 qy = quatFromAxisAngle(v3Up, axis.y);
-    Vec4 qz = quatFromAxisAngle(v3Left,axis.z);
-    return quatMul(qy,quatMul(qx,qz)); 
+    f32 cy = cosf(euler.z * 0.5f);
+    f32 sy = sinf(euler.z * 0.5f);
+    f32 cp = cosf(euler.y * 0.5f);
+    f32 sp = sinf(euler.y * 0.5f);
+    f32 cr = cosf(euler.x * 0.5f);
+    f32 sr = sinf(euler.x * 0.5f);
 
+    Vec4 q;
+    q.w = cr * cp * cy + sr * sp * sy;
+    q.x = sr * cp * cy - cr * sp * sy;
+    q.y = cr * sp * cy + sr * cp * sy;
+    q.z = cr * cp * sy - sr * sp * cy;
+
+    return q;
 }
 
 inline Vec4 quatConjugate(const Vec4 q)
@@ -795,4 +804,28 @@ inline Vec4 quatConjugate(const Vec4 q)
 inline f32 lerp(f32 a, f32 b, f32 t)
 {
     return a + t * (b - a);
+}
+
+inline Vec3 eulerFromQuat(Vec4 q)
+{
+    Vec3 angles;
+
+    // roll (x-axis rotation)
+    f32 sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
+    f32 cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+    angles.x = atan2f(sinr_cosp, cosr_cosp);
+
+    // pitch (y-axis rotation)
+    f32 sinp = 2 * (q.w * q.y - q.z * q.x);
+    if (fabsf(sinp) >= 1)
+        angles.y = copysignf(PI / 2, sinp); // use 90 degrees if out of range
+    else
+        angles.y = asinf(sinp);
+
+    // yaw (z-axis rotation)
+    f32 siny_cosp = 2 * (q.w * q.z + q.x * q.y);
+    f32 cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+    angles.z = atan2f(siny_cosp, cosy_cosp);
+
+    return angles;
 }

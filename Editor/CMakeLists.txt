@@ -47,3 +47,10 @@ target_include_directories(editor PRIVATE
 )
 
 target_sources(editor PRIVATE ${IMGUI_SOURCES}) 
+
+add_custom_target(debug
+    COMMAND gdb $<TARGET_FILE:editor>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin
+    COMMENT "Running editor in GDB..."
+    USES_TERMINAL
+) 

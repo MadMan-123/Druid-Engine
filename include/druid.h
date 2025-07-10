@@ -182,6 +182,7 @@ DAPI Vec3 quatTransform(Vec4 q, Vec3 v);
 
 DAPI Vec4 quatConjugate(const Vec4 q);
 DAPI Vec4 quatFromEuler(const Vec3 axis);
+DAPI Vec3 eulerFromQuat(Vec4 quat);
 
 //Matrix methods
 DAPI  void matAdd(f32** a,f32** b, Vec2i aSize);
