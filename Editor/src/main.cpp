@@ -1,8 +1,8 @@
-// Bare-bones Editor main.cpp
 #include <iostream>
 #include "druid.h"
 #include "editor.h"
 #include "scene.h"
+#include "MeshMap.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
@@ -209,6 +209,8 @@ void render(f32 dt)
 
 void destroy()
 {
+
+    free(meshMap);
     freeEntityArena(sceneEntities);
     //free editor resources before exiting
     freeMesh(cubeMesh);
@@ -231,7 +233,7 @@ int main(int argc, char** argv)
 	editor->width = 1920;	
     editor->height = 1080;	
 	editor->inputProcess = processInput;	
-	
+    meshMap = createMeshMap(16);	
     run(editor); 
 	return 0;
 }
