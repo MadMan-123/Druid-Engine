@@ -128,10 +128,18 @@ static void renderGameScene()
         //update mvp
         updateShaderMVP(cubeShader, newTransform, sceneCam);
 
-        Mesh* meshToDraw = getMesh("Cube Mesh");
-        //draw the mesh
-        draw(meshToDraw);
+        // Get the mesh name for this specific entity
+        char* entityMeshName = &meshNames[id * MAX_MESH_NAME_SIZE];
 
+        if(entityMeshName[0] != '\0' && strlen(entityMeshName) > 0)
+        {
+            Mesh* meshToDraw = getMesh( entityMeshName);
+    
+            if(meshToDraw)
+            {
+                draw(meshToDraw);
+            }
+        }
 
     }
 
@@ -273,7 +281,8 @@ static void drawInspectorWindow()
 
                     if(meshName && ImGui::Selectable(meshName,isSelected))
                     {
-                        printf("%s was chosen\n", meshName);
+                        strcpy(&meshNames[inspectorEntityID],meshName);
+                    
                     }
                 }
             }

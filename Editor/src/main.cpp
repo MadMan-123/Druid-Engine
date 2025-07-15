@@ -119,6 +119,9 @@ void init()
     isActive = (bool*)sceneEntities->fields[3];
     names = (char*)sceneEntities->fields[4];
     meshNames = (char*)sceneEntities->fields[5];
+    //set to empty strings
+    memset(meshNames, 0, entitySize * MAX_MESH_NAME_SIZE);
+
     //initializes imgui, resources and default scene
 	// After SDL window and OpenGL context creation:
 	IMGUI_CHECKVERSION();
@@ -137,7 +140,7 @@ void init()
 
     //create demo cube mesh (defined in src/systems/Rendering/mesh.c)
     cubeMesh = createBoxMesh();
-
+    Mesh* monkey = loadModel("../res/monkey3.obj");
     //compile simple lighting shader that exists in the testbed resources folder
     cubeShader = createGraphicsProgram("../res/shader.vert",
                                        "../res/shader.frag");
@@ -173,6 +176,8 @@ void init()
         printf("Cube mesh was not added");
     
     }
+
+    addMesh(monkey,"Monkey");
 
 }
 

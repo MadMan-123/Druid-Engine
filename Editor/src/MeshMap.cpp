@@ -101,13 +101,15 @@ bool addMesh(Mesh* mesh, const char* name)
 
 Mesh* getMesh(const char* name)
 {
+    
+
     Mesh* result;
     if(findInMap(&meshMap->map, name, &result))
     {
         return result;
     }
 
-    printf("No Mesh Found\n");
+    printf("No Mesh Found called: %s\n",name);
     return NULL;
 }
 const char* getMeshNameByIndex(MeshMap* map, u32 index)
