@@ -1,5 +1,6 @@
 #include "editor.h"
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
@@ -156,7 +157,7 @@ static void drawViewportWindow()
 {
     ImGui::Begin("Viewport");
     ImVec2 avail = ImGui::GetContentRegionAvail();
-
+    canMoveViewPort = (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
     const f32 targetAspect = 16.0f / 9.0f;
     f32 targetW = avail.x;
     f32 targetH = avail.x / targetAspect;
@@ -275,14 +276,20 @@ static void drawInspectorWindow()
             {
                 for(u32 i = 0; i < meshMap->count; i++)
                 {
-
+                    
                     const bool isSelected = (selectedIndex == i);
                     const char* meshName = getMeshNameByIndex(meshMap,i);
 
                     if(meshName && ImGui::Selectable(meshName,isSelected))
                     {
-                        strcpy(&meshNames[inspectorEntityID],meshName);
-                    
+
+                        char* namePtr = &meshNames[inspectorEntityID * MAX_MESH_NAME_SIZE];
+                        memset(namePtr, 0, MAX_MESH_NAME_SIZE);
+                        strncpy(namePtr,meshName,MAX_MESH_NAME_SIZE - 1);
+                        namePtr[MAX_MESH_NAME_SIZE - 1] = '\0';
+
+                        printf("2 Entity %d mesh: '%s'\n", inspectorEntityID, &meshNames[inspectorEntityID * 32]);
+                        
                     }
                 }
             }

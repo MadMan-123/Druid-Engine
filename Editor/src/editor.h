@@ -34,7 +34,7 @@ extern Vec3* scales;
 extern char* names;
 extern char* meshNames;
 extern Mesh* cubeMesh;
-
+extern bool canMoveViewPort;
 
 extern u32 cubeShader;
 

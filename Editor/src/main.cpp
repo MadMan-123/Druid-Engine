@@ -27,7 +27,7 @@ EntityArena* sceneEntities;
 char inputBoxBuffer[100]; //this will be in numbers 
 i32 entitySize = 0;
 //helper – move camera with wasd keys
-
+bool canMoveViewPort = false;
 static void moveCamera(f32 dt)
 {
     if (isInputDown(KEY_W))
@@ -67,6 +67,13 @@ void rotateCamera(f32 dt)
 }
 
 
+void moveViewPortCamera(f32 dt)
+{
+     //apply user input to the camera
+    moveCamera(dt);
+    rotateCamera(dt);
+
+}
 void processInput(void* appData)
 {
 	//void* should be Application
@@ -195,11 +202,13 @@ void update(f32 dt)
 	//spin the cube so we have something moving
     rotationAngle += (45.0f)* dt;
     cubeXform.rot = quatFromAxisAngle(v3Up, radians(rotationAngle));
-
-    //apply user input to the camera
-    moveCamera(dt);
-    rotateCamera(dt);
+        
+    if(canMoveViewPort)
+    {
+        moveViewPortCamera(dt);
+    }
 }
+
 
 
 void render(f32 dt)
