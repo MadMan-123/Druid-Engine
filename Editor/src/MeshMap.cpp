@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <cstring>
 
-MeshMap* meshMap = nullptr;
 
 u32 djb2Hash(const void* inStr, u32 capacity)
 {
@@ -18,6 +17,7 @@ u32 djb2Hash(const void* inStr, u32 capacity)
 
     return hash % capacity;
 }
+
 
 bool equals(const void* a, const void* b)
 {
@@ -40,7 +40,7 @@ MeshMap* createMeshMap(u32 meshCount)
 
     map->count = 0;
     
-    if(!createMap(&map->map, meshCount, sizeof(char) * NAME_MAX_SIZE, sizeof(Mesh), djb2Hash, equals))
+    if(!createMap(&map->map, meshCount, sizeof(char) * NAME_MAX_SIZE, sizeof(Mesh*), djb2Hash, equals))
     {
         printf("Mesh Hash map failed to create\n");
         return NULL;
@@ -54,15 +54,22 @@ MeshMap* createMeshMap(u32 meshCount)
         return NULL;
     }    
 
+    map->names = (char**)malloc(sizeof(char*) * meshCount);
+    if(map->names == NULL)
+    {
+        printf("Name Pointers did not allocate\n");
+        return NULL;
+    }
     //32 characters for a name 
     arenaCreate(&map->arena, NAME_MAX_SIZE * meshCount );
 
     return map;
 }
 
+ 
 bool addMesh(Mesh* mesh, const char* name)
 {
-    if(meshMap->count > meshMap->max)
+    if(meshMap->count >= meshMap->max)
     {
         printf("Mesh Map is full");
         return false;
@@ -74,21 +81,41 @@ bool addMesh(Mesh* mesh, const char* name)
         return false;
     }
     char* nameCopy  = (char*)aalloc(&meshMap->arena,nameLen);
-    memcpy(nameCopy, name, nameLen);
+    strcpy(nameCopy,name); 
+     // Store the mesh in the buffer
+    meshMap->meshBuffer[meshMap->count] = *mesh;
+   
+    meshMap->names[meshMap->count] = nameCopy;
+
+    Mesh* meshPtr = &meshMap->meshBuffer[meshMap->count]; 
+    // Insert the string directly 
+    bool result = insertMap(&meshMap->map, nameCopy,&meshPtr);
     
-    meshMap->count++; 
-    return insertMap(&meshMap->map, &nameCopy, mesh);
+    if(result)
+    {
+        meshMap->count++;
+        printf("Mesh added successfully at index %d\n", meshMap->count - 1);
+    }
+    return result;
 }
 
 Mesh* getMesh(const char* name)
 {
-    static Mesh* result;
-    if(findInMap(&meshMap->map, &name, &result))
+    Mesh* result;
+    if(findInMap(&meshMap->map, name, &result))
     {
         return result;
     }
+
+    printf("No Mesh Found\n");
     return NULL;
 }
+const char* getMeshNameByIndex(MeshMap* map, u32 index)
+{
+    if(index >= map->count) return nullptr;
+    return map->names[index];
+}
+
 
 void freeMeshMap(MeshMap* map)
 {
@@ -98,3 +125,8 @@ void freeMeshMap(MeshMap* map)
     destroyMap(&map->map);
     free(map);
 }
+
+
+
+
+

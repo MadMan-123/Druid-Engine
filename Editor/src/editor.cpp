@@ -8,6 +8,7 @@
 #include "../deps/imgui/imgui_internal.h"
 #include "druid.h"
 #include "scene.h"
+#include "MeshMap.h"
 
 // Allocate the storage here
 Application* editor = nullptr;
@@ -30,6 +31,7 @@ Camera sceneCam = {0};
 u32 entitySizeCache = 0;
 Vec3 EulerAngles = v3Zero;
 
+MeshMap* meshMap = nullptr;
 
 //entity data
 u32 entityCount = 0;
@@ -126,8 +128,9 @@ static void renderGameScene()
         //update mvp
         updateShaderMVP(cubeShader, newTransform, sceneCam);
 
+        Mesh* meshToDraw = getMesh("Cube Mesh");
         //draw the mesh
-        draw(cubeMesh);
+        draw(meshToDraw);
 
 
     }
@@ -224,6 +227,9 @@ static void drawSceneListWindow()
             EulerAnglesDegrees.x = degrees(eulerRadians.x);
             EulerAnglesDegrees.y = degrees(eulerRadians.y);
             EulerAnglesDegrees.z = degrees(eulerRadians.z);
+            
+                        
+
         }
         ImGui::PopID();
     }
@@ -235,6 +241,10 @@ static void drawInspectorWindow()
     ImGui::Begin("Inspector");
     switch (CurrentInspectorState) 
     {
+        default:
+        case InspectorState::EMPTY_VIEW:
+            ImGui::Text("Nout to see here");
+        break;
         case InspectorState::ENTITY_VIEW:
             ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
             //draw the scene entity basic data
@@ -247,16 +257,33 @@ static void drawInspectorWindow()
                 eulerRadians.y = radians(EulerAnglesDegrees.y);
                 eulerRadians.z = radians(EulerAnglesDegrees.z);
                 //set the rotation element
-                rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
+                rotations[inspectorEntityID] = quatFromEuler(eulerRadians); 
+
             }
             ImGui::InputFloat3("scale",(float*)&scales[inspectorEntityID]);
+            
+            u32 selectedIndex = 0;
+            if(ImGui::BeginListBox("Meshes"))
+            {
+                for(u32 i = 0; i < meshMap->count; i++)
+                {
+
+                    const bool isSelected = (selectedIndex == i);
+                    const char* meshName = getMeshNameByIndex(meshMap,i);
+
+                    if(meshName && ImGui::Selectable(meshName,isSelected))
+                    {
+                        printf("%s was chosen\n", meshName);
+                    }
+                }
+            }
+            ImGui::EndListBox();
 
         break;
+    
 
-        default:
-        case InspectorState::EMPTY_VIEW:
-            ImGui::Text("Nout to see here");
-    }
+}
+
 
     ImGui::End();
 }

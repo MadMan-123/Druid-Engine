@@ -119,8 +119,12 @@ temp/
 tmp/
 *.tmp
 
+.cache/
+Makefile
+
 # Allow specific libraries
 !SDL3.dll
 !libSDL3.dll.a
 !glew32.lib
+!glew32.dll.a
 !glew32.dll

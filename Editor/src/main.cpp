@@ -101,6 +101,7 @@ Vec3* positions = nullptr;
 Vec4* rotations = nullptr;
 Vec3* scales = nullptr;
 char* names = nullptr;
+char* meshNames = nullptr;
 
 void init()
 {
@@ -117,7 +118,7 @@ void init()
     scales = (Vec3*)sceneEntities->fields[2];
     isActive = (bool*)sceneEntities->fields[3];
     names = (char*)sceneEntities->fields[4];
-
+    meshNames = (char*)sceneEntities->fields[5];
     //initializes imgui, resources and default scene
 	// After SDL window and OpenGL context creation:
 	IMGUI_CHECKVERSION();
@@ -166,6 +167,13 @@ void init()
     //cache uniform locations for efficiency
     skyboxViewLoc  = glGetUniformLocation(skyboxShader, "view");
     skyboxProjLoc  = glGetUniformLocation(skyboxShader, "projection");
+
+    if(!addMesh(cubeMesh, "Cube Mesh"))
+    {
+        printf("Cube mesh was not added");
+    
+    }
+
 }
 
 void update(f32 dt)

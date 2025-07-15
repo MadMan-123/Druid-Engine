@@ -32,7 +32,7 @@ extern Vec3* positions;
 extern Vec4* rotations;
 extern Vec3* scales;
 extern char* names;
-
+extern char* meshNames;
 extern Mesh* cubeMesh;
 
 
