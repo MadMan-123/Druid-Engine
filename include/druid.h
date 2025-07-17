@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>  // For u32
+#include <stddef.h> 
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
@@ -10,6 +10,9 @@
 #include <SDL3/SDL.h>
 
 #include <GL/glew.h>
+
+#include <assimp/material.h>
+
 //=====================================================================================================================
 //Unsigned int types.
 typedef unsigned char u8;
@@ -562,7 +565,20 @@ typedef struct{
     int width;
     int height;
 }HeightMap;
+//Materials
+#define RES_FOLDER        "res/"
+#define MODEL_FOLDER      "res/models/"
+#define TEXTURE_FOLDER    "res/textures/"
+#define MATERIAL_FOLDER   "res/materials/"
 
+typedef struct {
+    u32 albedoTex;
+    u32 normalTex;
+    u32 metallicTex;
+    u32 roughnessTex;
+    f32 roughness;
+    f32 metallic;
+} Material;
 
 
 //Mesh
@@ -591,8 +607,13 @@ typedef struct
 	u32 vao;
 	//array of buffers
 	u32 vab[NUM_BUFFERS];
-	u32 drawCount; //how much of the vertexArrayObject do we want to draw
+    //material data
+    Material material;
+    u32 drawCount; //how much of the vertexArrayObject do we want to draw
 }Mesh;
+DAPI u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const char* basePath);
+DAPI void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath);
+
 
 
 //mesh functions
@@ -612,6 +633,9 @@ DAPI Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32
 DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize);
 DAPI Mesh* createBoxMesh(); 
 DAPI Mesh* createSkyboxMesh(); 
+
+
+
 
 //Keys
 //Keyboard keys enum

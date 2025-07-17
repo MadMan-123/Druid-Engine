@@ -69,6 +69,12 @@ MeshMap* createMeshMap(u32 meshCount)
  
 bool addMesh(Mesh* mesh, const char* name)
 {
+    if (!mesh)
+    {
+        printf("Mesh is null, cannot add to map\n");
+        return false;
+    }
+
     if(meshMap->count >= meshMap->max)
     {
         printf("Mesh Map is full\n");

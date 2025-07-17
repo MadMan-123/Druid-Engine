@@ -118,7 +118,7 @@ void init()
 	//create the scene entity EntityArena
     sceneEntities = createEntityArena(&SceneEntity, entitySizeCache);
   
-    printf("Entity Arena created size: %d",entitySizeCache);
+    printf("Entity Arena created size: %d\n",entitySizeCache);
     
     positions = (Vec3*)sceneEntities->fields[0];
     rotations = (Vec4*)sceneEntities->fields[1];
@@ -147,9 +147,9 @@ void init()
 
     //create demo cube mesh (defined in src/systems/Rendering/mesh.c)
     cubeMesh = createBoxMesh();
-    Mesh* monkey = loadModel("../res/monkey3.obj");
-    Mesh* warhammer = loadModel("../res/Pole_Warhammer.fbx");
-    Mesh* shield = loadModel("../res/Shield_Crusader.fbx");
+    Mesh* monkey = loadModel("../res/models/monkey3.obj");
+    Mesh* warhammer = loadModel("../res/models/Pole_Warhammer.fbx");
+    Mesh* shield = loadModel("../res/models/Shield_Crusader.fbx");
     //compile simple lighting shader that exists in the testbed resources folder
     cubeShader = createGraphicsProgram("../res/shader.vert",
                                        "../res/shader.frag");

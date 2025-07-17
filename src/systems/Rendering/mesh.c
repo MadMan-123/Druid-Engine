@@ -4,6 +4,9 @@
 #include <assimp/cimport.h>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/material.h>
+
+
 
 Mesh* loadMeshFromAssimp(const char* filename)
 {
@@ -37,7 +40,7 @@ Mesh* loadMeshFromAssimp(const char* filename)
     u32 totalVertices = 0;
     u32 totalIndices = 0;
 
-    // Step 1: Count total sizes
+    //count total sizes
     for (u32 m = 0; m < scene->mNumMeshes; m++) {
         totalVertices += scene->mMeshes[m]->mNumVertices;
 
@@ -46,7 +49,7 @@ Mesh* loadMeshFromAssimp(const char* filename)
         }
     }
 
-    // Step 2: Allocate big arrays
+    //allocate soa vert
     Vertices vertices;
     vertices.ammount = totalVertices;
     vertices.positions = malloc(sizeof(Vec3) * totalVertices);
@@ -54,14 +57,18 @@ Mesh* loadMeshFromAssimp(const char* filename)
     vertices.normals = malloc(sizeof(Vec3) * totalVertices);
     u32* indices = malloc(sizeof(u32) * totalIndices);
 
-    // Step 3: Copy mesh data
+    //copy mesh data
     u32 vertexOffset = 0;
     u32 indexOffset = 0;
+    Material material = {0};
 
     for (u32 m = 0; m < scene->mNumMeshes; m++) 
     {
         struct aiMesh* aimesh = scene->mMeshes[m];
+        u32 materialIndex = aimesh->mMaterialIndex;
+        struct aiMaterial* aiMat = scene->mMaterials[materialIndex];
 
+        readMaterial(&material, aiMat, "../res/textures");
         for (u32 i = 0; i < aimesh->mNumVertices; i++) 
         {
             vertices.positions[vertexOffset + i] = (Vec3){
@@ -111,7 +118,7 @@ Mesh* loadMeshFromAssimp(const char* filename)
 
     //create mesh
     Mesh* mesh = createMesh(&vertices, totalVertices, indices, totalIndices);
-
+    mesh->material = material;
     // Cleanup
     free(vertices.positions);
     free(vertices.texCoords);
