@@ -1,6 +1,128 @@
 #include "../../../include/druid.h"
 #include <math.h>
 #include <time.h>
+#include <assimp/cimport.h>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+Mesh* loadMeshFromAssimp(const char* filename)
+{
+    //load the model from file
+    const struct aiScene* scene = aiImportFile(filename,
+        aiProcess_Triangulate |
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_ImproveCacheLocality |
+        aiProcess_SortByPType |
+        aiProcess_CalcTangentSpace |
+        aiProcess_GenSmoothNormals    
+
+    );
+
+    //null check
+    if (!scene)
+    {
+        printf("Failed to load model %s: %s\n", filename, aiGetErrorString());
+        aiReleaseImport(scene);
+        return NULL;
+    }
+
+    //check if there are any meshes
+    if (scene->mNumMeshes == 0)
+    {
+        printf("Model %s has no meshes\n", filename);
+        aiReleaseImport(scene);
+        return NULL;
+    }
+
+    u32 totalVertices = 0;
+    u32 totalIndices = 0;
+
+    // Step 1: Count total sizes
+    for (u32 m = 0; m < scene->mNumMeshes; m++) {
+        totalVertices += scene->mMeshes[m]->mNumVertices;
+
+        for (u32 i = 0; i < scene->mMeshes[m]->mNumFaces; i++) {
+            totalIndices += scene->mMeshes[m]->mFaces[i].mNumIndices;
+        }
+    }
+
+    // Step 2: Allocate big arrays
+    Vertices vertices;
+    vertices.ammount = totalVertices;
+    vertices.positions = malloc(sizeof(Vec3) * totalVertices);
+    vertices.texCoords = malloc(sizeof(Vec2) * totalVertices);
+    vertices.normals = malloc(sizeof(Vec3) * totalVertices);
+    u32* indices = malloc(sizeof(u32) * totalIndices);
+
+    // Step 3: Copy mesh data
+    u32 vertexOffset = 0;
+    u32 indexOffset = 0;
+
+    for (u32 m = 0; m < scene->mNumMeshes; m++) 
+    {
+        struct aiMesh* aimesh = scene->mMeshes[m];
+
+        for (u32 i = 0; i < aimesh->mNumVertices; i++) 
+        {
+            vertices.positions[vertexOffset + i] = (Vec3){
+                aimesh->mVertices[i].x,
+                aimesh->mVertices[i].y,
+                aimesh->mVertices[i].z
+            };
+
+            if (aimesh->mTextureCoords[0]) 
+            {
+                vertices.texCoords[vertexOffset + i] = (Vec2){
+                    aimesh->mTextureCoords[0][i].x,
+                    aimesh->mTextureCoords[0][i].y
+                };
+            }
+            else 
+            {
+                vertices.texCoords[vertexOffset + i] = (Vec2){ 0.0f, 0.0f };
+            }
+
+            if (aimesh->mNormals) 
+            {
+                vertices.normals[vertexOffset + i] = (Vec3){
+                    aimesh->mNormals[i].x,
+                    aimesh->mNormals[i].y,
+                    aimesh->mNormals[i].z
+                };
+            }
+            else 
+            {
+                vertices.normals[vertexOffset + i] = (Vec3){ 0.0f, 0.0f, 0.0f };
+            }
+        }
+
+        //copy and offset indices
+        for (u32 i = 0; i < aimesh->mNumFaces; i++)
+        {
+            struct aiFace face = aimesh->mFaces[i];
+            for (u32 j = 0; j < face.mNumIndices; j++) 
+            {
+                indices[indexOffset++] = face.mIndices[j] + vertexOffset;
+            }
+        }
+
+        vertexOffset += aimesh->mNumVertices;
+    }
+
+    //create mesh
+    Mesh* mesh = createMesh(&vertices, totalVertices, indices, totalIndices);
+
+    // Cleanup
+    free(vertices.positions);
+    free(vertices.texCoords);
+    free(vertices.normals);
+    free(indices);
+    aiReleaseImport(scene);
+    return mesh;
+
+
+}
+
 Mesh* createMesh(Vertices* vertices, u32 numVertices, u32* indices, u32 numIndices)
 {
 	Mesh* mesh = (Mesh*)malloc(sizeof(Mesh));
@@ -101,20 +223,9 @@ Mesh* loadModel(const char* filename)
 
 	//assert that the mesh was created
 	assert(mesh != NULL && "Mesh could not be created");
-	
-	//get the obj from the file
-	OBJModel* obj = objModelCreate(filename);
-	
-	assert(obj != NULL && "Obj wasnt loaded");
-	
 
-	//get the indexed model
-	IndexedModel* model = objModelToIndexedModel(obj);
-	
-	
-	initModel(mesh,*model);
-
-
+    //load model from assimp
+    mesh = loadMeshFromAssimp(filename);
 
 	return mesh;
 }

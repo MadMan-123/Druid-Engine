@@ -148,6 +148,8 @@ void init()
     //create demo cube mesh (defined in src/systems/Rendering/mesh.c)
     cubeMesh = createBoxMesh();
     Mesh* monkey = loadModel("../res/monkey3.obj");
+    Mesh* warhammer = loadModel("../res/Pole_Warhammer.fbx");
+    Mesh* shield = loadModel("../res/Shield_Crusader.fbx");
     //compile simple lighting shader that exists in the testbed resources folder
     cubeShader = createGraphicsProgram("../res/shader.vert",
                                        "../res/shader.frag");
@@ -178,13 +180,10 @@ void init()
     skyboxViewLoc  = glGetUniformLocation(skyboxShader, "view");
     skyboxProjLoc  = glGetUniformLocation(skyboxShader, "projection");
 
-    if(!addMesh(cubeMesh, "Cube Mesh"))
-    {
-        printf("Cube mesh was not added");
-    
-    }
-
+    addMesh(cubeMesh, "Cube");
     addMesh(monkey,"Monkey");
+    addMesh(warhammer, "Warhammer");
+    addMesh(shield, "Shield");
 
 }
 

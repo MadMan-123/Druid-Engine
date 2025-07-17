@@ -71,7 +71,7 @@ bool addMesh(Mesh* mesh, const char* name)
 {
     if(meshMap->count >= meshMap->max)
     {
-        printf("Mesh Map is full");
+        printf("Mesh Map is full\n");
         return false;
     }
     u32 nameLen = strlen(name) +1;
