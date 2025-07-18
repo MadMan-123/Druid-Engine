@@ -12,7 +12,7 @@
 static SDL_Event evnt;
 // ── Rendering resources ───────────────────────────────────────
 Mesh* cubeMesh   = nullptr;  //cube mesh
-u32   cubeShader = 0;        //cube shader
+u32   shader = 0;        //cube shader
                // engine camera
 static Transform cubeXform;               // model matrix data
 static f32 rotationAngle = 0.0f;          //degrees – used to spin the cube
@@ -144,15 +144,20 @@ void init()
 	ImGui_ImplSDL3_InitForOpenGL(editor->display->sdlWindow, editor->display->glContext);
 	ImGui_ImplOpenGL3_Init("#version 410"); // Or your GL version string
 
+    //compile simple lighting shader that exists in the testbed resources folder
+    shader = createGraphicsProgram("../res/shader.vert",
+        "../res/shader.frag");
 
-    //create demo cube mesh (defined in src/systems/Rendering/mesh.c)
     cubeMesh = createBoxMesh();
     Mesh* monkey = loadModel("../res/models/monkey3.obj");
     Mesh* warhammer = loadModel("../res/models/Pole_Warhammer.fbx");
     Mesh* shield = loadModel("../res/models/Shield_Crusader.fbx");
-    //compile simple lighting shader that exists in the testbed resources folder
-    cubeShader = createGraphicsProgram("../res/shader.vert",
-                                       "../res/shader.frag");
+
+	monkey->material.unifroms = getMaterialUniforms(shader);
+    warhammer->material.unifroms = getMaterialUniforms(shader);
+    shield->material.unifroms = getMaterialUniforms(shader);
+    cubeMesh->material.unifroms = getMaterialUniforms(shader);
+
 
     //setup camera that looks at the origin from z = +5
     initCamera(&sceneCam,
@@ -235,7 +240,7 @@ void destroy()
     freeEntityArena(sceneEntities);
     //free editor resources before exiting
     freeMesh(cubeMesh);
-    freeShader(cubeShader);
+    freeShader(shader);
 
     //free skybox resources
     freeMesh(skyboxMesh);

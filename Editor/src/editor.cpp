@@ -34,6 +34,7 @@ Vec3 EulerAngles = v3Zero;
 
 MeshMap* meshMap = nullptr;
 
+
 //entity data
 u32 entityCount = 0;
 InspectorState CurrentInspectorState = EMPTY_VIEW; //set inital inspector view to be empty
@@ -107,7 +108,7 @@ static void renderGameScene()
     glDepthFunc(GL_LESS);
 
 
-    glUseProgram(cubeShader);
+    glUseProgram(shader);
     Transform newTransform = {0};
     //draw each scene entity
     for(u32 id = 0; id < entitySizeCache; id++)
@@ -127,7 +128,7 @@ static void renderGameScene()
     
         //printf("scale: %f,%f,%f \n",scales[id].x,scales[id].y,scales[id].z);
         //update mvp
-        updateShaderMVP(cubeShader, newTransform, sceneCam);
+        updateShaderMVP(shader, newTransform, sceneCam);
 
         // Get the mesh name for this specific entity
         char* entityMeshName = &meshNames[id * MAX_MESH_NAME_SIZE];

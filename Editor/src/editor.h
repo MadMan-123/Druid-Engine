@@ -36,7 +36,7 @@ extern char* meshNames;
 extern Mesh* cubeMesh;
 extern bool canMoveViewPort;
 
-extern u32 cubeShader;
+extern u32 shader;
 
 
 

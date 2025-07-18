@@ -241,10 +241,37 @@ Mesh* loadModel(const char* filename)
 
 void draw(Mesh* mesh)
 {
-	glBindVertexArray(mesh->vao);
+    MaterialUniforms* uniforms = &mesh->material.unifroms;
+    Material* material = &mesh->material;
+
+
+    //bind textures to texture units
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, material->albedoTex);
+    glUniform1i(uniforms->albedoTex, 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, material->normalTex);
+    glUniform1i(uniforms->normalTex, 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, material->metallicTex);
+    glUniform1i(uniforms->metallicTex, 2);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, material->roughnessTex);
+    glUniform1i(uniforms->roughnessTex, 3);
+
+    // Set scalar material properties
+    glUniform1f(uniforms->metallic, material->metallic);
+    glUniform1f(uniforms->roughness, material->roughness);
+
+    glBindVertexArray(mesh->vao);
 	
 	glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
 	//glDrawArrays(GL_TRIANGLES, 0, drawCount);
+
+
 	
 	glBindVertexArray(0);
 }
@@ -256,7 +283,7 @@ void draw(Mesh* mesh)
 //Function to generate height data using compute shader
 HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,const char* computeShaderPath)
 {
-    //Create compute shader (you can move this to init if preferred)
+    //Create compute shader
     u32 computeShader = createComputeProgram(computeShaderPath);
 	if (computeShader == 0) 
 	{
@@ -723,4 +750,11 @@ Mesh* createSkyboxMesh()
     
     return skyboxMesh;
     
+}
+
+
+void setMeshShader(Mesh* mesh,u32 shader)
+{
+    //update the mesh uniform locations
+    mesh->material.unifroms = getMaterialUniforms(shader)
 }

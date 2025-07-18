@@ -18,7 +18,7 @@ file(GLOB IMGUI_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui/imgui_impl_opengl3.cpp"
 )
 
-add_executable(editor ${EDITOR_SOURCES})
+add_executable(editor ${EDITOR_SOURCES}  "src/ShaderMap.cpp" "src/ShaderMap.h")
 
 set_target_properties(editor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin"

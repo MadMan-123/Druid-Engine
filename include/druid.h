@@ -466,11 +466,6 @@ typedef struct
 
 DAPI Mat4 getModel(const Transform* transform);
 
-
-	
-
-
-
 //Camera
 typedef struct
 {
@@ -565,12 +560,22 @@ typedef struct{
     int width;
     int height;
 }HeightMap;
+
 //Materials
 #define RES_FOLDER        "res/"
 #define MODEL_FOLDER      "res/models/"
 #define TEXTURE_FOLDER    "res/textures/"
-#define MATERIAL_FOLDER   "res/materials/"
 
+typedef struct {
+    u32 albedoTex;
+    u32 normalTex;
+    u32 metallicTex;
+    u32 roughnessTex;
+    u32 roughness;
+    u32 metallic;
+}MaterialUniforms;
+
+//Mesh
 typedef struct {
     u32 albedoTex;
     u32 normalTex;
@@ -578,10 +583,10 @@ typedef struct {
     u32 roughnessTex;
     f32 roughness;
     f32 metallic;
-} Material;
+    MaterialUniforms unifroms;
+}Material;
 
 
-//Mesh
 typedef struct 
 {
 	u32 ammount;
@@ -613,8 +618,8 @@ typedef struct
 }Mesh;
 DAPI u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const char* basePath);
 DAPI void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath);
-
-
+DAPI MaterialUniforms getMaterialUniforms(u32 shader);
+DAPI void setMeshShader(Mesh* mesh, u32 shader);
 
 //mesh functions
 //draws a given mesh
@@ -628,14 +633,12 @@ DAPI void initModel(Mesh* mesh,const IndexedModel model);
 //free the mesh from memory 
 DAPI void freeMesh(Mesh* mesh);
 
+
 //creates a plane essentially
 DAPI Mesh* createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize, f32 heightScale, const char* computeShaderPath, HeightMap* output); 
 DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cellSize);
 DAPI Mesh* createBoxMesh(); 
-DAPI Mesh* createSkyboxMesh(); 
-
-
-
+DAPI Mesh* createSkyboxMesh();
 
 //Keys
 //Keyboard keys enum

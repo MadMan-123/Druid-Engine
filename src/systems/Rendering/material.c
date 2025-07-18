@@ -17,44 +17,45 @@ u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const c
     }
 
     //strip to just the filename
-    const char* file_name = texture_path.data;
-    const char* last_slash = strrchr(file_name, '/');
-    if (!last_slash) last_slash = strrchr(file_name, '\\');
-    if (last_slash) file_name = last_slash + 1;
+    const char* fileName = texture_path.data;
+    const char* lastSlash = strrchr(fileName, '/');
+    if (!lastSlash) lastSlash = strrchr(fileName, '\\');
+    if (lastSlash) fileName = lastSlash + 1;
 
-    const char* try_extensions[] = { "", ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
-    const u32 num_exts = sizeof(try_extensions) / sizeof(try_extensions[0]);
+    const char* tryExtensions[] = { "", ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+    const u32 num_exts = sizeof(tryExtensions) / sizeof(tryExtensions[0]);
 
     for (u32 i = 0; i < num_exts; i++)
     {
-        char try_path[512];
+        char tryPath[512];
 
-        if (try_extensions[i][0] == '\0') 
+        if (tryExtensions[i][0] == '\0') 
         {
             //try original 
-            snprintf(try_path, sizeof(try_path), "%s/%s", base_path, file_name);
+            snprintf(tryPath, sizeof(tryPath), "%s/%s", base_path, fileName);
         }
         else 
         {
             //strip original extension and add new one
-            char base_name[256];
-            strncpy(base_name, file_name, sizeof(base_name));
-            char* dot = strrchr(base_name, '.');
+            char baseName[256];
+            strncpy(baseName, fileName, sizeof(baseName));
+            char* dot = strrchr(baseName, '.');
             if (dot) *dot = '\0';
 
-            snprintf(try_path, sizeof(try_path), "%s/%s%s", base_path, base_name, try_extensions[i]);
+            snprintf(tryPath, sizeof(tryPath), "%s/%s%s", base_path, baseName, tryExtensions[i]);
         }
 
-        FILE* f = fopen(try_path, "rb");
+        FILE* f = fopen(tryPath, "rb");
         if (f) 
         {
             fclose(f);
-            return initTexture(try_path);
+            return initTexture(tryPath);
         }
+
+        return 0;
     }
 
 }
-
 
 //reads material and populates your struct
 void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath) 
@@ -78,7 +79,21 @@ void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath)
     {
         out->roughness = (f32)value;
     }
-    else {
+    else 
+    {
         out->roughness = 1.0f;
     }
 }   
+
+MaterialUniforms getMaterialUniforms(u32 shader)
+{
+    MaterialUniforms uniforms = { 0 };
+    uniforms.albedoTex = glGetUniformLocation(shader, "albedoTexture");
+    uniforms.metallicTex = glGetUniformLocation(shader, "metallicTexture");
+    uniforms.roughnessTex = glGetUniformLocation(shader, "roughnessTexture");
+    uniforms.normalTex = glGetUniformLocation(shader, "normalTexture");
+    uniforms.roughness = glGetUniformLocation(shader, "roughness");
+    uniforms.metallic = glGetUniformLocation(shader, "metallic");
+    return uniforms;
+}
+
