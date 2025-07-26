@@ -3,6 +3,7 @@
 #include <druid.h>
 #include <SDL3/SDL.h>
 #include <GL/glew.h>
+#include <imgui.h>
 
 // Forward declarations and global variables shared across the Editor
 extern Application* editor;
@@ -34,10 +35,18 @@ extern Vec3* scales;
 extern char* names;
 extern char* meshNames;
 extern Mesh* cubeMesh;
+extern Material* materials;
+
 extern bool canMoveViewPort;
 
 extern u32 shader;
+extern f32 viewportWidthPixels;
+extern f32 viewportHeightPixels;
+extern f32 viewportOffsetX;
+extern f32 viewportOffsetY;
 
+extern ImVec2 g_viewportScreenPos;
+extern ImVec2 g_viewportSize;
 
 
 enum InspectorState{

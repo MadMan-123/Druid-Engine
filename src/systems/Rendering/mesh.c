@@ -8,7 +8,7 @@
 
 
 
-Mesh* loadMeshFromAssimp(const char* filename)
+Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount)
 {
     //load the model from file
     const struct aiScene* scene = aiImportFile(filename,
@@ -37,14 +37,19 @@ Mesh* loadMeshFromAssimp(const char* filename)
         return NULL;
     }
 
+    //set the mesh count
+    *meshCount = scene->mNumMeshes;
+
     u32 totalVertices = 0;
     u32 totalIndices = 0;
 
     //count total sizes
-    for (u32 m = 0; m < scene->mNumMeshes; m++) {
+    for (u32 m = 0; m < scene->mNumMeshes; m++)
+    {
         totalVertices += scene->mMeshes[m]->mNumVertices;
 
-        for (u32 i = 0; i < scene->mMeshes[m]->mNumFaces; i++) {
+        for (u32 i = 0; i < scene->mMeshes[m]->mNumFaces; i++) 
+        {
             totalIndices += scene->mMeshes[m]->mFaces[i].mNumIndices;
         }
     }
@@ -67,7 +72,7 @@ Mesh* loadMeshFromAssimp(const char* filename)
         struct aiMesh* aimesh = scene->mMeshes[m];
         u32 materialIndex = aimesh->mMaterialIndex;
         struct aiMaterial* aiMat = scene->mMaterials[materialIndex];
-
+        
         readMaterial(&material, aiMat, "../res/textures");
         for (u32 i = 0; i < aimesh->mNumVertices; i++) 
         {
@@ -81,7 +86,7 @@ Mesh* loadMeshFromAssimp(const char* filename)
             {
                 vertices.texCoords[vertexOffset + i] = (Vec2){
                     aimesh->mTextureCoords[0][i].x,
-                    aimesh->mTextureCoords[0][i].y
+                    1.0f - aimesh->mTextureCoords[0][i].y
                 };
             }
             else 
@@ -118,6 +123,8 @@ Mesh* loadMeshFromAssimp(const char* filename)
 
     //create mesh
     Mesh* mesh = createMesh(&vertices, totalVertices, indices, totalIndices);
+
+
     mesh->material = material;
     // Cleanup
     free(vertices.positions);
@@ -231,8 +238,10 @@ Mesh* loadModel(const char* filename)
 	//assert that the mesh was created
 	assert(mesh != NULL && "Mesh could not be created");
 
+    //TODO: Sub Meshes
+    u32 meshCount = 0;
     //load model from assimp
-    mesh = loadMeshFromAssimp(filename);
+    mesh = loadMeshFromAssimp(filename,&meshCount);
 
 	return mesh;
 }
@@ -266,6 +275,9 @@ void draw(Mesh* mesh)
     glUniform1f(uniforms->metallic, material->metallic);
     glUniform1f(uniforms->roughness, material->roughness);
 
+    glUniform1f(uniforms->transparancy, material->transparency);
+    Vec3 col = material->colour;
+    glUniform3f(uniforms->colour, col.x,col.y,col.z);
     glBindVertexArray(mesh->vao);
 	
 	glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
@@ -752,9 +764,3 @@ Mesh* createSkyboxMesh()
     
 }
 
-
-void setMeshShader(Mesh* mesh,u32 shader)
-{
-    //update the mesh uniform locations
-    mesh->material.unifroms = getMaterialUniforms(shader)
-}

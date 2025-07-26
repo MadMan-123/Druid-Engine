@@ -22,34 +22,30 @@ u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const c
     if (!lastSlash) lastSlash = strrchr(fileName, '\\');
     if (lastSlash) fileName = lastSlash + 1;
 
-    const char* tryExtensions[] = { "", ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+    const char* tryExtensions[] = {".png",".psd", ".jpg", ".jpeg", ".tga", ".bmp"};
     const u32 num_exts = sizeof(tryExtensions) / sizeof(tryExtensions[0]);
 
     for (u32 i = 0; i < num_exts; i++)
     {
         char tryPath[512];
 
-        if (tryExtensions[i][0] == '\0') 
-        {
-            //try original 
-            snprintf(tryPath, sizeof(tryPath), "%s/%s", base_path, fileName);
-        }
-        else 
-        {
-            //strip original extension and add new one
-            char baseName[256];
-            strncpy(baseName, fileName, sizeof(baseName));
-            char* dot = strrchr(baseName, '.');
-            if (dot) *dot = '\0';
+        //strip original extension and add new one
+        char baseName[256];
+        strncpy(baseName, fileName, sizeof(baseName));
+        char* dot = strrchr(baseName, '.');
+        if (dot) *dot = '\0';
 
-            snprintf(tryPath, sizeof(tryPath), "%s/%s%s", base_path, baseName, tryExtensions[i]);
-        }
+        snprintf(tryPath, sizeof(tryPath), "%s/%s%s", base_path, baseName, tryExtensions[i]);
 
         FILE* f = fopen(tryPath, "rb");
         if (f) 
         {
             fclose(f);
             return initTexture(tryPath);
+        }
+        else
+        {
+            printf("file: %s not found for material\n",tryPath);
         }
 
         return 0;
@@ -83,6 +79,9 @@ void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath)
     {
         out->roughness = 1.0f;
     }
+
+    out->colour = (Vec3){ 255.0f,255.0f,255.0f };
+    out->transparency = 1.0f;
 }   
 
 MaterialUniforms getMaterialUniforms(u32 shader)
@@ -94,6 +93,9 @@ MaterialUniforms getMaterialUniforms(u32 shader)
     uniforms.normalTex = glGetUniformLocation(shader, "normalTexture");
     uniforms.roughness = glGetUniformLocation(shader, "roughness");
     uniforms.metallic = glGetUniformLocation(shader, "metallic");
+    uniforms.colour = glGetUniformLocation(shader, "colour");
+    uniforms.transparancy = glGetUniformLocation(shader, "transparancy");
     return uniforms;
 }
+
 

@@ -10,6 +10,7 @@
 #include "druid.h"
 #include "scene.h"
 #include "MeshMap.h"
+#include "entitypicker.h"
 
 // Allocate the storage here
 Application* editor = nullptr;
@@ -27,6 +28,10 @@ u32   skyboxShader   = 0;
 u32   skyboxViewLoc  = 0;
 u32   skyboxProjLoc  = 0;
 
+f32 viewportWidthPixels = 0.0f;
+f32 viewportHeightPixels = 0.0f;
+f32 viewportOffsetX = 0.0f;
+f32 viewportOffsetY = 0.0f;
 
 Camera sceneCam = {0};  
 u32 entitySizeCache = 0;
@@ -37,14 +42,14 @@ MeshMap* meshMap = nullptr;
 
 //entity data
 u32 entityCount = 0;
-InspectorState CurrentInspectorState = EMPTY_VIEW; //set inital inspector view to be empty
+InspectorState currentInspectorState = EMPTY_VIEW; //set inital inspector view to be empty
 
 u32 inspectorEntityID = 0; //holds the index for the inspector to load component data  
 
 
 // Helper that (re)creates the framebuffer and attached texture when the viewport size changes
 //recreates viewport framebuffer when size changes
-static void resizeViewportFramebuffer(int width, int height)
+static void resizeViewportFramebuffer(u32 width, u32 height)
 {
     if (width <= 0 || height <= 0) return;                   // Ignore invalid sizes
     if (width == viewportWidth && height == viewportHeight)  // No resize needed
@@ -78,6 +83,8 @@ static void resizeViewportFramebuffer(int width, int height)
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE)
         std::cerr << "[Viewport] Framebuffer incomplete: 0x" << std::hex << status << std::dec << std::endl;
+
+    // initIDFramebuffer();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -122,14 +129,13 @@ static void renderGameScene()
             scales[id]
         };
         
-        //printf("pos: %f,%f,%f \n",positions[id].x,positions[id].y,positions[id].z);
+        //pru32f("pos: %f,%f,%f \n",positions[id].x,positions[id].y,positions[id].z);
 
-        //printf("rot: %f,%f,%f,%f \n",rotations[id].x,rotations[id].y,rotations[id].z,rotations[id].w);
+        //pru32f("rot: %f,%f,%f,%f \n",rotations[id].x,rotations[id].y,rotations[id].z,rotations[id].w);
     
-        //printf("scale: %f,%f,%f \n",scales[id].x,scales[id].y,scales[id].z);
+        //pru32f("scale: %f,%f,%f \n",scales[id].x,scales[id].y,scales[id].z);
         //update mvp
         updateShaderMVP(shader, newTransform, sceneCam);
-
         // Get the mesh name for this specific entity
         char* entityMeshName = &meshNames[id * MAX_MESH_NAME_SIZE];
 
@@ -154,34 +160,54 @@ static void renderGameScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+
+
+ImVec2 g_viewportScreenPos = ImVec2(0, 0);
+ImVec2 g_viewportSize = ImVec2(0, 0);
+
 static void drawViewportWindow()
 {
-    ImGui::Begin("Viewport");
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-    canMoveViewPort = (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
-    const f32 targetAspect = 16.0f / 9.0f;
-    f32 targetW = avail.x;
-    f32 targetH = avail.x / targetAspect;
-    if (targetH > avail.y)
-    {
-        targetH = avail.y;
-        targetW = targetH * targetAspect;
-    }
+        ImGui::Begin("Viewport");
 
-    resizeViewportFramebuffer((int)targetW, (int)targetH);
+        ImVec2 viewportWindowPos = ImGui::GetWindowPos(); // screen position of the window
+        ImVec2 avail = ImGui::GetContentRegionAvail();
+        canMoveViewPort = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
-    ImVec2 cursor = ImGui::GetCursorPos();
-    ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - targetW) * 0.5f,
-                               cursor.y + (avail.y - targetH) * 0.5f));
+        const float targetAspect = 16.0f / 9.0f;
+        float targetW = avail.x;
+        float targetH = avail.x / targetAspect;
+        if (targetH > avail.y)
+        {
+            targetH = avail.y;
+            targetW = targetH * targetAspect;
+        }
 
-    //update camera projection for this aspect ratio
-    sceneCam.projection = mat4Perspective(radians(70.0f), targetAspect, 0.1f, 100.0f);
+        resizeViewportFramebuffer((int)targetW, (int)targetH);
 
-    renderGameScene();
+        ImVec2 cursor = ImGui::GetCursorPos();
+        ImVec2 imageOffset = ImVec2((avail.x - targetW) * 0.5f, (avail.y - targetH) * 0.5f);
+        ImGui::SetCursorPos(ImVec2(cursor.x + imageOffset.x, cursor.y + imageOffset.y));
 
-    ImGui::Image((void*)(intptr_t)viewportTexture, ImVec2(targetW, targetH), ImVec2(0, 1), ImVec2(1, 0));
-    ImGui::End();
+        // Save image position for mouse picking
+        g_viewportScreenPos = ImVec2(viewportWindowPos.x + imageOffset.x, viewportWindowPos.y + imageOffset.y);
+        g_viewportSize = ImVec2(targetW, targetH);
+
+        // update camera projection
+        sceneCam.projection = mat4Perspective(radians(70.0f), targetAspect, 0.1f, 100.0f);
+
+        renderIDPass();      
+        renderGameScene();   
+
+        ImGui::Image((void*)(intptr_t)viewportTexture, ImVec2(targetW, targetH), ImVec2(0, 1), ImVec2(1, 0));
+
+        ImGui::End();
+
+        // Debug prints
+        //printf("Viewport Image Pos: (%.2f, %.2f)\n", g_viewportScreenPos.x, g_viewportScreenPos.y);
+        //printf("Viewport Image Size: (%.2f x %.2f)\n", g_viewportSize.x, g_viewportSize.y);
 }
+
+
 
 static void drawDebugWindow()
 {
@@ -219,7 +245,7 @@ static void drawSceneListWindow()
     }
 
     char* entityName;
-    for(int i = 0; i < entityCount; i++)
+    for(u32 i = 0; i < entityCount; i++)
     {
         entityName = &names[i * MAX_NAME_SIZE];
         
@@ -230,7 +256,7 @@ static void drawSceneListWindow()
         if(ImGui::Button(button_label))
         {
             //tell the inspector what to read
-            CurrentInspectorState = ENTITY_VIEW;
+            currentInspectorState = ENTITY_VIEW;
             inspectorEntityID = i;
         
             Vec3 eulerRadians = eulerFromQuat(rotations[inspectorEntityID]);
@@ -249,7 +275,7 @@ static void drawSceneListWindow()
 static void drawInspectorWindow()
 {
     ImGui::Begin("Inspector");
-    switch (CurrentInspectorState) 
+    switch (currentInspectorState) 
     {
         default:
         case InspectorState::EMPTY_VIEW:
@@ -258,9 +284,9 @@ static void drawInspectorWindow()
         case InspectorState::ENTITY_VIEW:
             ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
             //draw the scene entity basic data
-            ImGui::InputFloat3("position",(float*)&positions[inspectorEntityID]);
+            ImGui::InputFloat3("position",(f32*)&positions[inspectorEntityID]);
             
-            if(ImGui::InputFloat3("rotation",(float*)&EulerAnglesDegrees))
+            if(ImGui::InputFloat3("rotation",(f32*)&EulerAnglesDegrees))
             {
                 Vec3 eulerRadians;
                 eulerRadians.x = radians(EulerAnglesDegrees.x);
@@ -270,7 +296,7 @@ static void drawInspectorWindow()
                 rotations[inspectorEntityID] = quatFromEuler(eulerRadians); 
 
             }
-            ImGui::InputFloat3("scale",(float*)&scales[inspectorEntityID]);
+            ImGui::InputFloat3("scale",(f32*)&scales[inspectorEntityID]);
             
             u32 selectedIndex = 0;
             if(ImGui::BeginListBox("Meshes"))
@@ -294,8 +320,13 @@ static void drawInspectorWindow()
                     }
                 }
             }
+
+
+            
+
             ImGui::EndListBox();
 
+            //material
         break;
     
 

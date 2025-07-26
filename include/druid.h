@@ -573,6 +573,8 @@ typedef struct {
     u32 roughnessTex;
     u32 roughness;
     u32 metallic;
+    u32 transparancy;
+    u32 colour;
 }MaterialUniforms;
 
 //Mesh
@@ -583,6 +585,8 @@ typedef struct {
     u32 roughnessTex;
     f32 roughness;
     f32 metallic;
+    f32 transparency;
+    Vec3 colour;
     MaterialUniforms unifroms;
 }Material;
 
@@ -614,6 +618,7 @@ typedef struct
 	u32 vab[NUM_BUFFERS];
     //material data
     Material material;
+    u32 subMeshCount;
     u32 drawCount; //how much of the vertexArrayObject do we want to draw
 }Mesh;
 DAPI u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const char* basePath);
