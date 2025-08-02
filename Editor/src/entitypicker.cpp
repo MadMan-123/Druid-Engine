@@ -106,10 +106,10 @@ u32 getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     u32 relativeY = (u32)(mouse.y - viewportTopLeft.y);
 
     //flip Y for OpenGL (origin is bottom-left)
-    u32 flippedY = viewportHeight - relativeY;
+    u32 flippedY = (viewportHeight - relativeY) - 2;
 
     //read from ID buffer
-    unsigned char pixel[3];
+    u8 pixel[3];
     glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
     glReadPixels(relativeX, flippedY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
