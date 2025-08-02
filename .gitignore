@@ -125,11 +125,11 @@ Makefile
 # Allow specific libraries
 !SDL3.dll
 !libSDL3.dll.a
-!glew32.lib
-!glew32.dll.a
-!glew32.dll
+!libglew32.lib
+!libglew.dll.a
+!libglew32.dll
 !libassimp-6.dll
-!libassimp-6.dll.a
+!libassimp.dll.a
 
 CMakeSettings.json
 *.fbx
