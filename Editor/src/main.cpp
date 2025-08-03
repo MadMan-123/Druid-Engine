@@ -148,9 +148,15 @@ void init()
     ImGui_ImplOpenGL3_Init("#version 410");
 
     //compile simple lighting shader that exists in the testbed resources folder
-    shader = createGraphicsProgram("../res/shader.vert",
+    shader = createGraphicsProgram(
+        "../res/shader.vert",
         "../res/shader.frag");
 
+    arrowShader = createGraphicsProgram(
+        "../res/arrow.vert",
+        "../res/arrow.frag");
+
+    colourLocation = glGetUniformLocation(arrowShader,"colour");
     cubeMesh = createBoxMesh();
     monkey = loadModel("../res/models/monkey3.obj");
     warhammer = loadModel("../res/models/Pole_Warhammer.fbx");
@@ -219,24 +225,47 @@ void update(f32 dt)
                 //printf("Mouse Screen Pos: (%.2f, %.2f)\n", mousePos.x, mousePos.y);
                 //printf("Mouse Relative to Image: (%.2f, %.2f)\n", relativeX, relativeY);
                 
-                u32 id = getEntityAtMouse(mousePos, g_viewportScreenPos);
+                auto result = getEntityAtMouse(mousePos, g_viewportScreenPos);
+    
+                bool xAxisModify = result.type == PICK_GIZMO_X;
+                bool yAxisModify = result.type == PICK_GIZMO_Y;
+                bool zAxisModify = result.type == PICK_GIZMO_Z;
+                
+                printf("%d type\n",result.type);                
 
-
-
-                if (id > 0 && id <= entitySizeCache)
-                {
-                    u32 selectedEntity = id - 1;
-                    inspectorEntityID = selectedEntity;
-                    currentInspectorState = ENTITY_VIEW;
-                    printf("Selected Entity %d: %s\n", selectedEntity, &names[selectedEntity * MAX_NAME_SIZE]);
+                if(result.type == PICK_ENTITY)
+                { 
+                    u32 id = result.entityID;
+                    if (id > 0 && id <= entitySizeCache)
+                    {
+                        u32 selectedEntity = id - 1;
+                        inspectorEntityID = selectedEntity;
+                        currentInspectorState = ENTITY_VIEW;
+                        //printf("Selected Entity %d: %s\n", selectedEntity, &names[selectedEntity * MAX_NAME_SIZE]);
+                
+                        //engage the transform manipulation tools
+                        manipulateTransform = true;
+                    }
+                    else
+                    {
+                        manipulateTransform = false;
+                        //printf("No entity selected (ID=%u)\n", id);
+                    }
+                
                 }
-                else
+                else if(xAxisModify)
                 {
-                    printf("No entity selected (ID=%u)\n", id);
+                    printf("mod X\n");
                 }
+                else if(yAxisModify)
+                {
+                    printf("mod Y\n");
 
-
-
+                }
+                else if(zAxisModify)
+                {
+                    printf("mod Z\n");
+                }
         }
     }
 }
@@ -272,7 +301,7 @@ void destroy()
     freeMesh(warhammer);
     freeMesh(shield);
     freeShader(shader);
-
+    freeShader(arrowShader);
     //free skybox resources
     freeMesh(skyboxMesh);
     freeTexture(cubeMapTexture);

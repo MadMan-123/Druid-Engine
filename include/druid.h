@@ -626,6 +626,7 @@ DAPI void readMaterial(Material* out, struct aiMaterial* mat, const char* basePa
 DAPI MaterialUniforms getMaterialUniforms(u32 shader);
 DAPI void setMeshShader(Mesh* mesh, u32 shader);
 
+DAPI void updateMeshMaterial(Mesh* mesh);
 //mesh functions
 //draws a given mesh
 DAPI void draw(Mesh* mesh);

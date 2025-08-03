@@ -38,7 +38,7 @@ extern Mesh* cubeMesh;
 extern Material* materials;
 
 extern bool canMoveViewPort;
-
+extern bool manipulateTransform;
 extern u32 shader;
 extern f32 viewportWidthPixels;
 extern f32 viewportHeightPixels;
@@ -48,6 +48,9 @@ extern f32 viewportOffsetY;
 extern ImVec2 g_viewportScreenPos;
 extern ImVec2 g_viewportSize;
 
+extern Mesh* cubeMesh;
+extern u32 arrowShader;
+extern u32 colourLocation;
 
 enum InspectorState{
     EMPTY_VIEW = -1,

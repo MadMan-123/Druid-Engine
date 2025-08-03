@@ -247,8 +247,7 @@ Mesh* loadModel(const char* filename)
 }
 
 
-
-void draw(Mesh* mesh)
+void updateMeshMaterial(Mesh* mesh)
 {
     MaterialUniforms* uniforms = &mesh->material.unifroms;
     Material* material = &mesh->material;
@@ -278,7 +277,12 @@ void draw(Mesh* mesh)
     glUniform1f(uniforms->transparancy, material->transparency);
     Vec3 col = material->colour;
     glUniform3f(uniforms->colour, col.x,col.y,col.z);
-    glBindVertexArray(mesh->vao);
+    
+}
+
+void draw(Mesh* mesh)
+{
+   glBindVertexArray(mesh->vao);
 	
 	glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
 	//glDrawArrays(GL_TRIANGLES, 0, drawCount);

@@ -38,7 +38,7 @@ u32 entitySizeCache = 0;
 Vec3 EulerAngles = v3Zero;
 
 MeshMap* meshMap = nullptr;
-
+bool manipulateTransform = false;
 
 //entity data
 u32 entityCount = 0;
@@ -46,7 +46,8 @@ InspectorState currentInspectorState = EMPTY_VIEW; //set inital inspector view t
 
 u32 inspectorEntityID = 0; //holds the index for the inspector to load component data  
 
-
+u32 arrowShader = 0;
+u32 colourLocation = 0;
 // Helper that (re)creates the framebuffer and attached texture when the viewport size changes
 //recreates viewport framebuffer when size changes
 static void resizeViewportFramebuffer(u32 width, u32 height)
@@ -150,12 +151,48 @@ static void renderGameScene()
         }
 
     }
-
-
-
-
     
 
+    if(manipulateTransform)
+    {
+        Vec3 pos = positions[inspectorEntityID];
+        const f32 scaleSize = 0.1f ;
+        const f32 scaleLength = 1.1f;
+
+
+        Transform X = {
+            v3Add(pos, v3Right),
+            quatIdentity(),
+            (Vec3){scaleLength, scaleSize, scaleSize}
+        };
+        Transform Y = {
+            v3Add(pos, v3Up),
+            quatIdentity(),
+            (Vec3){scaleSize, scaleLength, scaleSize}
+        };
+       
+        Transform Z = {
+            v3Add(pos, v3Back),
+            quatIdentity(),
+            (Vec3){scaleSize, scaleSize, scaleLength}
+        };
+
+        //visually draw the arrows 
+        
+        glUseProgram(arrowShader);
+
+        updateShaderMVP(arrowShader, X, sceneCam);
+        glUniform3f(colourLocation,0.0f,1.0f,0.0f);
+        draw(cubeMesh)  ;
+        updateShaderMVP(arrowShader, Y, sceneCam);
+        glUniform3f(colourLocation,1.0f,0.0f,0.0f);
+        draw(cubeMesh);
+        updateShaderMVP(arrowShader, Z, sceneCam);
+        glUniform3f(colourLocation,0.0f,0.0f,1.0f);
+        draw(cubeMesh);
+
+
+    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
