@@ -83,15 +83,6 @@ void renderIDPass()
         //get to start 
         f32 b = (objectID & 0xFF) / 255.0f;
        
-        if(count < target)
-        {
-            count++;
-        }
-        else 
-        {
-            printf("encoded id: %d to %f %f %f\n", objectID, r, g, b);
-            count = 0;
-        }
         //update shader
         glUniform3f(idLocation, r, g, b);
         
@@ -131,7 +122,6 @@ u32 getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     //reconstruct ID
     u32 id = (pixel[0] << 16) | (pixel[1] << 8) | (pixel[2]);
     
-        printf("  decoded id: %d to %f %f %f\n", id, (f32)pixel[0], (f32)pixel[1], (f32)pixel[2]);
 
     return id;
 }
