@@ -44,6 +44,10 @@ void initIDFramebuffer()
 }
 
 
+    u32 count = 0;
+
+
+    u32 target = 177;
 void renderIDPass()
 {
     //bind the fbo 
@@ -62,7 +66,7 @@ void renderIDPass()
         -send information to shader
         -draw
         */
-
+    
     for (u32 i = 0; i < entitySizeCache; i++)
     {
         if (!isActive[i])continue;
@@ -70,6 +74,7 @@ void renderIDPass()
         updateShaderMVP(idShader,t,sceneCam);
 
         u32 objectID = i + 1;
+    
         //encode the id to rgb
         //move 16 bits to right
         f32 r = ((objectID >> 16) & 0xFF) / 255.0f;
@@ -77,7 +82,16 @@ void renderIDPass()
         f32 g = ((objectID >> 8) & 0xFF) / 255.0f;
         //get to start 
         f32 b = (objectID & 0xFF) / 255.0f;
-
+       
+        if(count < target)
+        {
+            count++;
+        }
+        else 
+        {
+            printf("encoded id: %d to %f %f %f\n", objectID, r, g, b);
+            count = 0;
+        }
         //update shader
         glUniform3f(idLocation, r, g, b);
         
@@ -86,10 +100,10 @@ void renderIDPass()
         if (entityMeshName[0] != '\0' && strlen(entityMeshName) > 0)
         {
             Mesh* meshToDraw = getMesh(entityMeshName);
-
             if (meshToDraw)
             {
-                draw(meshToDraw);
+
+                drawMeshIDPass(meshToDraw);
             }
         }
         
@@ -113,9 +127,22 @@ u32 getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
     glReadPixels(relativeX, flippedY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
+       
     //reconstruct ID
     u32 id = (pixel[0] << 16) | (pixel[1] << 8) | (pixel[2]);
+    
+        printf("  decoded id: %d to %f %f %f\n", id, (f32)pixel[0], (f32)pixel[1], (f32)pixel[2]);
+
     return id;
 }
 
+
+void drawMeshIDPass(Mesh* mesh)
+{
+    //bind the mesh 
+    glBindVertexArray(mesh->vao);
+    //draw the mesh elements
+    glDrawElements(GL_TRIANGLES, mesh->drawCount,GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+}

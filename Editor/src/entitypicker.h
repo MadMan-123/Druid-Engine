@@ -16,3 +16,4 @@ void renderIDPass();
 
 u32 getEntityAtMouse(ImVec2 mousePos, ImVec2 viewportTopLeft);
 
+void drawMeshIDPass(Mesh* mesh);

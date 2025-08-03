@@ -292,6 +292,7 @@ void draw(Mesh* mesh)
 
 
 
+
 //Function to generate height data using compute shader
 HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,const char* computeShaderPath)
 {

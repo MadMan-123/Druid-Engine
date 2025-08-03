@@ -113,7 +113,6 @@ Vec4* rotations = nullptr;
 Vec3* scales = nullptr;
 char* names = nullptr;
 char* meshNames = nullptr;
-Material* materials = nullptr;
 
 void init()
 {
@@ -130,7 +129,6 @@ void init()
     isActive = (bool*)sceneEntities->fields[3];
     names = (char*)sceneEntities->fields[4];
     meshNames = (char*)sceneEntities->fields[5];
-    materials = (Material*)sceneEntities->fields[6];
     //set to empty strings
     memset(meshNames, 0, entitySize * MAX_MESH_NAME_SIZE);
 
@@ -217,41 +215,24 @@ void update(f32 dt)
                
                 ImVec2 mousePos = ImGui::GetMousePos();
 
-                f32 relativeX = mousePos.x - g_viewportScreenPos.x;
-                f32 relativeY = mousePos.y - g_viewportScreenPos.y;
-
                 // Debug print
                 //printf("Mouse Screen Pos: (%.2f, %.2f)\n", mousePos.x, mousePos.y);
                 //printf("Mouse Relative to Image: (%.2f, %.2f)\n", relativeX, relativeY);
+                
+                u32 id = getEntityAtMouse(mousePos, g_viewportScreenPos);
 
-                if (relativeX < 0 || relativeY < 0 || relativeX >= g_viewportSize.x || relativeY >= g_viewportSize.y)
-                {
-                    printf("Mouse outside viewport image bounds\n");
-                    return;
-                }
 
-                u32 px = (int)relativeX;
-                u32 py = (int)(g_viewportSize.y - relativeY - 1); // OpenGL origin bottom-left
-
-                u8 pixel[3] = { 0 };
-                glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
-                glReadPixels(px, py, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-                u32 id = (pixel[0] << 16) | (pixel[1] << 8) | pixel[2];
-
-                //printf("Read pixel: R=%d G=%d B=%d -> ID=%u at (%d,%d)\n", pixel[0], pixel[1], pixel[2], id, px, py);
 
                 if (id > 0 && id <= entitySizeCache)
                 {
                     u32 selectedEntity = id - 1;
                     inspectorEntityID = selectedEntity;
                     currentInspectorState = ENTITY_VIEW;
-                    printf("Selected Entity %d: %s at (%d,%d)\n", selectedEntity, &names[selectedEntity * MAX_NAME_SIZE], px, py);
+                    printf("Selected Entity %d: %s\n", selectedEntity, &names[selectedEntity * MAX_NAME_SIZE]);
                 }
                 else
                 {
-                    //printf("No entity selected (ID=%u)\n", id);
+                    printf("No entity selected (ID=%u)\n", id);
                 }
 
 

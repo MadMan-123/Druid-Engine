@@ -213,6 +213,7 @@ static void drawDebugWindow()
 {
     ImGui::Begin("Debug");
     ImGui::Text("FPS %lf", editor->fps);
+    ImGui::Text("Entity Count: %d", entityCount);
     ImGui::End();
 }
 
