@@ -51,6 +51,16 @@ extern ImVec2 g_viewportSize;
 extern Mesh* cubeMesh;
 extern u32 arrowShader;
 extern u32 colourLocation;
+extern bool canMoveAxis;
+extern Vec3 manipulateAxis;
+
+
+typedef enum{
+    MANIPULATE_POSITION = 0,
+    MANIPULATE_ROTATION = 1,
+    MANIPULATE_SCALE = 2,
+    MANIPULATE_MAX = 3
+}ManipulateTransformState;
 
 enum InspectorState{
     EMPTY_VIEW = -1,
@@ -60,6 +70,7 @@ enum InspectorState{
 extern InspectorState currentInspectorState; 
 extern u32 inspectorEntityID; //holds the index for the inspector to load component data  
 
+extern ManipulateTransformState manipulateState;
 
 // Application lifecycle hooks implemented for the Editor
 void processInput(void* appData);

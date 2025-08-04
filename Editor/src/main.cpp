@@ -32,6 +32,12 @@ char inputBoxBuffer[100]; //this will be in numbers
 i32 entitySize = 0;
 //helper – move camera with wasd keys
 bool canMoveViewPort = false;
+bool canMoveAxis = false;
+Vec3 manipulateAxis = v3Zero;
+
+
+
+
 static void moveCamera(f32 dt)
 {
     if (isInputDown(KEY_W))
@@ -202,6 +208,10 @@ void init()
 
 }
 
+
+
+Vec2 cacheMouse = {0,0};
+PickResult result;
 void update(f32 dt)
 {
     if(entitySize != entitySizeCache)
@@ -216,23 +226,33 @@ void update(f32 dt)
     if(canMoveViewPort)
     {
         moveViewPortCamera(dt);
+        
+        ImVec2 mousePos = ImGui::GetMousePos();
+        Vec2 mPos = {mousePos.x,mousePos.y};
+        
+
+        if(isInputDown(KEY_E))
+        {
+            manipulateState = MANIPULATE_POSITION;
+        }
+        else if(isInputDown(KEY_R))
+        {
+            manipulateState = MANIPULATE_ROTATION;
+        }
+        else if(isInputDown(KEY_T))
+        {
+            manipulateState = MANIPULATE_SCALE;
+        }
+
+
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
-               
-                ImVec2 mousePos = ImGui::GetMousePos();
-
                 // Debug print
                 //printf("Mouse Screen Pos: (%.2f, %.2f)\n", mousePos.x, mousePos.y);
                 //printf("Mouse Relative to Image: (%.2f, %.2f)\n", relativeX, relativeY);
                 
-                auto result = getEntityAtMouse(mousePos, g_viewportScreenPos);
-    
-                bool xAxisModify = result.type == PICK_GIZMO_X;
-                bool yAxisModify = result.type == PICK_GIZMO_Y;
-                bool zAxisModify = result.type == PICK_GIZMO_Z;
+                result = getEntityAtMouse(mousePos, g_viewportScreenPos);
                 
-                printf("%d type\n",result.type);                
-
                 if(result.type == PICK_ENTITY)
                 { 
                     u32 id = result.entityID;
@@ -253,19 +273,108 @@ void update(f32 dt)
                     }
                 
                 }
-                else if(xAxisModify)
-                {
-                    printf("mod X\n");
-                }
-                else if(yAxisModify)
-                {
-                    printf("mod Y\n");
 
-                }
-                else if(zAxisModify)
+                if (result.type == PICK_GIZMO_X || 
+                    result.type == PICK_GIZMO_Y || 
+                    result.type == PICK_GIZMO_Z)
                 {
-                    printf("mod Z\n");
+                    canMoveAxis = true;
+
+                    switch (result.type)
+                    {
+                        case PICK_GIZMO_X:
+                        manipulateAxis = v3Right;  // (1,0,0)
+                        break;
+                        case PICK_GIZMO_Y:
+                        manipulateAxis = v3Up;     // (0,1,0)
+                        break;
+                        case PICK_GIZMO_Z:
+                        manipulateAxis = v3Forward; // (0,0,1) or v3Back if you're using -Z forward
+                        break;
+                        default:
+                        manipulateAxis = v3Zero;   // fallback
+                        break;
+                    }
                 }
+
+                if(result.type == PICK_NONE)
+                {
+                    manipulateTransform = false;
+                    canMoveAxis = false;
+                }
+    
+        }
+        
+       
+        if(ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+        {
+            Vec2 delta = v2Sub(mPos, cacheMouse); // Correct delta direction
+            cacheMouse = mPos; // Cache after delta is used
+    
+            f32 speed = 1.0f;
+            f32 mag = 0.0f;
+            
+           
+             //determine direction of movement
+            if(result.type == PICK_GIZMO_X)
+            {
+                mag = delta.x * speed;
+            }
+            else if(result.type == PICK_GIZMO_Y)
+            {
+                //flip the y
+                mag = -(delta.y * speed);
+            }
+            else if(result.type == PICK_GIZMO_Z)
+            { 
+                mag = -(delta.y * speed);
+            }
+
+            switch(manipulateState)
+            {
+                case MANIPULATE_POSITION:
+                    {
+                    //work out the transformation
+                    Vec3 transformation = v3Scale(v3Scale(manipulateAxis, mag),dt);
+
+                    Vec3* pos = &positions[inspectorEntityID];
+                    //apply movement along axis
+                    *pos = v3Add(*pos, transformation);
+                
+                    break;
+                    }
+                case MANIPULATE_ROTATION:
+                    {
+                    //convert drag magnitude into radians
+                    f32 angle = mag * 0.01f;
+                    Vec4* rotation = &rotations[inspectorEntityID];
+
+                    Vec4 deltaRotation = quatFromAxisAngle(manipulateAxis, angle);
+
+                    *rotation = quatMul(deltaRotation, *rotation);
+                    break;
+                    }
+                case MANIPULATE_SCALE:
+                    {
+                    //edit the scale
+                    Vec3 transformation = v3Scale(v3Scale(manipulateAxis,mag),dt);
+                    Vec3* scale = &scales[inspectorEntityID];
+
+                    *scale = v3Add(*scale,transformation);
+
+
+                    break;
+                    }
+            }
+            
+        }
+
+
+        if(ImGui::IsMouseDown(ImGuiMouseButton_Left) && canMoveAxis && manipulateTransform)
+        {
+            canMoveAxis = false;
+            manipulateTransform = false;
+            printf("Clicked off\n");
         }
     }
 }
@@ -318,8 +427,8 @@ void destroy()
 int main(int argc, char** argv) 
 {
 	editor = createApplication(init, update, render, destroy);
-	editor->width = (f32)(1920);	
-    editor->height = (f32)(1080);
+	editor->width = (f32)(1920 * 1.25f);	
+    editor->height = (f32)(1080 * 1.25f);
     viewportWidth = editor->width;
     viewportHeight = editor->height;
 	editor->inputProcess = processInput;	

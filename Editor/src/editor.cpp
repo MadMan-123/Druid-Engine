@@ -50,6 +50,9 @@ u32 arrowShader = 0;
 u32 colourLocation = 0;
 // Helper that (re)creates the framebuffer and attached texture when the viewport size changes
 //recreates viewport framebuffer when size changes
+
+ManipulateTransformState manipulateState = MANIPULATE_POSITION;
+
 static void resizeViewportFramebuffer(u32 width, u32 height)
 {
     if (width <= 0 || height <= 0) return;                   // Ignore invalid sizes
@@ -143,7 +146,6 @@ static void renderGameScene()
         if(entityMeshName[0] != '\0' && strlen(entityMeshName) > 0)
         {
             Mesh* meshToDraw = getMesh( entityMeshName);
-    
             if(meshToDraw)
             {
                 draw(meshToDraw);
