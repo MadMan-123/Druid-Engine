@@ -40,13 +40,13 @@ Vec3 manipulateAxis = v3Zero;
 
 static void moveCamera(f32 dt)
 {
-    if (isInputDown(KEY_W))
+    if (isKeyDown(KEY_W))
         moveForward(&sceneCam,  camMoveSpeed * dt);
-    if (isInputDown(KEY_S))
+    if (isKeyDown(KEY_S))
         moveForward(&sceneCam, -camMoveSpeed * dt);
-    if (isInputDown(KEY_A))
+    if (isKeyDown(KEY_A))
         moveRight(&sceneCam,  -camMoveSpeed * dt);
-    if (isInputDown(KEY_D))
+    if (isKeyDown(KEY_D))
         moveRight(&sceneCam,   camMoveSpeed * dt);
 }
 
@@ -102,6 +102,12 @@ void processInput(void* appData)
 			case SDL_EVENT_QUIT:
 				app->state = EXIT;
 				break;
+            case SDL_EVENT_GAMEPAD_ADDED:
+				checkForGamepadConnection(&evnt);
+                break;
+			case SDL_EVENT_GAMEPAD_REMOVED:
+				checkForGamepadRemoved(&evnt);
+				break;
 			default: ;
 		}
 	}
@@ -122,12 +128,6 @@ char* meshNames = nullptr;
 
 void init()
 {
-	FATAL("Editor init called");
-	ERROR("Editor init called");
-	WARN("Editor init called");
-	INFO("Editor init called");
-	DEBUG("Editor init called");
-	TRACE("Editor init called");
 
 
     entitySize = entityDefaultCount;
@@ -135,7 +135,7 @@ void init()
 	//create the scene entity EntityArena
     sceneEntities = createEntityArena(&SceneEntity, entitySizeCache);
   
-    printf("Entity Arena created size: %d\n",entitySizeCache);
+    DEBUG("Entity Arena created size: %d\n",entitySizeCache);
     
     positions = (Vec3*)sceneEntities->fields[0];
     rotations = (Vec4*)sceneEntities->fields[1];
@@ -224,7 +224,7 @@ void update(f32 dt)
 {
     if(entitySize != entitySizeCache)
     {
-        printf("changed size %d", entitySize);
+        DEBUG("changed size %d", entitySize);
         //this means we need to re allocate the Entity EntityArena
         reallocateSceneArena();
         //set the cache
@@ -239,15 +239,15 @@ void update(f32 dt)
         Vec2 mPos = {mousePos.x,mousePos.y};
         
 
-        if(isInputDown(KEY_E))
+        if(isKeyDown(KEY_E))
         {
             manipulateState = MANIPULATE_POSITION;
         }
-        else if(isInputDown(KEY_R))
+        else if(isKeyDown(KEY_R))
         {
             manipulateState = MANIPULATE_ROTATION;
         }
-        else if(isInputDown(KEY_T))
+        else if(isKeyDown(KEY_T))
         {
             manipulateState = MANIPULATE_SCALE;
         }
@@ -256,8 +256,8 @@ void update(f32 dt)
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
                 // Debug print
-                //printf("Mouse Screen Pos: (%.2f, %.2f)\n", mousePos.x, mousePos.y);
-                //printf("Mouse Relative to Image: (%.2f, %.2f)\n", relativeX, relativeY);
+                //DEBUG("Mouse Screen Pos: (%.2f, %.2f)\n", mousePos.x, mousePos.y);
+                //DEBUG("Mouse Relative to Image: (%.2f, %.2f)\n", relativeX, relativeY);
                 
                 result = getEntityAtMouse(mousePos, g_viewportScreenPos);
                 
@@ -269,7 +269,7 @@ void update(f32 dt)
                         u32 selectedEntity = id - 1;
                         inspectorEntityID = selectedEntity;
                         currentInspectorState = ENTITY_VIEW;
-                        //printf("Selected Entity %d: %s\n", selectedEntity, &names[selectedEntity * MAX_NAME_SIZE]);
+                        //INFO("Selected Entity %d: %s\n", selectedEntity, &names[selectedEntity * MAX_NAME_SIZE]);
                 
                         //engage the transform manipulation tools
                         manipulateTransform = true;
@@ -277,7 +277,7 @@ void update(f32 dt)
                     else
                     {
                         manipulateTransform = false;
-                        //printf("No entity selected (ID=%u)\n", id);
+                        //INFO("No entity selected (ID=%u)\n", id);
                     }
                 
                 }
@@ -382,7 +382,7 @@ void update(f32 dt)
         {
             canMoveAxis = false;
             manipulateTransform = false;
-            printf("Clicked off\n");
+            //DEBUG("Clicked off\n");
         }
     }
 }

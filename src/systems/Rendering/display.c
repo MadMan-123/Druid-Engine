@@ -25,7 +25,7 @@ void initDisplay(Display* display, f32 width, f32 height)
 	display->sdlWindow = NULL; //initialise to generate null access violation for debugging. 
 	display->screenWidth = width; //set the width and height of the window
 	display->screenHeight = height; 
-	SDL_Init(SDL_INIT_EVENTS); //initalise everything
+	SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMEPAD); //initalise everything
 
     //setup window attributes
 	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8); //Min no of bits used to diplay colour

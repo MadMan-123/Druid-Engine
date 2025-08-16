@@ -4,6 +4,88 @@
 
 static SDL_Event evnt;
 static const bool* state; 
+SDL_Gamepad* gamepads[GAMEPAD_MAX] = { NULL }; //array to hold gamepads
+u32 gamepadCount = 0; //number of gamepads connected
+
+
+
+void initInput()
+{
+	//initialize SDL event system
+	SDL_Init(SDL_INIT_EVENTS);
+	
+	//initialize the keyboard state
+	state = SDL_GetKeyboardState(NULL);
+		
+	//initialize gamepads
+	for (u32 i = 0; i < GAMEPAD_MAX; i++) 
+	{
+		//get valid gamepads
+		SDL_Gamepad* gamepad = SDL_OpenGamepad(i);
+		if(gamepad == NULL) 
+		{
+			goto skip; //if no gamepad found then skip
+		} 
+		else 
+		{
+			gamepads[i] = gamepad; //store the gamepad
+			DEBUG("Gamepad %d initialized\n", i);
+			gamepadCount++;
+		}
+
+	}
+	
+skip:
+	
+}
+
+void destroyInput()
+{
+	//close the SDL event system
+	SDL_QuitSubSystem(SDL_INIT_EVENTS);
+	
+	//close gamepads
+	for (u32 i = 0; i < GAMEPAD_MAX; i++) 
+	{
+		if (gamepads[i] != NULL) 
+		{
+			SDL_CloseGamepad(gamepads[i]);
+			gamepads[i] = NULL;
+		}
+	}
+}
+void checkForGamepadConnection(SDL_Event *event)
+{
+		//check if a gamepad has been connected
+		u32 controllerID = event->gdevice.which;
+		if (controllerID < GAMEPAD_MAX && gamepads[controllerID] == NULL) 
+		{
+			SDL_Gamepad* gamepad = SDL_OpenGamepad(controllerID);
+			if (gamepad != NULL) 
+			{
+				gamepads[controllerID] = gamepad;
+				gamepadCount++;
+				DEBUG("Gamepad %d connected\n", controllerID);
+			} 
+			else 
+			{
+				ERROR("Failed to open gamepad %d\n", controllerID);
+			}
+		}
+}
+
+void checkForGamepadRemoved(SDL_Event* event)
+{
+	//check if a gamepad has been disconnected
+		u32 controllerID = event->gdevice.which;
+		if (controllerID < GAMEPAD_MAX && gamepads[controllerID] != NULL) 
+		{
+			DEBUG("Gamepad %d disconnected\n", controllerID);
+			SDL_CloseGamepad(gamepads[controllerID]);
+			gamepads[controllerID] = NULL;
+			gamepadCount--;
+		}
+}
 
 void processInput(Application* app)
 {
@@ -29,11 +111,29 @@ void processInput(Application* app)
 
 /// Check if a key is pressed
 
-bool isInputDown(KeyCode key)
+bool isKeyDown(KeyCode key)
 {
 	state = SDL_GetKeyboardState(NULL);
 	return state[key]; 
 }
+
+bool isKeyUp(KeyCode key)
+{
+	state = SDL_GetKeyboardState(NULL);
+	return !state[key]; 
+}
+
+bool isButtonDown(u32 controllerID, ControllerCode button)
+{
+	SDL_Gamepad* pad = gamepads[controllerID];
+	if(pad == NULL) 
+	{
+		DEBUG("No gamepad found at index %d\n", controllerID);
+		return false; //no gamepad found
+	}
+	return SDL_GetGamepadButton(pad, button);
+}
+
 
 /// Check if a mouse button is pressed
 bool isMouseDown(u32 button)

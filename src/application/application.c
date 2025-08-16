@@ -50,6 +50,7 @@ void destroyApplication(Application* app)
     //destroy the display
 	onDestroy(app->display);
     //free app data	
+	shutdownLogging();
     free(app);
 }
 
@@ -72,6 +73,7 @@ void initSystems(const Application* app)
 	//initialize the display
 	initDisplay(app->display,width, height);
 
+	initLogging(); //initialize logging system
     //call the init function pointer
 	app->init();
 

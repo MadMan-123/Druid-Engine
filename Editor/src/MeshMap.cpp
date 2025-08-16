@@ -31,7 +31,7 @@ MeshMap* createMeshMap(u32 meshCount)
     //null check
     if(map == NULL)
     {
-        printf("Mesh Map not allocated correctly\n");
+        ERROR("Mesh Map not allocated correctly\n");
         return NULL;
     }
      
@@ -42,7 +42,7 @@ MeshMap* createMeshMap(u32 meshCount)
     
     if(!createMap(&map->map, meshCount, sizeof(char) * NAME_MAX_SIZE, sizeof(Mesh*), djb2Hash, equals))
     {
-        printf("Mesh Hash map failed to create\n");
+        ERROR("Mesh Hash map failed to create");
         return NULL;
     }
 
@@ -50,14 +50,14 @@ MeshMap* createMeshMap(u32 meshCount)
     
     if(map->meshBuffer == NULL)
     {
-        printf("Mesh Buffer did not allocate\n");
+        ERROR("Mesh Buffer did not allocate");
         return NULL;
     }    
 
     map->names = (char**)malloc(sizeof(char*) * meshCount);
     if(map->names == NULL)
     {
-        printf("Name Pointers did not allocate\n");
+        ERROR("Name Pointers did not allocate");
         return NULL;
     }
     //32 characters for a name 
@@ -71,19 +71,19 @@ bool addMesh(Mesh* mesh, const char* name)
 {
     if (!mesh)
     {
-        printf("Mesh is null, cannot add to map\n");
+        ERROR("Mesh is null, cannot add to map");
         return false;
     }
 
     if(meshMap->count >= meshMap->max)
     {
-        printf("Mesh Map is full\n");
+        ERROR("Mesh Map is full\n");
         return false;
     }
     u32 nameLen = strlen(name) +1;
     if(nameLen >= NAME_MAX_SIZE)
     {
-        printf("Name given too big, needs to be %d characters\n",NAME_MAX_SIZE);
+        ERROR("Name given too big, needs to be %d characters",NAME_MAX_SIZE);
         return false;
     }
     char* nameCopy  = (char*)aalloc(&meshMap->arena,nameLen);
@@ -100,7 +100,7 @@ bool addMesh(Mesh* mesh, const char* name)
     if(result)
     {
         meshMap->count++;
-        printf("Mesh added successfully at index %d\n", meshMap->count - 1);
+        INFO("Mesh added successfully at index %d\n", meshMap->count - 1);
     }
     return result;
 }
@@ -115,7 +115,7 @@ Mesh* getMesh(const char* name)
         return result;
     }
 
-    printf("No Mesh Found called: %s\n",name);
+    ERROR("No Mesh Found called: %s\n",name);
     return NULL;
 }
 const char* getMeshNameByIndex(MeshMap* map, u32 index)

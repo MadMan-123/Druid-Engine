@@ -27,7 +27,7 @@ void shutdownLogging()
 
 void logOutput (LogLevel level, const char* message, ...)
 {
-	const char* levelStrings[LOG_MAX] = { "[FATAL]","[ERROR]","[WARNING]","[INFO]","[DEBUG]","[TRACE]" };
+	const char* levelStrings[LOG_MAX] = {"[FATAL]","[ERROR]","[WARNING]","[INFO]","[DEBUG]","[TRACE]" };
 	
 	char outBuffer[LOG_BUFFER_SIZE];
 	//buffer to hold the formatted message

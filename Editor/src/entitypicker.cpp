@@ -35,7 +35,7 @@ void initIDFramebuffer()
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE)
     {
-        printf("ID Framebuffer is not complete! Status: 0x%X\n", status);
+        ERROR("ID Framebuffer is not complete! Status: 0x%X\n", status);
     }
 
     idLocation = glGetUniformLocation(idShader, "entityID");
@@ -199,7 +199,7 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     }
     
 
-    printf("Decoded id: %d to %f %f %f\n", realID, (f32)pixel[0], (f32)pixel[1], (f32)pixel[2]);
+    INFO("Decoded id: %d to %f %f %f\n", realID, (f32)pixel[0], (f32)pixel[1], (f32)pixel[2]);
 
     return result;
 }

@@ -242,8 +242,8 @@ static void drawViewportWindow()
         ImGui::End();
 
         // Debug prints
-        //printf("Viewport Image Pos: (%.2f, %.2f)\n", g_viewportScreenPos.x, g_viewportScreenPos.y);
-        //printf("Viewport Image Size: (%.2f x %.2f)\n", g_viewportSize.x, g_viewportSize.y);
+        //DEBUG("Viewport Image Pos: (%.2f, %.2f)\n", g_viewportScreenPos.x, g_viewportScreenPos.y);
+        //DEBUG("Viewport Image Size: (%.2f x %.2f)\n", g_viewportSize.x, g_viewportSize.y);
 }
 
 
@@ -281,7 +281,7 @@ static void drawSceneListWindow()
         
 
         entityCount++;
-        printf("Added Entity %d\n",entityCount);
+        DEBUG("Added Entity %d\n",entityCount);
     }
 
     char* entityName;
@@ -355,7 +355,7 @@ static void drawInspectorWindow()
                         strncpy(namePtr,meshName,MAX_MESH_NAME_SIZE - 1);
                         namePtr[MAX_MESH_NAME_SIZE - 1] = '\0';
 
-                        printf("2 Entity %d mesh: '%s'\n", inspectorEntityID, &meshNames[inspectorEntityID * 32]);
+                        INFO("Entity %d mesh: '%s'\n", inspectorEntityID, &meshNames[inspectorEntityID * 32]);
                         
                     }
                 }

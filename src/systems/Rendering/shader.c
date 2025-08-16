@@ -9,7 +9,7 @@ char* loadFileText(const char* fileName)
 	//null check
 	if(file == NULL)
 	{
-		printf("The File has not opened\n");
+		ERROR("The File has not opened\n");
 		return NULL;
 	}
 	
@@ -24,7 +24,7 @@ char* loadFileText(const char* fileName)
 
 	if(!buffer)
 	{
-		printf("Failed to allocate memory");
+		ERROR("Failed to allocate memory");
 		fclose(file);
 		return NULL;
 	}
@@ -59,7 +59,7 @@ void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const char* er
 
 	//error
 	//TODO: Errors
-	printf("SHADER ERROR: \n Message: \n%s\n Error: %s \n", errorMessage, error);
+	ERROR("[SHADER ERROR]: \n Message: \n%s\n Error: %s \n", errorMessage, error);
     }
 }
 
@@ -68,7 +68,7 @@ u32 createShader(const char* text, unsigned int type)
     u32 shader = glCreateShader(type);
 
     if (shader == 0)
-        printf("Error type creation failed %s\n", type);
+        ERROR("Error type creation failed %s\n", type);
 
     const GLchar* stringSource[1];
     stringSource[0] = text;
