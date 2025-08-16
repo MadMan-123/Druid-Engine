@@ -122,6 +122,14 @@ char* meshNames = nullptr;
 
 void init()
 {
+	FATAL("Editor init called");
+	ERROR("Editor init called");
+	WARN("Editor init called");
+	INFO("Editor init called");
+	DEBUG("Editor init called");
+	TRACE("Editor init called");
+
+
     entitySize = entityDefaultCount;
     entitySizeCache = entitySize;
 	//create the scene entity EntityArena

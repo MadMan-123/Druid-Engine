@@ -109,9 +109,58 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #endif
 #endif
 
+#define RELEASE_BUILD 0
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+
+//=====================================================================================================================
+//Logging system
+#define LOG_BUFFER_SIZE 1024
+#define LOG_INFO_ENABLED 1
+#define LOG_WARNING_ENABLED 1
+#define LOG_ERROR_ENABLED 1
+#define LOG_DEBUG_ENABLED 1
+#define LOG_TRACE_ENABLED 1
+
+#if RELEASE_BUILD == 1
+    #define LOG_DEBUG_ENABLED 0
+    #define LOG_TRACE_ENABLED 0
+#endif
+
+typedef enum LogLevel {
+    LOG_FATAL = 0,
+    LOG_ERROR,
+    LOG_WARNING,
+    LOG_INFO,
+    LOG_DEBUG,
+	LOG_TRACE,
+    LOG_MAX
+} LogLevel;
+
+bool initLogging();
+void shutdownLogging();
+DAPI void logOutput(LogLevel level,const char* message, ...);
+
+#define FATAL(message, ...) \
+    logOutput(LOG_FATAL, message, ##__VA_ARGS__)
+#define ERROR(message, ...) \
+    logOutput(LOG_ERROR, message, ##__VA_ARGS__)
+#define WARN(message, ...) \
+    logOutput(LOG_WARNING, message, ##__VA_ARGS__)
+#define INFO(message, ...) \
+    logOutput(LOG_INFO, message, ##__VA_ARGS__)
+#define DEBUG(message, ...) \
+    logOutput(LOG_DEBUG, message, ##__VA_ARGS__)
+#define TRACE(message, ...) \
+    logOutput(LOG_TRACE, message, ##__VA_ARGS__)
+
+
+
+    
+
 //=====================================================================================================================
 //MATHS
 typedef struct {

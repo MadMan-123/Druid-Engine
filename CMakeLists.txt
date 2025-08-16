@@ -24,7 +24,7 @@ file(GLOB_RECURSE ENGINE_SOURCES
 set_source_files_properties(${CMAKE_SOURCE_DIR}/src/stb_image.c PROPERTIES COMPILE_FLAGS "-w")
 
 # Build engine as a shared library
-add_library(druid SHARED ${ENGINE_SOURCES} "src/systems/Rendering/material.c")
+add_library(druid SHARED ${ENGINE_SOURCES} "src/systems/Rendering/material.c" "src/core/logging.c")
 
 # Include directories
 target_include_directories(druid PUBLIC
