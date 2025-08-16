@@ -5,10 +5,21 @@
 f64 performanceFreq = 0.0;
 u64 previousTime = 0;
 f32 frameCount = 0;
-
 f64 FPS = 0.0;
 u32 fps = 0;
+void inputUpdate(Application* app)
+{
+	//process input if handler provided
+		if (app->inputProcess)
+			app->inputProcess(app);
 
+	Vec2 jAxis = getJoysickAxis(1); //get the left joystick axi
+	Vec2 kAxis = getKeyboardAxis(); //get the keyboard axis
+
+	//set input axis
+	xInputAxis = clamp(kAxis.x + jAxis.x,-1.0f,1.0f);
+	yInputAxis = clamp(kAxis.y + jAxis.y, -1.0f, 1.0f); //clamp to -1 to 1 range
+}
 //create the application
 Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)
 {
@@ -96,11 +107,8 @@ void startApplication(Application* app)
 		u64 current = SDL_GetPerformanceCounter();
 		f32 dt = (f32)((f64)(current - previousTime) / performanceFreq);
 		previousTime = current;
-
-		//process input if handler provided
-		if (app->inputProcess)
-			app->inputProcess(app);
-
+		inputUpdate(app); //process input events
+	
 		//update & render – pass freshly computed dt
 		app->update(dt);
 		render(app, dt);

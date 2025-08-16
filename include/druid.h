@@ -938,7 +938,11 @@ extern SDL_Gamepad* gamepads[GAMEPAD_MAX];
 DAPI void checkForGamepadConnection(SDL_Event* event);
 DAPI void checkForGamepadRemoved(SDL_Event* event);
 
+DAPI Vec2 getKeyboardAxis();
+DAPI Vec2 getJoysickAxis(u32 controllerID);
 
+DAPI extern f32 xInputAxis;
+DAPI extern f32 yInputAxis;
 //Collier
 typedef enum
 {

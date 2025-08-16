@@ -7,6 +7,8 @@ static const bool* state;
 SDL_Gamepad* gamepads[GAMEPAD_MAX] = { NULL }; //array to hold gamepads
 u32 gamepadCount = 0; //number of gamepads connected
 
+DAPI f32 xInputAxis = 0.0f; //x axis input from keyboard or gamepad
+DAPI f32 yInputAxis = 0.0f; //y axis input from keyboard or gamepad
 
 
 void initInput()
@@ -105,6 +107,47 @@ void processInput(Application* app)
 		}
 	}
 	
+}
+
+
+
+Vec2 getKeyboardAxis()
+{
+	Vec2 axis = { 0 };
+	
+	//if the D key is pressed make x +1 else if A then make x -1
+	f32 xP = isKeyDown(KEY_D) ? 1 : 0;
+	f32 xN = isKeyDown(KEY_A) ? -1 : 0;
+
+	f32 yP = isKeyDown(KEY_W) ? 1 : 0;
+	f32 yN = isKeyDown(KEY_S) ? -1 : 0;
+
+	axis.x = xP + xN;
+	axis.y = yP + yN;
+	axis.x = -axis.x;
+	return axis;
+}
+
+Vec2 getJoysickAxis(u32 controllerID)
+{
+	Vec2 axis = { 0 };
+
+	//get valid gamepad
+	SDL_Gamepad* pad = gamepads[controllerID];
+	//check if the gamepad is valid
+	if(pad == NULL) 
+	{
+		DEBUG("No gamepad found at index %d\n", controllerID);
+		return axis; //no gamepad found
+	}
+
+	//get the left joystick axi
+	axis.x = -SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+	axis.y = -SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
+	//normalize the axi
+	axis.x /= 32767.0f; //SDL joystick axis range is -32768 to 32767
+	axis.y /= 32767.0f; //normalize to -1 to 1 range
+	return axis;
 }
 
 

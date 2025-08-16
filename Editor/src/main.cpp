@@ -1,5 +1,5 @@
 #include <iostream>
-#include "druid.h"
+#include <druid.h>
 #include "editor.h"
 #include "scene.h"
 #include "MeshMap.h"
@@ -22,7 +22,6 @@ u32 shader = 0;
 
 f32 yaw = 0;
 f32 currentPitch = 0;
-//constants for camera motion
 static const f32 camMoveSpeed   = 1.0f;  //units per second
 static const f32 camRotateSpeed = 5.0f;   //degrees per second
 static const u32 entityDefaultCount = 128;
@@ -40,13 +39,16 @@ Vec3 manipulateAxis = v3Zero;
 
 static void moveCamera(f32 dt)
 {
-    if (isKeyDown(KEY_W))
-        moveForward(&sceneCam,  camMoveSpeed * dt);
-    if (isKeyDown(KEY_S))
+	const f32 deadZone = 0.45f; //dead zone for input
+    if (yInputAxis > deadZone)
+    {
+        moveForward(&sceneCam, camMoveSpeed * dt);
+    }
+    if (yInputAxis < -deadZone)
         moveForward(&sceneCam, -camMoveSpeed * dt);
-    if (isKeyDown(KEY_A))
+    if (xInputAxis > deadZone)
         moveRight(&sceneCam,  -camMoveSpeed * dt);
-    if (isKeyDown(KEY_D))
+    if (xInputAxis < -deadZone)
         moveRight(&sceneCam,   camMoveSpeed * dt);
 }
 
