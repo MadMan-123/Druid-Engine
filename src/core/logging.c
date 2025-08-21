@@ -13,7 +13,8 @@ const char* colorCodes[LOG_MAX] = {
 };
 const char* colorReset = "\x1b[0m";
 
-
+DAPI b8 useCustomOutputSrc = false;
+DAPI void (*logOutputSrc)(LogLevel level, const char* msg) = NULL;
 bool initLogging() 
 {
 	//TODO: Log file 
@@ -43,6 +44,11 @@ void logOutput (LogLevel level, const char* message, ...)
 	//format the final output with the level and message
 	snprintf(outBuffer, sizeof(outBuffer), "%s %s", levelStrings[level], buffer);
 
+	if (useCustomOutputSrc)
+	{
+		logOutputSrc(level, outBuffer);
+		return; 
+	}
 
 	//in future we can later add a different output for things like the imgui console
 	if (level < LOG_WARNING) 

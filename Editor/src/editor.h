@@ -4,6 +4,8 @@
 #include <SDL3/SDL.h>
 #include <GL/glew.h>
 #include <imgui.h>
+#define MAX_CONSOLE_LINES 10000
+#define MAX_CONSOLE_LINE_LENGTH 256
 
 // Forward declarations and global variables shared across the Editor
 extern Application* editor;
@@ -71,7 +73,7 @@ extern InspectorState currentInspectorState;
 extern u32 inspectorEntityID; //holds the index for the inspector to load component data  
 
 extern ManipulateTransformState manipulateState;
-
+extern const char** consoleLines;
 // Application lifecycle hooks implemented for the Editor
 void processInput(void* appData);
 void init();
@@ -82,3 +84,4 @@ void destroy();
 // Editor UI drawing entry point (panels, dockspace, etc.)
 void drawDockspaceAndPanels();
 
+void editorLog(LogLevel level, const char* msg);

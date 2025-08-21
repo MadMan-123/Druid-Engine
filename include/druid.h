@@ -142,6 +142,9 @@ typedef enum LogLevel {
 
 bool initLogging();
 void shutdownLogging();
+
+DAPI extern void (*logOutputSrc)(LogLevel level, const char* msg);
+DAPI extern b8 useCustomOutputSrc;
 DAPI void logOutput(LogLevel level,const char* message, ...);
 
 #define FATAL(message, ...) \
@@ -156,8 +159,9 @@ DAPI void logOutput(LogLevel level,const char* message, ...);
     logOutput(LOG_DEBUG, message, ##__VA_ARGS__)
 #define TRACE(message, ...) \
     logOutput(LOG_TRACE, message, ##__VA_ARGS__)
+ 
 
-
+      
 
     
 
@@ -665,24 +669,23 @@ typedef struct
 	u32 vao;
 	//array of buffers
 	u32 vab[NUM_BUFFERS];
-    //material data
-    Material material;
+    //todo: remove this , replace for index
     u32 subMeshCount;
     u32 drawCount; //how much of the vertexArrayObject do we want to draw
 }Mesh;
 DAPI u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const char* basePath);
 DAPI void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath);
 DAPI MaterialUniforms getMaterialUniforms(u32 shader);
-DAPI void setMeshShader(Mesh* mesh, u32 shader);
 
-DAPI void updateMeshMaterial(Mesh* mesh);
-//mesh functions
+DAPI void updateMeshMaterial(Mesh* mesh, Material* material);
 //draws a given mesh
 DAPI void draw(Mesh* mesh);
 //creates a mesh from vertices and indices
 DAPI Mesh* createMesh (Vertices* vertices, u32 numVertices, u32* indices, u32 numIndices);
 //loads a mesh from a mesh file 
-DAPI Mesh* loadModel(const char* filename);
+
+
+//DAPI Mesh* loadMesh(const char* filename, u32* outMeshCount);
 
 DAPI void initModel(Mesh* mesh,const IndexedModel model);
 //free the mesh from memory 
@@ -695,10 +698,48 @@ DAPI Mesh* createTerrainMesh(unsigned int cellsX, unsigned int cellsZ, float cel
 DAPI Mesh* createBoxMesh(); 
 DAPI Mesh* createSkyboxMesh();
 
-//Keys
-//Keyboard keys enum
+typedef struct{
+    char* name;//the name of the model
+	u32* meshIndices;//buffer of indices that point to the meshes
+	u32* shaders;//shaders to use for the mesh
+	u32* materialIndices;//materials to use for the mesh
+    u32 meshCount;//how many meshes are in the buffer
+    u32 shaderCount;//how many shaders are in the buffer
+}Model;
+
+//resource manager
+typedef struct {
+	Material* materialBuffer;
+    Mesh* meshBuffer;
+	Model* modelBuffer; 
+	u32* textureHandles;
+    HashMap* textureIDs;
+    HashMap* shaderIDs;
+    HashMap* mesheIDs;
+	HashMap* modelIDs;
+	HashMap* materialIDs;
+    u32* shaderHandles;
+	
+    //meta data
+	u32 materialCount;
+	u32 meshCount;
+	u32 modelCount;
+	u32 textureCount;
+	u32 shaderCount;
+
+
+}ResourceManager;
+
+ResourceManager* createResourceManager(u32 materialCount, u32 meshCount, u32 modelCount, u32 shaderCount);
+void readResources(ResourceManager* manager, const char* filename);
+char* listFilesInDirectory(const char* directory, char* output, u32 outputSize);
+
+DAPI Model* loadModelFromAssimp(const ResourceManager* manager,const char* filename);
+
+//keys
+//keyboard keys enum
 typedef enum {
-    //Alphabetical keys
+    //alphabetical keys
     KEY_A = SDL_SCANCODE_A,
     KEY_B = SDL_SCANCODE_B,
     KEY_C = SDL_SCANCODE_C,
@@ -864,6 +905,15 @@ typedef enum {
 		BUTTON_DPAD_RIGHT = SDL_GAMEPAD_BUTTON_DPAD_RIGHT
 }ControllerCode;
 
+typedef enum {
+    JOYSTICK_LEFT_X = SDL_GAMEPAD_AXIS_LEFTX,
+    JOYSTICK_RIGHT_X = SDL_GAMEPAD_AXIS_RIGHTX,
+    JOYSTICK_LEFT_Y = SDL_GAMEPAD_AXIS_LEFTY,
+    JOYSTICK_RIGHT_Y = SDL_GAMEPAD_AXIS_RIGHTY,
+    JOYSTICK_TRIGGER_LEFT = SDL_GAMEPAD_AXIS_LEFT_TRIGGER,
+	JOYSTICK_TRIGGER_RIGHT = SDL_GAMEPAD_AXIS_RIGHT_TRIGGER
+} JoystickCode;
+
 //Mouse buttons enum
 enum MouseButton {
     MOUSE_LEFT = 0,
@@ -939,10 +989,14 @@ DAPI void checkForGamepadConnection(SDL_Event* event);
 DAPI void checkForGamepadRemoved(SDL_Event* event);
 
 DAPI Vec2 getKeyboardAxis();
-DAPI Vec2 getJoysickAxis(u32 controllerID);
+DAPI Vec2 getJoystickAxis(u32 controllerID, JoystickCode axis1, JoystickCode axis2);
 
 DAPI extern f32 xInputAxis;
 DAPI extern f32 yInputAxis;
+
+//====================================================================================================================
+
+
 //Collier
 typedef enum
 {

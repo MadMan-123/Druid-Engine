@@ -8,7 +8,7 @@
 
 
 
-Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount)
+Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount,Material* materials)
 {
     //load the model from file
     const struct aiScene* scene = aiImportFile(filename,
@@ -65,23 +65,43 @@ Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount)
     //copy mesh data
     u32 vertexOffset = 0;
     u32 indexOffset = 0;
-    Material material = {0};
+    u32 materialCount = 0;
+	Mesh* outputMesh = (Mesh*)malloc(sizeof(Mesh) * scene->mNumMeshes);
 
+    //create an arraay of materials
+    materials = (Material*)malloc(sizeof(Material) * scene->mNumMaterials);
     for (u32 m = 0; m < scene->mNumMeshes; m++) 
     {
         struct aiMesh* aimesh = scene->mMeshes[m];
         u32 materialIndex = aimesh->mMaterialIndex;
         struct aiMaterial* aiMat = scene->mMaterials[materialIndex];
         
-        readMaterial(&material, aiMat, "../res/textures");
+        Material* material = NULL;
+        //set the vertices back to default values
+
+        readMaterial(material, aiMat, "../"TEXTURE_FOLDER);
+        if (material)
+        {
+			materials[materialCount] = *material;
+			materialCount++;
+        }
+        else
+        {
+			ERROR("Failed to read material for mesh %d in model %s\n", m, filename);
+			materials[materialCount] = (Material){ 0 }; //set to default material
+
+        }
+        //loop over all vertices in the current Assimp mesh and copy their data into the SOA (Structure of Arrays) vertex buffers
         for (u32 i = 0; i < aimesh->mNumVertices; i++) 
         {
+            //copy vertex position from Assimp mesh to our vertex buffer
             vertices.positions[vertexOffset + i] = (Vec3){
                 aimesh->mVertices[i].x,
                 aimesh->mVertices[i].y,
                 aimesh->mVertices[i].z
             };
 
+            //copy index data from Assimp mesh to our index buffer
             if (aimesh->mTextureCoords[0]) 
             {
                 vertices.texCoords[vertexOffset + i] = (Vec2){
@@ -91,11 +111,14 @@ Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount)
             }
             else 
             {
+				//if no texture coords, set to default (0,0)
                 vertices.texCoords[vertexOffset + i] = (Vec2){ 0.0f, 0.0f };
             }
 
+			//copy normals from Assimp mesh to our vertex buffer
             if (aimesh->mNormals) 
             {
+				//if normals exist, copy them
                 vertices.normals[vertexOffset + i] = (Vec3){
                     aimesh->mNormals[i].x,
                     aimesh->mNormals[i].y,
@@ -104,35 +127,26 @@ Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount)
             }
             else 
             {
+				//if no normals exist, set to default (0,0,0)
                 vertices.normals[vertexOffset + i] = (Vec3){ 0.0f, 0.0f, 0.0f };
             }
         }
 
-        //copy and offset indices
-        for (u32 i = 0; i < aimesh->mNumFaces; i++)
-        {
-            struct aiFace face = aimesh->mFaces[i];
-            for (u32 j = 0; j < face.mNumIndices; j++) 
-            {
-                indices[indexOffset++] = face.mIndices[j] + vertexOffset;
-            }
-        }
-
+        //create mesh
+        Mesh* mesh = createMesh(&vertices, totalVertices, indices, totalIndices);
+		outputMesh[m] = *mesh;
         vertexOffset += aimesh->mNumVertices;
+		free(mesh);
     }
 
-    //create mesh
-    Mesh* mesh = createMesh(&vertices, totalVertices, indices, totalIndices);
-
-
-    mesh->material = material;
     // Cleanup
     free(vertices.positions);
     free(vertices.texCoords);
     free(vertices.normals);
     free(indices);
     aiReleaseImport(scene);
-    return mesh;
+    return outputMesh;
+   
 
 
 }
@@ -231,26 +245,11 @@ void destroyMesh(Mesh* mesh)
 	free(mesh);
 }
 
-Mesh* loadModel(const char* filename)
+
+
+void updateMeshMaterial(Mesh* mesh, Material* material)
 {
-	Mesh* mesh = (Mesh*)malloc(sizeof(Mesh));
-
-	//assert that the mesh was created
-	assert(mesh != NULL && "Mesh could not be created");
-
-    //TODO: Sub Meshes
-    u32 meshCount = 0;
-    //load model from assimp
-    mesh = loadMeshFromAssimp(filename,&meshCount);
-
-	return mesh;
-}
-
-
-void updateMeshMaterial(Mesh* mesh)
-{
-    MaterialUniforms* uniforms = &mesh->material.unifroms;
-    Material* material = &mesh->material;
+    MaterialUniforms* uniforms = &material->unifroms;
 
 
     //bind textures to texture units

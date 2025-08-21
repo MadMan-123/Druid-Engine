@@ -13,7 +13,7 @@ void inputUpdate(Application* app)
 		if (app->inputProcess)
 			app->inputProcess(app);
 
-	Vec2 jAxis = getJoysickAxis(1); //get the left joystick axi
+	Vec2 jAxis = getJoystickAxis(1,JOYSTICK_LEFT_X, JOYSTICK_LEFT_Y); //get the left joystick axi
 	Vec2 kAxis = getKeyboardAxis(); //get the keyboard axis
 
 	//set input axis

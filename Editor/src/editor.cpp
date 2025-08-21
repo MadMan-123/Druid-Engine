@@ -12,8 +12,15 @@
 #include "MeshMap.h"
 #include "entitypicker.h"
 
+//buffer of 2D array of strings
+const char** consoleLines = NULL;
+
+
 // Allocate the storage here
 Application* editor = nullptr;
+
+
+
 
 
 u32 viewportFBO      = 0;
@@ -133,11 +140,6 @@ static void renderGameScene()
             scales[id]
         };
         
-        //pru32f("pos: %f,%f,%f \n",positions[id].x,positions[id].y,positions[id].z);
-
-        //pru32f("rot: %f,%f,%f,%f \n",rotations[id].x,rotations[id].y,rotations[id].z,rotations[id].w);
-    
-        //pru32f("scale: %f,%f,%f \n",scales[id].x,scales[id].y,scales[id].z);
         //update mvp
         updateShaderMVP(shader, newTransform, sceneCam);
         // Get the mesh name for this specific entity
@@ -250,9 +252,24 @@ static void drawViewportWindow()
 
 static void drawDebugWindow()
 {
+    const char* inspectorStateNames[] = {
+        "EMPTY_VIEW",
+        "ENTITY_VIEW"
+    };
     ImGui::Begin("Debug");
     ImGui::Text("FPS %lf", editor->fps);
     ImGui::Text("Entity Count: %d", entityCount);
+	ImGui::Text("Entity Size: %d", entitySize);
+	ImGui::Text("Inspector Entity ID: %d", inspectorEntityID);
+	ImGui::Text("Inspector State: %d", inspectorStateNames[currentInspectorState]);
+	ImGui::Text("Viewport Size: %.0f x %.0f", viewportWidth, viewportHeight);
+    //input axis
+	ImGui::Text("Input Axis: (%.2f, %.2f)", xInputAxis, yInputAxis);
+	ImGui::Text("Mouse Position: (%.2f, %.2f)", ImGui::GetMousePos().x, ImGui::GetMousePos().y);
+
+	//draw console line
+    u32 dummy = -1; // No selection
+    //ImGui::ListBox("Console", &dummy, consoleLines, MAX_CONSOLE_LINES, 10);
     ImGui::End();
 }
 
@@ -429,6 +446,19 @@ void drawDockspaceAndPanels()
     drawInspectorWindow();
 
     ImGui::End(); // MainDockSpace
+}
+
+void editorLog(LogLevel level, const char* msg)
+{
+	//add the message to the console lines to be rendered
+    for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
+    {
+        if (consoleLines[i] == NULL)
+        {
+            consoleLines[i] = strdup(msg); //duplicate the message string
+            break;
+        }
+	}
 }
 
 

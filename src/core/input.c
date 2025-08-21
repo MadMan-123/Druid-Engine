@@ -128,7 +128,7 @@ Vec2 getKeyboardAxis()
 	return axis;
 }
 
-Vec2 getJoysickAxis(u32 controllerID)
+Vec2 getJoystickAxis(u32 controllerID, JoystickCode axis1, JoystickCode axis2)
 {
 	Vec2 axis = { 0 };
 
@@ -137,13 +137,13 @@ Vec2 getJoysickAxis(u32 controllerID)
 	//check if the gamepad is valid
 	if(pad == NULL) 
 	{
-		DEBUG("No gamepad found at index %d\n", controllerID);
+		//DEBUG("No gamepad found at index %d\n", controllerID);
 		return axis; //no gamepad found
 	}
 
 	//get the left joystick axi
-	axis.x = -SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-	axis.y = -SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
+	axis.x = -SDL_GetGamepadAxis(pad, axis1);
+	axis.y = -SDL_GetGamepadAxis(pad, axis2);
 	//normalize the axi
 	axis.x /= 32767.0f; //SDL joystick axis range is -32768 to 32767
 	axis.y /= 32767.0f; //normalize to -1 to 1 range

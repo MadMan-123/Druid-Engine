@@ -54,6 +54,7 @@ static void moveCamera(f32 dt)
 
 void rotateCamera(f32 dt) 
 {
+	Vec2 axis = getJoystickAxis(1, JOYSTICK_RIGHT_X, JOYSTICK_RIGHT_Y);
 	if (isMouseDown(SDL_BUTTON_RIGHT)) 
 	{
 		// Get the mouse delta
@@ -76,6 +77,21 @@ void rotateCamera(f32 dt)
 		Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
 		sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
 	}
+  //  else if (v2Mag(axis) > 1.15f);
+  //  {
+
+  //      //apply the joystick input to the camera
+  //      yaw += -axis.x * (camRotateSpeed) * dt;
+  //      currentPitch += -axis.y * (camRotateSpeed) * dt;
+  //      //89 in radians
+  //      f32 goal = radians(89.0f);
+  //      // Clamp pitch to avoid gimbal lock
+  //      currentPitch = clamp(currentPitch,-goal, goal);
+  //      // Create yaw quaternion based on the world-up vector
+  //      Vec4 yawQuat = quatFromAxisAngle(v3Up, yaw);
+  //      Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
+		//sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
+  //  }
 }
 
 
@@ -130,7 +146,7 @@ char* meshNames = nullptr;
 
 void init()
 {
-
+	//consoleLines = (const char**)malloc(sizeof(char*) * MAX_CONSOLE_LINES);
 
     entitySize = entityDefaultCount;
     entitySizeCache = entitySize;
@@ -173,16 +189,6 @@ void init()
         "../res/arrow.frag");
 
     colourLocation = glGetUniformLocation(arrowShader,"colour");
-    cubeMesh = createBoxMesh();
-    monkey = loadModel("../res/models/monkey3.obj");
-    warhammer = loadModel("../res/models/Pole_Warhammer.fbx");
-    shield = loadModel("../res/models/Shield_Crusader.fbx");
-
-	monkey->material.unifroms = getMaterialUniforms(shader);
-    warhammer->material.unifroms = getMaterialUniforms(shader);
-    shield->material.unifroms = getMaterialUniforms(shader);
-    cubeMesh->material.unifroms = getMaterialUniforms(shader);
-
 
     //setup camera that looks at the origin from z = +5
     initCamera(&sceneCam,
@@ -210,10 +216,6 @@ void init()
     skyboxViewLoc  = glGetUniformLocation(skyboxShader, "view");
     skyboxProjLoc  = glGetUniformLocation(skyboxShader, "projection");
 
-    addMesh(cubeMesh, "Cube");
-    addMesh(monkey,"Monkey");
-    addMesh(warhammer, "Warhammer");
-    addMesh(shield, "Shield");
     initIDFramebuffer();
 
 }
@@ -430,12 +432,23 @@ void destroy()
     ImGui_ImplOpenGL3_Shutdown(); //shutdown imgui opengl backend
     ImGui_ImplSDL3_Shutdown();    //shutdown imgui sdl backend
     ImGui::DestroyContext();      //destroy imgui core
+
+	//free console lines
+	for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
+    {
+		if (consoleLines[i] != NULL)
+        {
+			free((void*)consoleLines[i]);
+        }
+    }
 }
 
 
 
 int main(int argc, char** argv) 
 {
+	//useCustomOutputSrc = true; //use custom output source for logging
+    logOutputSrc = &editorLog;
 	editor = createApplication(init, update, render, destroy);
 	editor->width = (f32)(1920 * 1.25f);	
     editor->height = (f32)(1080 * 1.25f);
