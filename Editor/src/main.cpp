@@ -36,7 +36,6 @@ Vec3 manipulateAxis = v3Zero;
 
 
 
-
 static void moveCamera(f32 dt)
 {
 	const f32 deadZone = 0.45f; //dead zone for input
@@ -414,7 +413,6 @@ void render(f32 dt)
 void destroy()
 {
     
-    free(meshMap);
     freeEntityArena(sceneEntities);
     //free editor resources before exiting
     freeMesh(cubeMesh);
@@ -447,7 +445,6 @@ int main(int argc, char** argv)
     viewportWidth = editor->width;
     viewportHeight = editor->height;
 	editor->inputProcess = processInput;	
-    meshMap = createMeshMap(16);	
     run(editor); 
 	return 0;
 }

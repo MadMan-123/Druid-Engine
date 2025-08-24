@@ -57,6 +57,10 @@ Model* loadModelFromAssimp(ResourceManager* manager,const char* filename)
         manager->materialUsed++;
 
 		//add material to hash map
+		char matName[MAX_NAME_SIZE];
+		snprintf(matName, MAX_NAME_SIZE, "%d-material",i);
+		insertMap(&manager->materialIDs, matName, &i);
+
 		
 	}
 
@@ -98,8 +102,18 @@ Model* loadModelFromAssimp(ResourceManager* manager,const char* filename)
     }
 
 
-    //add meshes to buffer 
-
+	//duplicate meshes to resource manager and model
+    for (u32 i = 0; i < scene->mNumMeshes; i++)
+    {
+        //add mesh to resource manager
+        manager->meshBuffer[manager->meshUsed] = meshes[i];
+        //add to hash map
+        insertMap(&manager->mesheIDs, names[i], &manager->meshUsed);
+        model->meshIndices[i] = manager->meshUsed;
+        model->materialIndices[i] = scene->mMeshes[i]->mMaterialIndex;
+        model->shaders[i] = 0; //TODO: SETUP SHADERS FOR MATERIALS
+        manager->meshUsed++;
+	}
     
 
   

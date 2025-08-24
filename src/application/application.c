@@ -89,9 +89,7 @@ void initSystems(const Application* app)
     //get default values for the display
 	f32 width = app->width == 0 ? 1920 : app->width;
 	f32 height = app->height == 0 ? 1080 : app->height;
-	//initialize the display
-	initDisplay(app->display,width, height);
-
+	
 	initLogging(); //initialize logging system
 	resources = createResourceManager(
 		MATERIAL_COUNT,
@@ -100,7 +98,12 @@ void initSystems(const Application* app)
 		MODEL_COUNT,
 		SHADER_COUNT
 	); 
-	//create resource manager
+
+	//initialize the display
+	initDisplay(app->display,width, height);
+
+	//null check the resource manager
+	assert(resources != NULL && "Resource Manager not created correctly");
 
 	//try and read in the resources
 	readResources(resources,"../"RES_FOLDER);

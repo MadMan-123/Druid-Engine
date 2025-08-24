@@ -160,17 +160,13 @@ void addModel(ResourceManager* manager, const char* filename)
 
 void readResources(ResourceManager* manager, const char* filename)
 {
-    const u32 modelExtentionCount = 3;
-    const u32 shaderExtentionCount = 4;
-    const u32 textureExtentionCount = 3;
+	u32 modelExtCount = 3;
+	u32 shaderExtCount = 4;
+	u32 textureExtCount = 3;
 
-    const char* modelExtentions[] = {
-    ".fbx",".obj",".blend"
-    }; //models
-    const char* shaderExtentions[] = {
-    ".vert",".frag",".glsl",".comp" 
-    }; 
-    const char* textureExtentions[] = {
+    const char* fileExtentions[] = {
+    ".fbx",".obj",".blend",
+    ".vert",".frag",".glsl",".comp",
     ".png",".jpg",".bmp" 
     };//textures
     
@@ -193,27 +189,29 @@ void readResources(ResourceManager* manager, const char* filename)
             const char* ext = strrchr(filePath, '.');
 
             b8 isModel = false, isShader = false, isTexture = false;
-            for (u32 m = 0; m < modelExtentionCount; m++)
+            for (u32 m = 0; m < modelExtCount + shaderExtCount + textureExtCount; m++)
             {
-                //compare model extention
-                isModel = strcmp(ext, modelExtentions[m]) == 0;
-                if (isModel)
+				//check if the extension matches any known types
+				//if it does save the index of what type it is
+				//work out what type of resource it is depending on the index
+                if (ext && strcmp(ext, fileExtentions[m]) == 0)
                 {
-                    INFO("Found Model %s", filePath);
-					addModel(manager, filePath);
-                    goto SKIP;
-                }
-            }
-            for (u32 s = 0; s < shaderExtentionCount; s++)
-            {
-                isShader = strcmp(ext, shaderExtentions[s]) == 0;
-                if (isShader) goto SKIP;
-            }
+                    if (m < modelExtCount)
+                    {
+                        isModel = true;
+                    }
+                    else if (m < modelExtCount + shaderExtCount)
+                    {
+                        isShader = true;
+                    }
+                    else
+                    {
+                        isTexture = true;
+                    }
 
-            for (u32 t = 0; t < textureExtentionCount; t++)
-            {
-                isTexture = strcmp(ext, textureExtentions[t]) == 0;
-                if (isTexture) goto SKIP;
+
+                    break;
+				}
             }
 
         }

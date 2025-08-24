@@ -267,6 +267,17 @@ static void drawDebugWindow()
 	ImGui::Text("Input Axis: (%.2f, %.2f)", xInputAxis, yInputAxis);
 	ImGui::Text("Mouse Position: (%.2f, %.2f)", ImGui::GetMousePos().x, ImGui::GetMousePos().y);
 
+    if (resources)
+    {
+        //resource manager info
+        ImGui::Text("Resources:");
+        ImGui::Text("Meshes: %d : %d", resources->meshUsed, resources->meshCount);
+        ImGui::Text("Textures: %d : %d", resources->textureUsed, resources->textureCount);
+        ImGui::Text("Shaders: %d : %d", resources->shaderUsed, resources->shaderCount);
+        ImGui::Text("Materials: %d : %d", resources->materialUsed, resources->materialCount);
+        ImGui::Text("Models: %d : %d", resources->modelUsed, resources->modelCount);
+    }
+
 	//draw console line
     u32 dummy = -1; // No selection
     //ImGui::ListBox("Console", &dummy, consoleLines, MAX_CONSOLE_LINES, 10);
