@@ -413,7 +413,7 @@ void render(f32 dt)
 
 void destroy()
 {
-
+    
     free(meshMap);
     freeEntityArena(sceneEntities);
     //free editor resources before exiting
@@ -433,14 +433,6 @@ void destroy()
     ImGui_ImplSDL3_Shutdown();    //shutdown imgui sdl backend
     ImGui::DestroyContext();      //destroy imgui core
 
-	//free console lines
-	for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
-    {
-		if (consoleLines[i] != NULL)
-        {
-			free((void*)consoleLines[i]);
-        }
-    }
 }
 
 

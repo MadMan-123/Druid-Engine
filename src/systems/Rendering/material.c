@@ -53,9 +53,19 @@ u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const c
 
 }
 
-//reads material and populates your struct
+//reads material and populates the struct
 void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath) 
 {
+
+    if (mat == NULL)
+    {
+        ERROR("Material input pointer is NULL\n");
+        return;
+    }
+	
+
+	
+
     out->albedoTex = loadMaterialTexture(mat, aiTextureType_DIFFUSE, basePath);
     out->normalTex = loadMaterialTexture(mat, aiTextureType_NORMALS, basePath);
     out->metallicTex = loadMaterialTexture(mat, aiTextureType_METALNESS, basePath);

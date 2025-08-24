@@ -8,7 +8,7 @@
 
 
 
-Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount,Material* materials)
+Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount)
 {
     //load the model from file
     const struct aiScene* scene = aiImportFile(filename,
@@ -69,29 +69,10 @@ Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount,Material* material
 	Mesh* outputMesh = (Mesh*)malloc(sizeof(Mesh) * scene->mNumMeshes);
 
     //create an arraay of materials
-    materials = (Material*)malloc(sizeof(Material) * scene->mNumMaterials);
     for (u32 m = 0; m < scene->mNumMeshes; m++) 
     {
         struct aiMesh* aimesh = scene->mMeshes[m];
-        u32 materialIndex = aimesh->mMaterialIndex;
-        struct aiMaterial* aiMat = scene->mMaterials[materialIndex];
         
-        Material* material = NULL;
-        //set the vertices back to default values
-
-        readMaterial(material, aiMat, "../"TEXTURE_FOLDER);
-        if (material)
-        {
-			materials[materialCount] = *material;
-			materialCount++;
-        }
-        else
-        {
-			ERROR("Failed to read material for mesh %d in model %s\n", m, filename);
-			materials[materialCount] = (Material){ 0 }; //set to default material
-
-        }
-        //loop over all vertices in the current Assimp mesh and copy their data into the SOA (Structure of Arrays) vertex buffers
         for (u32 i = 0; i < aimesh->mNumVertices; i++) 
         {
             //copy vertex position from Assimp mesh to our vertex buffer
@@ -247,7 +228,7 @@ void destroyMesh(Mesh* mesh)
 
 
 
-void updateMeshMaterial(Mesh* mesh, Material* material)
+void updateMaterial(Material* material)
 {
     MaterialUniforms* uniforms = &material->unifroms;
 

@@ -579,8 +579,7 @@ DAPI void cleanUpGraphicsState(GraphicsState* state);
 
 //Shaders
 DAPI u32 initShader(const char* filename);
-//returns the text of a file
-DAPI char* loadFileText(const char* fileName);
+
 //takes the code of a shader and creates said shader
 DAPI u32 createShader(const char* text, u32 type);
 DAPI u32 createProgram(u32 shader);
@@ -676,8 +675,9 @@ typedef struct
 DAPI u32 loadMaterialTexture(struct aiMaterial* mat, enum aiTextureType type, const char* basePath);
 DAPI void readMaterial(Material* out, struct aiMaterial* mat, const char* basePath);
 DAPI MaterialUniforms getMaterialUniforms(u32 shader);
+DAPI Mesh* loadMeshFromAssimp(const char* filename, u32* meshCount);
 
-DAPI void updateMeshMaterial(Mesh* mesh, Material* material);
+DAPI void updateMaterial(Material* material);
 //draws a given mesh
 DAPI void draw(Mesh* mesh);
 //creates a mesh from vertices and indices
@@ -713,11 +713,11 @@ typedef struct {
     Mesh* meshBuffer;
 	Model* modelBuffer; 
 	u32* textureHandles;
-    HashMap* textureIDs;
-    HashMap* shaderIDs;
-    HashMap* mesheIDs;
-	HashMap* modelIDs;
-	HashMap* materialIDs;
+    HashMap textureIDs;
+    HashMap shaderIDs;
+    HashMap mesheIDs;
+	HashMap modelIDs;
+	HashMap materialIDs;
     u32* shaderHandles;
 	
     //meta data
@@ -727,14 +727,31 @@ typedef struct {
 	u32 textureCount;
 	u32 shaderCount;
 
+	u32 materialUsed;
+	u32 meshUsed;
+	u32 modelUsed;
+	u32 textureUsed;
+	u32 shaderUsed;
+
+
 
 }ResourceManager;
 
-ResourceManager* createResourceManager(u32 materialCount, u32 meshCount, u32 modelCount, u32 shaderCount);
-void readResources(ResourceManager* manager, const char* filename);
-char* listFilesInDirectory(const char* directory, char* output, u32 outputSize);
+static ResourceManager* resources;
 
-DAPI Model* loadModelFromAssimp(const ResourceManager* manager,const char* filename);
+ResourceManager* createResourceManager(u32 materialCount, u32 textureCount, u32 meshCount, u32 modelCount, u32 shaderCount);
+void cleanUpResourceManager(ResourceManager* manager);
+void readResources(ResourceManager* manager, const char* filename);
+
+//file utils
+//returns the text of a file
+//TODO: make file.c and remove these functions from resource manager and shader
+DAPI char* loadFileText(const char* fileName);
+DAPI char** listFilesInDirectory(const char* directory, u32* outCount);
+void listFilesRecursive(const char* directory, char*** fileList, u32* count, u32* capacity);
+void normalizePath(char* path);
+
+DAPI Model* loadModelFromAssimp(ResourceManager* manager,const char* filename);
 
 //keys
 //keyboard keys enum

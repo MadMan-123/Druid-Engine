@@ -7,6 +7,7 @@ u64 previousTime = 0;
 f32 frameCount = 0;
 f64 FPS = 0.0;
 u32 fps = 0;
+
 void inputUpdate(Application* app)
 {
 	//process input if handler provided
@@ -62,6 +63,7 @@ void destroyApplication(Application* app)
 	onDestroy(app->display);
     //free app data	
 	shutdownLogging();
+	cleanUpResourceManager(resources);
     free(app);
 }
 
@@ -76,6 +78,12 @@ void run(Application* app)
 	startApplication(app);
 }
 
+#define MATERIAL_COUNT 128
+#define TEXTURE_COUNT 128
+#define MESH_COUNT 256
+#define MODEL_COUNT 128
+#define SHADER_COUNT 64
+
 void initSystems(const Application* app)
 {
     //get default values for the display
@@ -85,6 +93,17 @@ void initSystems(const Application* app)
 	initDisplay(app->display,width, height);
 
 	initLogging(); //initialize logging system
+	resources = createResourceManager(
+		MATERIAL_COUNT,
+		TEXTURE_COUNT,
+		MESH_COUNT,
+		MODEL_COUNT,
+		SHADER_COUNT
+	); 
+	//create resource manager
+
+	//try and read in the resources
+	readResources(resources,"../"RES_FOLDER);
     //call the init function pointer
 	app->init();
 
