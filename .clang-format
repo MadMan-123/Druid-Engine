@@ -1,0 +1,22 @@
+
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: true
+  AfterClass: true
+  AfterNamespace: true
+  IndentBraces: true
+
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+
+BreakBeforeBraces: Allman
+
+SpaceBeforeParens: ControlStatements
+

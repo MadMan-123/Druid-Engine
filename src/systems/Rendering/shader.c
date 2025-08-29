@@ -1,49 +1,49 @@
 #include "../../../include/druid.h"
 
-//Utility functions
-char* loadFileText(const char* fileName)
+// Utility functions
+char *loadFileText(const char *fileName)
 {
-	//open the file to read
- 	FILE* file = fopen(fileName,"r");
+    // open the file to read
+    FILE *file = fopen(fileName, "r");
 
-	//null check
-	if(file == NULL)
-	{
-		ERROR("The File has not opened\n");
-		return NULL;
-	}
-	
-	//determine how big the file is
-	fseek(file,0,SEEK_END);
-	u64 length = ftell(file);
-	//go back to start
-	rewind(file);
+    // null check
+    if (file == NULL)
+    {
+        ERROR("The File has not opened\n");
+        return NULL;
+    }
 
-	//allocate enough memory
-	char* buffer = (char*)malloc(length + 1);
+    // determine how big the file is
+    fseek(file, 0, SEEK_END);
+    u64 length = ftell(file);
+    // go back to start
+    rewind(file);
 
-	if(!buffer)
-	{
-		ERROR("Failed to allocate memory");
-		fclose(file);
-		return NULL;
-	}
+    // allocate enough memory
+    char *buffer = (char *)malloc(length + 1);
 
-	//read the file to the buffer
-	u32 readSize = fread(buffer,1,length,file);
+    if (!buffer)
+    {
+        ERROR("Failed to allocate memory");
+        fclose(file);
+        return NULL;
+    }
 
-	//add null terminator
-	buffer[readSize] = '\0';
-	
-	fclose(file);
-	return buffer;
+    // read the file to the buffer
+    u32 readSize = fread(buffer, 1, length, file);
 
+    // add null terminator
+    buffer[readSize] = '\0';
+
+    fclose(file);
+    return buffer;
 }
 
-void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const char* errorMessage)
+void checkShaderError(GLuint shader, GLuint flag, bool isProgram,
+                      const char *errorMessage)
 {
     GLint success = 0;
-    GLchar error[1024] = { 0 };
+    GLchar error[1024] = {0};
 
     if (isProgram)
         glGetProgramiv(shader, flag, &success);
@@ -57,20 +57,21 @@ void checkShaderError(GLuint shader, GLuint flag, bool isProgram, const char* er
         else
             glGetShaderInfoLog(shader, sizeof(error), NULL, error);
 
-	//error
-	//TODO: Errors
-	ERROR("[SHADER ERROR]: \n Message: \n%s\n Error: %s \n", errorMessage, error);
+        // error
+        // TODO: Errors
+        ERROR("[SHADER ERROR]: \n Message: \n%s\n Error: %s \n", errorMessage,
+              error);
     }
 }
 
-u32 createShader(const char* text, unsigned int type)
+u32 createShader(const char *text, u32 type)
 {
     u32 shader = glCreateShader(type);
 
     if (shader == 0)
         ERROR("Error type creation failed %s\n", type);
 
-    const GLchar* stringSource[1];
+    const GLchar *stringSource[1];
     stringSource[0] = text;
     GLint lengths[1];
     lengths[0] = strlen(text);
@@ -78,17 +79,13 @@ u32 createShader(const char* text, unsigned int type)
     glShaderSource(shader, 1, stringSource, lengths);
     glCompileShader(shader);
 
-    checkShaderError(
-        shader,
-        GL_COMPILE_STATUS,
-        false,
-        "Error compiling shader!"
-    );
+    checkShaderError(shader, GL_COMPILE_STATUS, false,
+                     "Error compiling shader!");
 
     return shader;
 }
 
-//Main shader functions
+// Main shader functions
 u32 createProgram(u32 shader)
 {
     u32 program = glCreateProgram();
@@ -96,17 +93,17 @@ u32 createProgram(u32 shader)
     return program;
 }
 
-u32 createComputeProgram(const char* computePath)
+u32 createComputeProgram(const char *computePath)
 {
-    char* code = loadFileText(computePath);
-    if(!code)
+    char *code = loadFileText(computePath);
+    if (!code)
     {
-	    fprintf(stderr,"failed to load Compute Shader\n");
-	    return 0;
+        fprintf(stderr, "failed to load Compute Shader\n");
+        return 0;
     }
     u32 shader = createShader(code, GL_COMPUTE_SHADER);
     free(code);
-    if(shader == 0)
+    if (shader == 0)
     {
         return 0;
     }
@@ -114,35 +111,30 @@ u32 createComputeProgram(const char* computePath)
     u32 program = glCreateProgram();
     glAttachShader(program, shader);
     glLinkProgram(program);
-    
-    checkShaderError(program, GL_LINK_STATUS, true, "ERROR: Compute Program linking failed");
-    glValidateProgram(program);
-    checkShaderError(
-     program,
-     GL_VALIDATE_STATUS,
-     true,
-     "Error: Shader program not valid");
 
- 
-    //Clean up the shader as it's now linked to the program
+    checkShaderError(program, GL_LINK_STATUS, true,
+                     "ERROR: Compute Program linking failed");
+    glValidateProgram(program);
+    checkShaderError(program, GL_VALIDATE_STATUS, true,
+                     "Error: Shader program not valid");
+
+    // Clean up the shader as it's now linked to the program
     glDetachShader(program, shader);
     glDeleteShader(shader);
-    
+
     return program;
 }
 
-
-
-u32 createGraphicsProgram(const char* vertPath, const char* fragPath)
+u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
 {
     u32 program = glCreateProgram();
-   
-    char* vertexShaderText = loadFileText(vertPath);
-    char* fragShaderText = loadFileText(fragPath); 
-	
-    if(!fragShaderText || !vertexShaderText)
+
+    char *vertexShaderText = loadFileText(vertPath);
+    char *fragShaderText = loadFileText(fragPath);
+
+    if (!fragShaderText || !vertexShaderText)
     {
-	    fprintf(stderr,"Failed to load vertex or frag shader\n");
+        fprintf(stderr, "Failed to load vertex or frag shader\n");
     }
 
     u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);
@@ -165,22 +157,16 @@ u32 createGraphicsProgram(const char* vertPath, const char* fragPath)
     glBindAttribLocation(program, 0, "position");
     glBindAttribLocation(program, 1, "texCoord");
     glBindAttribLocation(program, 2, "normal");
-    
+
     glLinkProgram(program);
-    checkShaderError(
-        program,
-        GL_LINK_STATUS,
-        true,
-        "Error: Shader program linking failed");
+    checkShaderError(program, GL_LINK_STATUS, true,
+                     "Error: Shader program linking failed");
 
     glValidateProgram(program);
-    checkShaderError(
-        program,
-        GL_VALIDATE_STATUS,
-        true,
-        "Error: Shader program not valid");
+    checkShaderError(program, GL_VALIDATE_STATUS, true,
+                     "Error: Shader program not valid");
 
-    //Clean up the shaders as they're now linked to the program
+    // Clean up the shaders as they're now linked to the program
     glDetachShader(program, vertexShader);
     glDetachShader(program, fragmentShader);
     glDeleteShader(vertexShader);
@@ -189,24 +175,20 @@ u32 createGraphicsProgram(const char* vertPath, const char* fragPath)
     return program;
 }
 
-
 void freeShader(u32 shader)
 {
-	glDeleteProgram(shader); // delete the program
-
+    glDeleteProgram(shader); // delete the program
 }
 
-
-
-void updateShaderMVP(u32 shaderProgram, const Transform transform, const Camera camera)
+void updateShaderMVP(u32 shaderProgram, const Transform transform,
+                     const Camera camera)
 {
     Mat4 model = getModel(&transform);
-    Mat4 mvp = mat4Mul(getViewProjection(&camera) , model);
-    
+    Mat4 mvp = mat4Mul(getViewProjection(&camera), model);
+
     u32 modelUniform = glGetUniformLocation(shaderProgram, "model");
     u32 transformUniform = glGetUniformLocation(shaderProgram, "transform");
-    
+
     glUniformMatrix4fv(modelUniform, 1, GL_FALSE, &model.m[0][0]);
     glUniformMatrix4fv(transformUniform, 1, GL_FALSE, &mvp.m[0][0]);
 }
-
