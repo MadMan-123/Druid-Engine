@@ -135,3 +135,4 @@ CMakeSettings.json
 *.fbx
 *.png
 
+/CMakeLists.txt

@@ -55,7 +55,7 @@ extern u32 arrowShader;
 extern u32 colourLocation;
 extern bool canMoveAxis;
 extern Vec3 manipulateAxis;
-
+extern ResourceManager* resources;
 
 typedef enum{
     MANIPULATE_POSITION = 0,

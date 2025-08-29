@@ -437,6 +437,7 @@ void destroy()
 
 int main(int argc, char** argv) 
 {
+    
 	//useCustomOutputSrc = true; //use custom output source for logging
     logOutputSrc = &editorLog;
 	editor = createApplication(init, update, render, destroy);

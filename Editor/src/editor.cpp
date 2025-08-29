@@ -1,3 +1,6 @@
+
+#include <druid.h>
+
 #include "editor.h"
 #include <cstdio>
 #include <cstring>
@@ -7,7 +10,6 @@
 #include "../deps/imgui/imgui_impl_opengl3.h"
 
 #include "../deps/imgui/imgui_internal.h"
-#include "druid.h"
 #include "scene.h"
 #include "MeshMap.h"
 #include "entitypicker.h"
@@ -18,7 +20,6 @@ const char** consoleLines = NULL;
 
 // Allocate the storage here
 Application* editor = nullptr;
-
 
 
 
@@ -369,7 +370,7 @@ static void drawInspectorWindow()
             u32 selectedIndex = 0;
             if(ImGui::BeginListBox("Meshes"))
             {
-                for(u32 i = 0; i < meshMap->count; i++)
+                /*for(u32 i = 0; i < meshMap->count; i++)
                 {
                     
                     const bool isSelected = (selectedIndex == i);
@@ -386,7 +387,7 @@ static void drawInspectorWindow()
                         INFO("Entity %d mesh: '%s'\n", inspectorEntityID, &meshNames[inspectorEntityID * 32]);
                         
                     }
-                }
+                }*/
             }
 
 

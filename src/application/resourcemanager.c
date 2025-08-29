@@ -11,6 +11,7 @@
 #define MAX_NAME_SIZE 256
 #define MAX_FILE_SIZE 1024
 
+ResourceManager* resources = NULL;
 
 u32 djb2Hash(const void* inStr, u32 capacity)
 {
@@ -54,11 +55,11 @@ ResourceManager* createResourceManager(u32 materialCount,u32 textureCount ,u32 m
 	manager->shaderHandles = (u32*)malloc(sizeof(u32) * shaderCount);
 
     //null check
-	assert(manager->materialBuffer && "material buffers not created");
-	assert(manager->meshBuffer && "mesh buffers not created");
-	assert(manager->modelBuffer && "model buffers not created");
-    assert(manager->textureHandles && "texture handles not created");
-	assert(manager->shaderHandles && "shader handles not created");
+	assert(manager->materialBuffer != NULL && "material buffers not created");
+	assert(manager->meshBuffer != NULL && "mesh buffers not created");
+	assert(manager->modelBuffer != NULL && "model buffers not created");
+    assert(manager->textureHandles != NULL && "texture handles not created");
+	assert(manager->shaderHandles != NULL && "shader handles not created");
 
     //create hashmaps
     if (!createMap(&manager->textureIDs,
@@ -132,31 +133,6 @@ void cleanUpResourceManager(ResourceManager* manager)
 
 }
 
-void addModel(ResourceManager* manager, const char* filename)
-{
-	//load the model from file
-	//check if we have space
-    if (manager->modelUsed >= manager->modelCount)
-    {
-        ERROR("Model buffer full, cannot add more models");
-        return;
-	}
-
-	Model* model = loadModelFromAssimp(manager,filename);
-    if (model == NULL)
-    {
-        ERROR("Failed to load model %s", filename);
-        return;
-	}
-	//add to manager
-	manager->modelBuffer[manager->modelUsed] = *model;
-	manager->modelUsed++;
-
-	DEBUG("Model %s loaded successfully with %d meshes\n", model->meshCount);
-
-	//add to hashmap using filename as key
-	insertMap(&manager->modelIDs, filename, &manager->modelUsed);
-}
 
 void readResources(ResourceManager* manager, const char* filename)
 {
@@ -176,41 +152,62 @@ void readResources(ResourceManager* manager, const char* filename)
 	const u32 bufferSize = 1024;
     u32 outCount = 0;
     char** output = listFilesInDirectory("..\\"RES_FOLDER, &outCount);
-
+	INFO("Found %d files in directory %s\n", outCount, "..\\"RES_FOLDER);
     //as the resources will not be in the thousounds for a while this approach works well,
     // note that as we progress in size we may need to create some O(1) solution
 	//list all files in the directory and take it to output
     if (outCount > 0)
     {
-        for (u32 i = 0; i < outCount; i++)
+        for (u32 i = 0; i < outCount - 1; i++)
         {
+			DEBUG("File %d: %s\n", i, output[i]);
             //read the file extension
             const char* filePath = output[i];
-            const char* ext = strrchr(filePath, '.');
+			const char* fileName = strrchr(filePath, '/');
+			//remove the first slash
+            if (fileName)fileName++;
+            else fileName = filePath;
+            const char* ext = strrchr(fileName, '.');
 
-            b8 isModel = false, isShader = false, isTexture = false;
+			INFO("%s, %s, %s", filePath, fileName, ext);
+
             for (u32 m = 0; m < modelExtCount + shaderExtCount + textureExtCount; m++)
             {
+                
 				//check if the extension matches any known types
 				//if it does save the index of what type it is
 				//work out what type of resource it is depending on the index
-                if (ext && strcmp(ext, fileExtentions[m]) == 0)
+				u32 result = strcmp(ext, fileExtentions[m]);
+				//print the result and extension
+				//INFO("Checking file %s with extension %s against %s, result: %d\n", filePath, ext ? ext : "No Extension", fileExtentions[m], result);
+                if (ext && result == 0)
                 {
                     if (m < modelExtCount)
                     {
-                        isModel = true;
+						//load the model to the resource manager
+						loadModelFromAssimp(manager, filePath);
                     }
                     else if (m < modelExtCount + shaderExtCount)
                     {
-                        isShader = true;
+						//load shader program depending on if its a compute shader or graphics shader
+						u32 shaderHandle = 0;
+                        if (strcmp(ext, ".comp") == 0)
+                        {
+							shaderHandle = createComputeProgram(filePath);
+                        }
+                        else
+                        {
+							//load graphics shader
+                            
+                        }
+
+
                     }
                     else
                     {
-                        isTexture = true;
                     }
+                    
 
-
-                    break;
 				}
             }
 
@@ -221,7 +218,6 @@ void readResources(ResourceManager* manager, const char* filename)
         WARN("Failed to list files in directory %s\n", "..\\"RES_FOLDER);
 	}
 
-SKIP:
     //free the output list
     for (u32 i = 0; i < outCount; i++)
     {

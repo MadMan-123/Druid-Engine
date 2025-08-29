@@ -9,6 +9,20 @@
 #define MAX_NAME_SIZE 64
 Model* loadModelFromAssimp(ResourceManager* manager,const char* filename)
 {
+    //null check the resource 
+    if (manager == NULL)
+    {
+        ERROR("Resource Manager is NULL");
+		return NULL;
+    }
+    
+    
+    const char* fileName = strrchr(filename, '/');
+	//remove the first slash
+	fileName = fileName ? fileName + 1 : filename;
+
+	
+
     //load the model from file
     const struct aiScene* scene = aiImportFile(filename,
         aiProcess_Triangulate |
@@ -60,6 +74,8 @@ Model* loadModelFromAssimp(ResourceManager* manager,const char* filename)
 		char matName[MAX_NAME_SIZE];
 		snprintf(matName, MAX_NAME_SIZE, "%d-material",i);
 		insertMap(&manager->materialIDs, matName, &i);
+		//if successful then log the material added
+		DEBUG("Material %d added to resource manager with name %s\n", i, matName);
 
 		
 	}
@@ -86,29 +102,27 @@ Model* loadModelFromAssimp(ResourceManager* manager,const char* filename)
         return NULL;
     }
     
-    const u32 meshLength = scene->mNumMeshes;
-    const u32 lineLength = 1024;
-    char names[meshLength][lineLength];
-    //get a list of mesh names
-    for (u32 i = 0; i < meshLength; i++)
-    {
-		struct aiMesh* aimesh = scene->mMeshes[i];
-        //string duplication
-        *names[i] = *strdup(aimesh->mName.data);
-        //add the model name to the names[i]
-		*names[i] = *strcat(names[i], "-mesh");
-         
-		DEBUG("Mesh %d name: %s\n", i, names[i]);
-    }
-
-
 	//duplicate meshes to resource manager and model
     for (u32 i = 0; i < scene->mNumMeshes; i++)
     {
+        //format the mesh name
+		char meshName[MAX_NAME_SIZE];
+		snprintf(meshName, MAX_NAME_SIZE, "-mesh-%d", i);
+
+        
+
+		//form the full name
+		char names[MAX_NAME_SIZE];
+
+        snprintf(names, MAX_NAME_SIZE, "%s%s", fileName, meshName);
+
+
+
+		const char* hashedName = strcat(fileName,meshName);
         //add mesh to resource manager
         manager->meshBuffer[manager->meshUsed] = meshes[i];
         //add to hash map
-        insertMap(&manager->mesheIDs, names[i], &manager->meshUsed);
+        insertMap(&manager->mesheIDs, names, &manager->meshUsed);
         model->meshIndices[i] = manager->meshUsed;
         model->materialIndices[i] = scene->mMeshes[i]->mMaterialIndex;
         model->shaders[i] = 0; //TODO: SETUP SHADERS FOR MATERIALS

@@ -708,7 +708,7 @@ typedef struct{
 }Model;
 
 //resource manager
-typedef struct {
+typedef struct{
 	Material* materialBuffer;
     Mesh* meshBuffer;
 	Model* modelBuffer; 
@@ -719,7 +719,7 @@ typedef struct {
 	HashMap modelIDs;
 	HashMap materialIDs;
     u32* shaderHandles;
-	
+
     //meta data
 	u32 materialCount;
 	u32 meshCount;
@@ -732,14 +732,11 @@ typedef struct {
 	u32 modelUsed;
 	u32 textureUsed;
 	u32 shaderUsed;
-
-
-
 }ResourceManager;
 
-static ResourceManager* resources;
+DAPI extern ResourceManager* resources;
 
-ResourceManager* createResourceManager(u32 materialCount, u32 textureCount, u32 meshCount, u32 modelCount, u32 shaderCount);
+DAPI ResourceManager* createResourceManager(u32 materialCount, u32 textureCount, u32 meshCount, u32 modelCount, u32 shaderCount);
 void cleanUpResourceManager(ResourceManager* manager);
 void readResources(ResourceManager* manager, const char* filename);
 

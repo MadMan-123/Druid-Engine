@@ -1,6 +1,5 @@
 #include "../../include/druid.h"
 
-
 //perforamance and frame rate tracking
 f64 performanceFreq = 0.0;
 u64 previousTime = 0;
@@ -98,12 +97,13 @@ void initSystems(const Application* app)
 		MODEL_COUNT,
 		SHADER_COUNT
 	); 
-
+	
+	//null check the resource manager
+	assert(resources != NULL && "Resource Manager not created correctly");
+	
 	//initialize the display
 	initDisplay(app->display,width, height);
 
-	//null check the resource manager
-	assert(resources != NULL && "Resource Manager not created correctly");
 
 	//try and read in the resources
 	readResources(resources,"../"RES_FOLDER);
