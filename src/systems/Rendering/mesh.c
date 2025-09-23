@@ -177,7 +177,7 @@ bool createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
                 const u32 *indices, u32 numIndices)
 {
 
-    if (!mesh || !vertices || !indices || numVertices == 0 || numIndices == 0)
+    if (!mesh || !vertices || numVertices == 0 )
     {
         ERROR("createMesh: invalid input params\n"
               "\tmesh=%p\n"
@@ -504,7 +504,7 @@ Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
     u32 *terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
     // Create mesh
-    Mesh *terrainMesh = NULL;
+    Mesh *terrainMesh = malloc(sizeof(Mesh));
     createMesh(terrainMesh, terrainVertices, terrainVertices->ammount,
                terrainIndices, indexCount);
 
@@ -571,7 +571,7 @@ Mesh *createTerrainMesh(u32 cellsX, u32 cellsZ, f32 cellSize)
     u32 *terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
     // Create mesh using the provided createMesh function
-    Mesh *terrainMesh = NULL;
+    Mesh *terrainMesh = malloc(sizeof(Mesh));
     createMesh(terrainMesh, terrainVertices, terrainVertices->ammount,
                terrainIndices, indexCount);
 
@@ -657,7 +657,7 @@ Mesh *createBoxMesh()
                      20, 21, 22, 20, 22, 23};
 
     // Create the mesh
-    Mesh *boxMesh = NULL;
+    Mesh *boxMesh = malloc(sizeof(Mesh));
     createMesh(boxMesh, boxVertices, boxVertices->ammount, indices, 36);
 
     // Clean up
@@ -751,7 +751,7 @@ Mesh *createSkyboxMesh()
     skyboxVertices->positions[35] = (Vec3){1.0f, -1.0f, 1.0f};
 
     // Create the mesh
-    Mesh *skyboxMesh = NULL;
+    Mesh *skyboxMesh = malloc(sizeof(Mesh));
     createMesh(skyboxMesh, skyboxVertices, 36, NULL, 0);
 
     // Clean up
