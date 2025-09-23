@@ -36,7 +36,7 @@ target_include_directories(druid PUBLIC
 
 # Compiler options
 target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32)
-target_compile_options(druid PRIVATE -Wall -O2 -std=c11 -fPIC -g)
+target_compile_options(druid PRIVATE -Wall -O3 -std=c11 -fPIC -g )
 
 target_link_libraries(druid PUBLIC
     ${CMAKE_SOURCE_DIR}/deps/libglew.dll.a
@@ -53,7 +53,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Add Editor as a subdirectory if it's a separate project
 add_subdirectory(Editor)
-
 # Add a custom clean target to wipe CMake config
 add_custom_target(clean_cache
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_BINARY_DIR}/CMakeFiles"

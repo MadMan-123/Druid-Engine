@@ -159,21 +159,22 @@ void readResources(ResourceManager *manager, const char *filename)
             // create a copy buffer to get the rest of the data
             char copyBuffer[512];
             strcpy(copyBuffer, output[i]);
-            const char *fileName = strrchr(copyBuffer, '/');
+            char *fileName = strrchr(copyBuffer, '/');
             // remove the first slash
             if (fileName)
                 fileName++;
             else
-                fileName = filePath;
+                fileName = copyBuffer;
 
-            char delimiter[] = ".";
-            const char *ext = strtok(fileName, delimiter);
-            ext = strtok(NULL, delimiter);
+            char *nameNoExt = strtok(fileName, ".");
+            char *ext = strtok(NULL, ".");
 
-            char *nameNoExt = strtok(fileName, delimiter);
+            if (ext == NULL)
+            {
+                continue;
+            }
 
             // check if its a shader
-
             if ((strcmp(ext, "frag") == 0) || (strcmp(ext, "vert") == 0))
             {
                 u32 value = 0;
@@ -199,18 +200,20 @@ void readResources(ResourceManager *manager, const char *filename)
             // create a copy buffer to get the rest of the data
             char copyBuffer[512];
             strcpy(copyBuffer, output[i]);
-            const char *fileName = strrchr(copyBuffer, '/');
+            char *fileName = strrchr(copyBuffer, '/');
             // remove the first slash
             if (fileName)
                 fileName++;
             else
-                fileName = filePath;
+                fileName = copyBuffer;
 
-            char delimiter[] = ".";
-            const char *ext = strtok(fileName, delimiter);
-            ext = strtok(NULL, delimiter);
+            char *nameNoExt = strtok(fileName, ".");
+            char *ext = strtok(NULL, ".");
 
-            char *nameNoExt = strtok(fileName, delimiter);
+            if (ext == NULL)
+            {
+                continue;
+            }
 
             for (u32 m = 0;
                  m < modelExtCount + shaderExtCount + textureExtCount; m++)
@@ -231,25 +234,9 @@ void readResources(ResourceManager *manager, const char *filename)
                 {
                     if (m < modelExtCount)
                     {
-                        // TODO: add a check if we can actually add to the
-                        // resourece manager
-                        //  load the model to the resource manager
-                        Model *loadedModel =
-                            loadModelFromAssimp(manager, filePath);
-                        // add model to the map
-
-                        char modelName[MAX_NAME_SIZE];
-                        snprintf(modelName, MAX_NAME_SIZE, "model-%d",
-                                 manager->modelUsed);
-                        insertMap(&manager->modelIDs, modelName,
-                                  &manager->modelUsed);
-                        // set the model to the model buffer
-                        memcpy(&manager->modelBuffer[manager->modelUsed],
-                               loadedModel, sizeof(Model));
-                        manager->modelUsed++;
-
-                        // free the model
-                        free(loadedModel);
+                        // Load the model and all its resources directly into the resource manager
+                        loadModelFromAssimp(manager, filePath);
+                        continue;
                     }
                     else if (m < modelExtCount + shaderExtCount)
                     {
@@ -272,6 +259,8 @@ void readResources(ResourceManager *manager, const char *filename)
                             //  TODO: also validate can add
                             snprintf(shaderName, MAX_NAME_SIZE,
                                      "compute-shader-%d", manager->shaderUsed);
+                            TRACE("Created Compute Shader %d",
+                                  manager->shaderUsed);
                         }
                         // frag will always be first
                         else if ((strcmp(ext, "frag") == 0) ||
@@ -296,6 +285,7 @@ void readResources(ResourceManager *manager, const char *filename)
                                          copyBuffer, "frag");
                                 shaderHandle =
                                     createGraphicsProgram(vertPath, fragPath);
+                                TRACE("Created Graphics Shader %s", nameNoExt);
                             }
                         }
 
@@ -307,10 +297,33 @@ void readResources(ResourceManager *manager, const char *filename)
                             shaderHandle;
 
                         manager->shaderUsed++;
+                        continue;
                     }
                     else
                     {
                         // load texture
+                        TRACE("Loading file %s \nwith hash %s", filename,
+                              nameNoExt);
+
+                        if (manager->textureUsed >= manager->textureCount)
+                        {
+                            FATAL("Resource manager is full and cant add "
+                                  "texture");
+                            continue;
+                        }
+
+                        u32 texture = initTexture(filePath);
+                        if (texture == 0) {
+                            WARN("Failed to load texture: %s", filePath);
+                        }
+                        manager->textureHandles[manager->textureUsed] = texture;
+
+                        char texName[MAX_NAME_SIZE];
+                        snprintf(texName, MAX_NAME_SIZE, "%s", nameNoExt);
+
+                        insertMap(&manager->textureIDs, texName,
+                                  &manager->textureUsed);
+                        manager->textureUsed++;
                     }
                 }
             }
@@ -323,9 +336,10 @@ void readResources(ResourceManager *manager, const char *filename)
 
     // free the output list
     // for (u32 i = 0; i < outCount; i++)
-    //{
-    //    free(output[i]);
-    //}
+    for (u32 i = 0; i < outCount; i++)
+    {
+        free(output[i]);
+    }
     free(output);
     destroyMap(&shaderNameMap);
 }

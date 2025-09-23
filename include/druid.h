@@ -13,6 +13,10 @@
 
 #include <assimp/material.h>
 
+// Forward declarations for Assimp structures
+struct aiScene;
+struct aiMaterial;
+
 //=====================================================================================================================
 // Unsigned int types.
 typedef unsigned char u8;
@@ -619,6 +623,7 @@ extern "C"
     // Mesh
     typedef struct
     {
+        u32 shaderHandle;
         u32 albedoTex;
         u32 normalTex;
         u32 metallicTex;
@@ -661,17 +666,21 @@ extern "C"
     } Mesh;
     DAPI u32 loadMaterialTexture(struct aiMaterial *mat,
                                  enum aiTextureType type, const char *basePath);
+
     DAPI void readMaterial(Material *out, struct aiMaterial *mat,
                            const char *basePath);
     DAPI MaterialUniforms getMaterialUniforms(u32 shader);
     DAPI Mesh *loadMeshFromAssimp(const char *filename, u32 *meshCount);
+    DAPI Mesh *loadMeshFromAssimpScene(const struct aiScene *scene,
+                                       u32 *meshCount);
+    DAPI Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count);
 
     DAPI void updateMaterial(Material *material);
     // draws a given mesh
-    DAPI void draw(Mesh *mesh);
+    DAPI void drawMesh(Mesh *mesh);
     // creates a mesh from vertices and indices
-    DAPI Mesh *createMesh(Vertices *vertices, u32 numVertices, u32 *indices,
-                          u32 numIndices);
+    DAPI bool createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
+                         const u32 *indices, u32 numIndices);
     // loads a mesh from a mesh file
 
     // DAPI Mesh* loadMesh(const char* filename, u32* outMeshCount);
@@ -694,11 +703,11 @@ extern "C"
     {
         char *name;           // the name of the model
         u32 *meshIndices;     // buffer of indices that point to the meshes
-        u32 *shaders;         // shaders to use for the mesh
         u32 *materialIndices; // materials to use for the mesh
         u32 meshCount;        // how many meshes are in the buffer
-        u32 shaderCount;      // how many shaders are in the buffer
     } Model;
+
+    DAPI void draw(u32 modelIndex);
 
     // resource manager
     typedef struct
@@ -748,8 +757,8 @@ extern "C"
                             u32 *capacity);
     void normalizePath(char *path);
 
-    DAPI Model *loadModelFromAssimp(ResourceManager *manager,
-                                    const char *filename);
+    DAPI void loadModelFromAssimp(ResourceManager *manager,
+                                  const char *filename);
 
     // keys
     // keyboard keys enum
@@ -1015,7 +1024,7 @@ extern "C"
     DAPI extern f32 xInputAxis;
     DAPI extern f32 yInputAxis;
 
-    //====================================================================================================================
+    //=====================================================================================================================
 
     // Collier
     typedef enum
@@ -1047,6 +1056,7 @@ extern "C"
 
     DAPI Collider *createCubeCollider(Vec3 scale);
     DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
+
 #ifdef __cplusplus
 }
 #endif

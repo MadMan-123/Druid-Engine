@@ -7,13 +7,13 @@
 #include <time.h>
 
 #define MAX_NAME_SIZE 64
-Model *loadModelFromAssimp(ResourceManager *manager, const char *filename)
+void loadModelFromAssimp(ResourceManager *manager, const char *filename)
 {
     // null check the resource
     if (manager == NULL)
     {
         ERROR("Resource Manager is NULL");
-        return NULL;
+        return;
     }
 
     const char *fileName = strrchr(filename, '/');
@@ -30,8 +30,7 @@ Model *loadModelFromAssimp(ResourceManager *manager, const char *filename)
     if (!scene)
     {
         ERROR("Failed to load model %s: %s\n", filename, aiGetErrorString());
-        aiReleaseImport(scene);
-        return NULL;
+        return;
     }
 
     // check if there are any meshes
@@ -39,86 +38,154 @@ Model *loadModelFromAssimp(ResourceManager *manager, const char *filename)
     {
         ERROR("Model %s has no meshes\n", filename);
         aiReleaseImport(scene);
-        return NULL;
+        return;
     }
 
-    Material *materials =
-        (Material *)malloc(sizeof(Material) * scene->mNumMaterials);
-    if (materials == NULL)
+    // Check if we have enough space in the resource manager
+    if (manager->meshUsed + scene->mNumMeshes > manager->meshCount)
     {
-        ERROR("Material buffer failed to create");
-        return NULL;
+        ERROR("Not enough space in mesh buffer for model %s\n", filename);
+        aiReleaseImport(scene);
+        return;
     }
 
-    // create materials
+    if (manager->materialUsed + scene->mNumMaterials > manager->materialCount)
+    {
+        ERROR("Not enough space in material buffer for model %s\n", filename);
+        aiReleaseImport(scene);
+        return;
+    }
+    
+    if (manager->modelUsed + 1 > manager->modelCount) {
+        ERROR("Not enough space in model buffer for model %s\n", filename);
+        aiReleaseImport(scene);
+        return;
+    }
+
+    // Store the starting indices for this model's resources
+    u32 materialStartIndex = manager->materialUsed;
+
+    // Load materials first and store them in ResourceManager
     for (u32 i = 0; i < scene->mNumMaterials; i++)
     {
-        // allocate material
-        materials[i] = (Material){0};
+        // Get the Assimp material
         struct aiMaterial *aimat = scene->mMaterials[i];
-        // get the file path
 
-        readMaterial(&materials[i], aimat, "../" TEXTURE_FOLDER);
+        // Read material properties and store in ResourceManager
+        Material *material = &manager->materialBuffer[manager->materialUsed];
+        *material = (Material){0};
+        readMaterial(material, aimat, "../" TEXTURE_FOLDER);
 
-        // add material to resource manager
-        manager->materialBuffer[i] = materials[i];
-        manager->materialUsed++;
-
-        // add material to hash map
+        // Add material to hash map with unique name
         char matName[MAX_NAME_SIZE];
-        snprintf(matName, MAX_NAME_SIZE, "%d-material", i);
-        insertMap(&manager->materialIDs, matName, &i);
-        // if successful then log the material added
-        DEBUG("Material %d added to resource manager with name %s\n", i,
-              matName);
+        snprintf(matName, MAX_NAME_SIZE, "%s-material-%d", fileName, i);
+        insertMap(&manager->materialIDs, matName, &manager->materialUsed);
+
+        DEBUG(
+            "Material %d added to resource manager at index %d with name %s\n",
+            i, manager->materialUsed, matName);
+
+        manager->materialUsed++;
     }
 
-    Model *model = (Model *)malloc(sizeof(Model));
+    // Create a temporary Model struct on the stack
+    Model model;
 
-    model->meshIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
-    model->materialIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
-    model->meshCount = scene->mNumMeshes;
-    model->name = (char *)malloc(sizeof(char) * MAX_NAME_SIZE);
-    strncpy(model->name, filename, MAX_NAME_SIZE - 1);
-    model->name[MAX_NAME_SIZE - 1] = '\0'; // ensure null termination
-    model->shaderCount = 0;
-    model->shaders = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
+    model.meshIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
+    model.materialIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
+    model.meshCount = scene->mNumMeshes;
+    model.name = (char *)malloc(sizeof(char) * MAX_NAME_SIZE);
+    strncpy(model.name, filename, MAX_NAME_SIZE - 1);
+    model.name[MAX_NAME_SIZE - 1] = '\0'; // ensure null termination
 
-    u32 count = 0;
+    u32 meshCount = 0;
     // load meshes to the resource manager
-    Mesh *meshes = loadMeshFromAssimp(filename, &count);
-    // check if the path is valid
+    Mesh *meshes = loadMeshFromAssimpScene(scene, &meshCount);
 
     if (meshes == NULL)
     {
         ERROR("Mesh buffer failed to create");
-        return NULL;
+        free(model.meshIndices);
+        free(model.materialIndices);
+        free(model.name);
+        aiReleaseImport(scene);
+        return;
     }
 
-    // duplicate meshes to resource manager and model
+    // Store meshes in ResourceManager and create proper index mapping
     for (u32 i = 0; i < scene->mNumMeshes; i++)
     {
         // format the mesh name
         char meshName[MAX_NAME_SIZE];
-        snprintf(meshName, MAX_NAME_SIZE, "-mesh-%d", i);
-
-        // form the full name
-        char names[MAX_NAME_SIZE];
-
-        snprintf(names, MAX_NAME_SIZE, "%s%s", fileName, meshName);
-
-        const char *hashedName = strcat(fileName, meshName);
+        snprintf(meshName, MAX_NAME_SIZE, "%s-mesh-%d", fileName, i);
 
         // add mesh to resource manager
         manager->meshBuffer[manager->meshUsed] = meshes[i];
+
         // add to hash map
-        insertMap(&manager->mesheIDs, names, &manager->meshUsed);
-        model->meshIndices[i] = manager->meshUsed;
-        model->materialIndices[i] = scene->mMeshes[i]->mMaterialIndex;
-        model->shaders[i] = 0; // TODO: SETUP SHADERS FOR MATERIALS
+        insertMap(&manager->mesheIDs, meshName, &manager->meshUsed);
+
+        // store the mesh index in the model (this is the ResourceManager index)
+        model.meshIndices[i] = manager->meshUsed;
+
+        // Map Assimp material index to ResourceManager material index
+        u32 assimpMaterialIndex = scene->mMeshes[i]->mMaterialIndex;
+        model.materialIndices[i] = materialStartIndex + assimpMaterialIndex;
+
+        DEBUG("Mesh %d: Assimp material %d -> ResourceManager material %d", i,
+              assimpMaterialIndex, model.materialIndices[i]);
+
         manager->meshUsed++;
     }
 
+    // Add model to resource manager
+    manager->modelBuffer[manager->modelUsed] = model;
+
+    // add to hash map
+    insertMap(&manager->modelIDs, fileName, &manager->modelUsed);
+
+    manager->modelUsed++;
+
+    // Clean up temporary mesh array
+    free(meshes);
     aiReleaseImport(scene);
-    return model;
+}
+
+void draw(u32 modelIndex)
+{
+    if (!resources)
+    {
+        ERROR("Resources is NULL");
+        return;
+    }
+
+    if (modelIndex >= resources->modelUsed)
+    {
+        ERROR("Invalid model index: %d/%d", modelIndex, resources->modelUsed);
+        return;
+    }
+
+    Model *model = &resources->modelBuffer[modelIndex];
+
+    for (u32 i = 0; i < model->meshCount; i++)
+    {
+        u32 meshIndex = model->meshIndices[i];
+        u32 materialIndex = model->materialIndices[i];
+
+        // Check bounds
+        if (meshIndex >= resources->meshUsed ||
+            materialIndex >= resources->materialUsed)
+        {
+            ERROR("Invalid mesh or material index: mesh=%d/%d, material=%d/%d",
+                  meshIndex, resources->meshUsed, materialIndex,
+                  resources->materialUsed);
+            continue;
+        }
+
+        // Update material
+        updateMaterial(&resources->materialBuffer[materialIndex]);
+
+        // Draw mesh
+        drawMesh(&resources->meshBuffer[meshIndex]);
+    }
 }

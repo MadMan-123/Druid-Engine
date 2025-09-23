@@ -98,7 +98,7 @@ u32 createComputeProgram(const char *computePath)
     char *code = loadFileText(computePath);
     if (!code)
     {
-        fprintf(stderr, "failed to load Compute Shader\n");
+        ERROR("failed to load Compute Shader");
         return 0;
     }
     u32 shader = createShader(code, GL_COMPUTE_SHADER);
@@ -134,7 +134,7 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
 
     if (!fragShaderText || !vertexShaderText)
     {
-        fprintf(stderr, "Failed to load vertex or frag shader\n");
+        ERROR("Failed to load vertex or frag shader");
     }
 
     u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);

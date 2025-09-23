@@ -3,13 +3,19 @@
 
 u32 initTexture(const char* fileName)
 {
-	u32 textureHandler;	
+	if (!fileName) {
+		ERROR("initTexture: fileName is NULL");
+		return 0;
+	}
+
+	u32 textureHandler = 0;	
 	int width, height, numComponents; //width, height, and no of components of image
-	unsigned char* imageData = stbi_load((fileName), &width, &height, &numComponents, 4); //load the image and store the data
+	unsigned char* imageData = stbi_load(fileName, &width, &height, &numComponents, 4); //load the image and store the data
 
 	if (imageData == NULL)
 	{
-		printf("texture load failed %s\n", fileName);
+		ERROR("texture load failed %s", fileName);
+		return 0;
 	}
 	
 	//number of and address of textures

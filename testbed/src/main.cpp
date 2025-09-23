@@ -33,7 +33,7 @@ u32 viewLoc, projLoc;
 
 //Meshes
 Mesh* cubeMapMesh;
-Mesh* knight;
+u32 knightModelIndex;
 Transform cubeTransform;
 
 HeightMap terrainMap = {0};
@@ -71,9 +71,10 @@ void init()
 		
 	}
 
-	
-	
-	knight = loadModel("../res/Models/Knight.obj");
+	if (!findInMap(&resources->modelIDs, "Knight.obj", &knightModelIndex)) {
+		FATAL("Failed to find model: Knight.obj");
+	}
+
 	//ooh look a fancy c++ feature,
 	const char* faces[6] = 
 	{
@@ -305,7 +306,7 @@ void render(f32 dt)
 	glUniform1i(stoneTextureLoc, 1); 
 	glUniform1i(snowTextureLoc, 2);
 	updateShaderMVP(terrainShader, terrainTransform, camera);
-	draw(terrain);
+	drawMesh(terrain);
 
 	//Water with lighting and time effect
 	glUseProgram(waterShader);
@@ -326,7 +327,7 @@ void render(f32 dt)
 	glUniform1f(timeLocation, (float)SDL_GetTicks() / 1000);
 	updateShaderMVP(waterShader, waterTransform, camera);
 	
-	draw(water);
+	drawMesh(water);
 
 
 	glUseProgram(regularShader);
@@ -345,7 +346,7 @@ void render(f32 dt)
 
 		updateShaderMVP(regularShader,newTransform,camera);
 
-		draw(knight);
+		draw(knightModelIndex);
 	}
 }
 
@@ -366,7 +367,6 @@ void destroy()
 	freeMesh(cubeMapMesh);
 	freeShader(regularShader);
 	freeShader(warbleShader);	
-	freeMesh(knight);
 }
 
 
