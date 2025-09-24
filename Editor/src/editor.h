@@ -35,7 +35,7 @@ extern Vec3* positions;
 extern Vec4* rotations;
 extern Vec3* scales;
 extern char* names;
-extern char* meshNames;
+extern u32 *modelIDs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 

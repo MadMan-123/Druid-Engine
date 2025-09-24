@@ -144,22 +144,10 @@ static void renderGameScene()
         // update mvp
         updateShaderMVP(shader, newTransform, sceneCam);
         // Get the mesh name for this specific entity
-
-        /*
-        char *entityMeshName = &meshNames[id * MAX_MESH_NAME_SIZE];
-
-        if (entityMeshName[0] != '\0' && strlen(entityMeshName) > 0)
-        {
-            Mesh *meshToDraw = getMesh(entityMeshName);
-            if (meshToDraw)
-            {
-                draw(meshToDraw);
-            }
-        }
-        */
-
+      
         // draw the model
-        //
+        u32 modelID = modelIDs[id];
+        draw(resources->modelBuffer[modelID]);
     }
 
     if (manipulateTransform)
@@ -378,23 +366,17 @@ static void drawInspectorWindow()
         u32 selectedIndex = 0;
         if (ImGui::BeginListBox("Models"))
         {
-            /*for(u32 i = 0; i < meshMap->count; i++)
+            for(u32 i = 0; i < resources->modelUsed; i++)
             {
 
                 const bool isSelected = (selectedIndex == i);
-                const char* meshName = getMeshNameByIndex(meshMap,i);
 
-                if(meshName && ImGui::Selectable(meshName,isSelected))
-                {
-
-                    char* namePtr = &meshNames[inspectorEntityID *
-            MAX_MESH_NAME_SIZE]; memset(namePtr, 0, MAX_MESH_NAME_SIZE);
+                if(ImGui::Selectable(meshName,isSelected))
+                { 
+                    char* namePtr = &meshNames[inspectorEntityID * MAX_MESH_NAME_SIZE]; 
+                    memset(namePtr, 0, MAX_MESH_NAME_SIZE);
                     strncpy(namePtr,meshName,MAX_MESH_NAME_SIZE - 1);
-                    namePtr[MAX_MESH_NAME_SIZE - 1] = '\0';
-
-                    INFO("Entity %d mesh: '%s'\n", inspectorEntityID,
-            &meshNames[inspectorEntityID * 32]);
-
+                    namePtr[MAX_MESH_NAME_SIZE - 1] = '\0'
                 }
             }*/
         }

@@ -13,15 +13,20 @@ uniform float metallic;
 uniform vec3 colour;
 uniform float transparency;
 
+//lighting
+
+
 out vec4 FragColour;
 
 
 
 void main()
 {		
-	vec3 diffuse = texture2D(albedoTexture,tc).rgb;
+	vec3 diffuse = texture2D(albedoTexture,tc).rgb; 
 
 	vec3 combine = colour;
+
+
 
 
 	FragColour = vec4(combine,transparency);

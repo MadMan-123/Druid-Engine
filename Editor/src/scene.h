@@ -13,7 +13,7 @@
 //extern StructLayout SceneEntity;
 // Define the SceneEntity archetype
 DEFINE_ARCHETYPE(SceneEntity, 
-    FIELD(Vec3, position), 
+    FIELD(Vec3, position),
     FIELD(Vec4, rotation),
     FIELD(Vec3, scale), 
     FIELD(bool, isActive), 

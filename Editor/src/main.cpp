@@ -9,12 +9,7 @@
 #include <iostream>
 
 static SDL_Event evnt;
-// ── Rendering resources ───────────────────────────────────────
-Mesh *cubeMesh = nullptr; // cube mesh
-Mesh *monkey;
-Mesh *warhammer;
-Mesh *shield;
-
+Mesh *cubeMesh = nullptr;
 u32 shader = 0;
 
 f32 yaw = 0;
@@ -406,9 +401,6 @@ void destroy()
     freeEntityArena(sceneEntities);
     // free editor resources before exiting
     freeMesh(cubeMesh);
-    freeMesh(monkey);
-    freeMesh(warhammer);
-    freeMesh(shield);
     freeShader(shader);
     freeShader(arrowShader);
     // free skybox resources

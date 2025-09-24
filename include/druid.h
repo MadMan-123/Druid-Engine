@@ -707,7 +707,7 @@ extern "C"
         u32 meshCount;        // how many meshes are in the buffer
     } Model;
 
-    DAPI void draw(u32 modelIndex);
+    DAPI void draw(Model* model);
 
     // resource manager
     typedef struct

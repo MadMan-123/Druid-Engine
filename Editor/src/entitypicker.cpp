@@ -49,7 +49,6 @@ void initIDFramebuffer()
 
 u32 count = 0;
 
-u32 target = 177;
 void renderIDPass()
 {
     // bind the fbo
@@ -88,19 +87,10 @@ void renderIDPass()
 
         // update shader
         glUniform3f(idLocation, r, g, b);
-        /*
-        char *entityMeshName = &meshNames[i * MAX_MESH_NAME_SIZE];
-
-        if (entityMeshName[0] != '\0' && strlen(entityMeshName) > 0)
-        {
-            Mesh *meshToDraw = getMesh(entityMeshName);
-            if (meshToDraw)
-            {
-
-                drawMeshIDPass(meshToDraw);
-            }
-        }
-         */
+        
+        u32 index = modelIDs[i];
+        draw(&resources->modelBuffer[index]);
+               
     }
 
     if (manipulateTransform)

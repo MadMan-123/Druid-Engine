@@ -151,22 +151,9 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     aiReleaseImport(scene);
 }
 
-void draw(u32 modelIndex)
+void draw(Model* model)
 {
-    if (!resources)
-    {
-        ERROR("Resources is NULL");
-        return;
-    }
-
-    if (modelIndex >= resources->modelUsed)
-    {
-        ERROR("Invalid model index: %d/%d", modelIndex, resources->modelUsed);
-        return;
-    }
-
-    Model *model = &resources->modelBuffer[modelIndex];
-
+ 
     for (u32 i = 0; i < model->meshCount; i++)
     {
         u32 meshIndex = model->meshIndices[i];
