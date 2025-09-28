@@ -89,8 +89,13 @@ void renderIDPass()
         glUniform3f(idLocation, r, g, b);
         
         u32 index = modelIDs[i];
-        draw(&resources->modelBuffer[index]);
+
+        Model* model = (&resources->modelBuffer[index]);
                
+        if(model)
+        {
+            draw(model);
+        }
     }
 
     if (manipulateTransform)

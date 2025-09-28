@@ -3,7 +3,8 @@
 
 u32 initTexture(const char* fileName)
 {
-	if (!fileName) {
+	if (!fileName) 
+	{
 		ERROR("initTexture: fileName is NULL");
 		return 0;
 	}
@@ -28,12 +29,10 @@ u32 initTexture(const char* fileName)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	//wrap texture outside height
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); 
- 	
-	//TODO: optional filtering
-	//linear filtering for minification (texture is smaller than area)
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	
+
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // linear filtering for magnifcation (texture is larger)
+
+
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData); //Target, Mipmapping Level, Pixel Format, Width, Height, Border Size, Input Format, Data Type of Texture, Image Data
 

@@ -81,7 +81,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         snprintf(matName, MAX_NAME_SIZE, "%s-material-%d", fileName, i);
         insertMap(&manager->materialIDs, matName, &manager->materialUsed);
 
-        DEBUG(
+        TRACE(
             "Material %d added to resource manager at index %d with name %s\n",
             i, manager->materialUsed, matName);
 
@@ -141,6 +141,8 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     // Add model to resource manager
     manager->modelBuffer[manager->modelUsed] = model;
 
+    // assign the material to the newly added material
+    manager->modelBuffer[manager->modelUsed].materialIndices;
     // add to hash map
     insertMap(&manager->modelIDs, fileName, &manager->modelUsed);
 

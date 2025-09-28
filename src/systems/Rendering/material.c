@@ -50,11 +50,12 @@ u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type,
         if (f)
         {
             fclose(f);
+            DEBUG("Loading texture for material: %s\n", tryPath);
             return initTexture(tryPath);
         }
         else
         {
-            printf("file: %s not found for material\n", tryPath);
+            ERROR("file: %s not found for material\n", tryPath);
         }
 
     }
@@ -121,7 +122,22 @@ MaterialUniforms getMaterialUniforms(u32 shader)
 
 void updateMaterial(Material *material)
 {
+    const bool shouldDebug = false;
     MaterialUniforms *uniforms = &material->unifroms;
+
+
+    if (shouldDebug)
+    {
+        DEBUG("Material Uniforms:\n");
+        DEBUG("albedoTex: %d\n", uniforms->albedoTex);
+        DEBUG("normalTex: %d\n", uniforms->normalTex);
+        DEBUG("metallicTex: %d\n", uniforms->metallicTex);
+        DEBUG("roughnessTex: %d\n", uniforms->roughnessTex);
+        DEBUG("metallic: %d\n", uniforms->metallic);
+        DEBUG("roughness: %d\n", uniforms->roughness);
+        DEBUG("transparancy: %d\n", uniforms->transparancy);
+        DEBUG("colour: %d\n", uniforms->colour);
+    }
 
     // bind textures to texture units
     glActiveTexture(GL_TEXTURE0);

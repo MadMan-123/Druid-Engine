@@ -10,7 +10,6 @@ uniform sampler2D roughnessTexture;
 uniform sampler2D normalTexture;
 uniform float roughness;
 uniform float metallic;
-uniform vec3 colour;
 uniform float transparency;
 
 //lighting
@@ -24,11 +23,10 @@ void main()
 {		
 	vec3 diffuse = texture2D(albedoTexture,tc).rgb; 
 
-	vec3 combine = colour;
+	
 
 
 
-
-	FragColour = vec4(combine,transparency);
+	FragColour = vec4(diffuse,transparency);
 
 }

@@ -147,7 +147,8 @@ static void renderGameScene()
       
         // draw the model
         u32 modelID = modelIDs[id];
-        draw(resources->modelBuffer[modelID]);
+        
+        draw(&resources->modelBuffer[modelID]);
     }
 
     if (manipulateTransform)
@@ -289,9 +290,12 @@ static void drawSceneListWindow()
     if (ImGui::Button("Add Entity"))
     {
         // Add bounds checking for entity creation
-        if (entityCount >= entitySizeCache) {
+        if (entityCount >= entitySizeCache)
+        {
             WARN("Cannot add entity: reached maximum entity count (%u)", entitySizeCache);
-        } else {
+        }
+        else 
+        {
             isActive[entityCount] = true;
             scales[entityCount] = {1, 1, 1};
             positions[entityCount] = {0, 0, 0};
@@ -370,18 +374,68 @@ static void drawInspectorWindow()
             {
 
                 const bool isSelected = (selectedIndex == i);
-
-                if(ImGui::Selectable(meshName,isSelected))
+                Model *model = &resources->modelBuffer[i];
+                if(ImGui::Selectable(model->name,isSelected))
                 { 
-                    char* namePtr = &meshNames[inspectorEntityID * MAX_MESH_NAME_SIZE]; 
+                    /*
+                    char *namePtr =
+                    &meshNames[inspectorEntityID * MAX_MESH_NAME_SIZE]; 
                     memset(namePtr, 0, MAX_MESH_NAME_SIZE);
                     strncpy(namePtr,meshName,MAX_MESH_NAME_SIZE - 1);
-                    namePtr[MAX_MESH_NAME_SIZE - 1] = '\0'
+                    namePtr[MAX_MESH_NAME_SIZE - 1] = '\0';
+                    */
+                    modelIDs[inspectorEntityID] = i;
                 }
-            }*/
+            }
         }
+        
+        
+
 
         ImGui::EndListBox();
+        
+        //list the material data 
+        
+        Material *mat =
+            &resources
+                 ->materialBuffer[resources
+                                      ->modelBuffer[modelIDs[inspectorEntityID]]
+                                      .materialIndices[0]];
+        if (mat)
+        {
+
+        ImGui::Text("Material");
+            // show the textures if they exist using u32 texture handles
+            if (mat->albedoTex != 0)
+            {
+                ImGui::Text("Albedo Tex:");
+                ImGui::Image((void *)(intptr_t)mat->albedoTex, ImVec2(64, 64),
+                             ImVec2(0, 1), ImVec2(1, 0));
+            }
+            if (mat->normalTex != 0)
+            {
+                ImGui::Text("Normal Tex:");
+                ImGui::Image((void *)(intptr_t)mat->normalTex, ImVec2(64, 64),
+                             ImVec2(0, 1), ImVec2(1, 0));
+            }
+            if (mat->metallicTex != 0)
+            {
+                ImGui::Text("Metallic Tex:");
+                ImGui::Image((void *)(intptr_t)mat->metallicTex, ImVec2(64, 64),
+                             ImVec2(0, 1), ImVec2(1, 0));
+            }
+            if (mat->roughnessTex != 0)
+            {
+                ImGui::Text("Roughness Tex:");
+                ImGui::Image((void *)(intptr_t)mat->roughnessTex, ImVec2(64, 64),
+                             ImVec2(0, 1), ImVec2(1, 0));
+            }
+            ImGui::ColorEdit3("Colour", (f32 *)&mat->colour);
+            ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f);
+            ImGui::SliderFloat("Roughness", &mat->roughness, 0.0f, 1.0f);
+            ImGui::SliderFloat("Transparency", &mat->transparency, 0.0f, 1.0f);
+
+        }
 
         // material
         break;
