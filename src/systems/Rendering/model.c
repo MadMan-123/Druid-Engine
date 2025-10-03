@@ -74,7 +74,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         // Read material properties and store in ResourceManager
         Material *material = &manager->materialBuffer[manager->materialUsed];
         *material = (Material){0};
-        readMaterial(material, aimat, "../" TEXTURE_FOLDER);
+        readMaterial(material, aimat);
 
         // Add material to hash map with unique name
         char matName[MAX_NAME_SIZE];
@@ -94,6 +94,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     model.meshIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
     model.materialIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
     model.meshCount = scene->mNumMeshes;
+    model.materialCount = scene->mNumMaterials;
     model.name = (char *)malloc(sizeof(char) * MAX_NAME_SIZE);
     strncpy(model.name, filename, MAX_NAME_SIZE - 1);
     model.name[MAX_NAME_SIZE - 1] = '\0'; // ensure null termination
@@ -141,8 +142,6 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     // Add model to resource manager
     manager->modelBuffer[manager->modelUsed] = model;
 
-    // assign the material to the newly added material
-    manager->modelBuffer[manager->modelUsed].materialIndices;
     // add to hash map
     insertMap(&manager->modelIDs, fileName, &manager->modelUsed);
 
@@ -153,7 +152,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     aiReleaseImport(scene);
 }
 
-void draw(Model* model)
+void draw(Model *model, u32 shader)
 {
  
     for (u32 i = 0; i < model->meshCount; i++)
@@ -162,17 +161,34 @@ void draw(Model* model)
         u32 materialIndex = model->materialIndices[i];
 
         // Check bounds
-        if (meshIndex >= resources->meshUsed ||
-            materialIndex >= resources->materialUsed)
+        if (meshIndex >= resources->meshUsed)
         {
-            ERROR("Invalid mesh or material index: mesh=%d/%d, material=%d/%d",
-                  meshIndex, resources->meshUsed, materialIndex,
-                  resources->materialUsed);
+            ERROR("Invalid mesh index: mesh=%d/%d", meshIndex, resources->meshUsed);
+            continue;
+        }
+
+        if (materialIndex >= resources->materialUsed)
+        {
+            ERROR("Invalid material index: material=%d/%d", materialIndex, resources->materialUsed);
             continue;
         }
 
         // Update material
-        updateMaterial(&resources->materialBuffer[materialIndex]);
+        Material *material = &resources->materialBuffer[materialIndex];
+
+        //check if the material is valid
+        if (material == NULL) {
+            ERROR("Material at index %d is NULL", materialIndex);
+            continue;
+        }
+
+
+
+        // Use the material's shader if it has one, otherwise use the default shader
+        u32 shaderToUse = material->shaderHandle != 0 ? material->shaderHandle : shader;
+
+        material->unifroms = getMaterialUniforms(shaderToUse);
+        updateMaterial(material, &material->unifroms);
 
         // Draw mesh
         drawMesh(&resources->meshBuffer[meshIndex]);

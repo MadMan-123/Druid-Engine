@@ -17,6 +17,7 @@ f32 currentPitch = 0;
 static const f32 camMoveSpeed = 1.0f;   // units per second
 static const f32 camRotateSpeed = 5.0f; // degrees per second
 static const u32 entityDefaultCount = 128;
+MaterialUniforms materialUniforms = {0};
 
 EntityArena *sceneEntities;
 char inputBoxBuffer[100]; // this will be in numbers
@@ -178,6 +179,7 @@ void init()
     // compile simple lighting shader that exists in the testbed resources
     // folder
     shader = createGraphicsProgram("../res/shader.vert", "../res/shader.frag");
+    materialUniforms = getMaterialUniforms(shader);
 
     arrowShader =
         createGraphicsProgram("../res/arrow.vert", "../res/arrow.frag");

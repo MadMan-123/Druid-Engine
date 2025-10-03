@@ -665,17 +665,16 @@ extern "C"
         u32 drawCount; // how much of the vertexArrayObject do we want to draw
     } Mesh;
     DAPI u32 loadMaterialTexture(struct aiMaterial *mat,
-                                 enum aiTextureType type, const char *basePath);
+                                 enum aiTextureType type);
 
-    DAPI void readMaterial(Material *out, struct aiMaterial *mat,
-                           const char *basePath);
+    DAPI void readMaterial(Material *out, struct aiMaterial *mat);
     DAPI MaterialUniforms getMaterialUniforms(u32 shader);
     DAPI Mesh *loadMeshFromAssimp(const char *filename, u32 *meshCount);
     DAPI Mesh *loadMeshFromAssimpScene(const struct aiScene *scene,
                                        u32 *meshCount);
     DAPI Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count);
 
-    DAPI void updateMaterial(Material *material);
+    DAPI void updateMaterial(Material *material, const MaterialUniforms *uniforms);
     // draws a given mesh
     DAPI void drawMesh(Mesh *mesh);
     // creates a mesh from vertices and indices
@@ -705,9 +704,9 @@ extern "C"
         u32 *meshIndices;     // buffer of indices that point to the meshes
         u32 *materialIndices; // materials to use for the mesh
         u32 meshCount;        // how many meshes are in the buffer
+        u32 materialCount;    // how many materials are in the buffer
     } Model;
-
-    DAPI void draw(Model* model);
+    DAPI void draw(Model *model, u32 shader);
 
     // resource manager
     typedef struct

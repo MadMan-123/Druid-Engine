@@ -21,7 +21,7 @@ out vec4 FragColour;
 
 void main()
 {		
-	vec3 diffuse = texture2D(albedoTexture,tc).rgb; 
+	vec3 diffuse = texture(albedoTexture,tc).rgb; 
 
 	
 

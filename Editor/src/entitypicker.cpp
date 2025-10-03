@@ -73,7 +73,6 @@ void renderIDPass()
         if (!isActive[i])
             continue;
         Transform t = {positions[i], rotations[i], scales[i]};
-        updateShaderMVP(idShader, t, sceneCam);
 
         u32 objectID = (i + 1) | ID_TYPE_ENTITY;
 
@@ -90,11 +89,23 @@ void renderIDPass()
         
         u32 index = modelIDs[i];
 
-        Model* model = (&resources->modelBuffer[index]);
-               
-        if(model)
+        if (index < resources->modelUsed)
         {
-            draw(model);
+            Model *model = (&resources->modelBuffer[index]);
+            if (model)
+            {
+                updateShaderMVP(idShader, t, sceneCam);
+
+                for (u32 j = 0; j < model->meshCount; j++)
+                {
+                    u32 meshIndex = model->meshIndices[j];
+                    drawMesh(&resources->meshBuffer[meshIndex]);
+                }  
+            }
+            else
+            {
+                ERROR("Model index %d out of bounds (modelUsed=%d)", index, resources->modelUsed);
+            }
         }
     }
 

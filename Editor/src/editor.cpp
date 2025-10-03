@@ -130,6 +130,7 @@ static void renderGameScene()
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
 
+    // *** Use the main shader for all scene entities ***
     glUseProgram(shader);
     Transform newTransform = {0};
     // draw each scene entity
@@ -141,14 +142,17 @@ static void renderGameScene()
         // get transform ready
         newTransform = {positions[id], rotations[id], scales[id]};
 
-        // update mvp
-        updateShaderMVP(shader, newTransform, sceneCam);
         // Get the mesh name for this specific entity
       
         // draw the model
         u32 modelID = modelIDs[id];
-        
-        draw(&resources->modelBuffer[modelID]);
+        if (modelID < resources->modelUsed)
+        {
+            // update mvp 
+            updateShaderMVP(shader, newTransform, sceneCam); 
+
+            draw(&resources->modelBuffer[modelID],shader);
+        }
     }
 
     if (manipulateTransform)
@@ -167,6 +171,7 @@ static void renderGameScene()
 
         // visually draw the arrows
 
+        // *** Use the arrow shader ONLY for the arrows ***
         glUseProgram(arrowShader);
 
         updateShaderMVP(arrowShader, X, sceneCam);
@@ -300,6 +305,7 @@ static void drawSceneListWindow()
             scales[entityCount] = {1, 1, 1};
             positions[entityCount] = {0, 0, 0};
             rotations[entityCount] = quatIdentity();
+            modelIDs[entityCount] = (u32)-1; // Initialize modelID to an invalid index
 
             // make the inital name this
             sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d", entityCount);
@@ -395,46 +401,170 @@ static void drawInspectorWindow()
         ImGui::EndListBox();
         
         //list the material data 
-        
-        Material *mat =
-            &resources
-                 ->materialBuffer[resources
-                                      ->modelBuffer[modelIDs[inspectorEntityID]]
-                                      .materialIndices[0]];
-        if (mat)
+        u32 modelID = modelIDs[inspectorEntityID];
+        if (modelID < resources->modelUsed)
         {
+            Model *model = &resources->modelBuffer[modelID];
+            if (model->meshCount > 0)
+            {
+                Material *mat = &resources->materialBuffer[model->materialIndices[0]];
 
-        ImGui::Text("Material");
-            // show the textures if they exist using u32 texture handles
-            if (mat->albedoTex != 0)
-            {
-                ImGui::Text("Albedo Tex:");
-                ImGui::Image((void *)(intptr_t)mat->albedoTex, ImVec2(64, 64),
-                             ImVec2(0, 1), ImVec2(1, 0));
-            }
-            if (mat->normalTex != 0)
-            {
-                ImGui::Text("Normal Tex:");
-                ImGui::Image((void *)(intptr_t)mat->normalTex, ImVec2(64, 64),
-                             ImVec2(0, 1), ImVec2(1, 0));
-            }
-            if (mat->metallicTex != 0)
-            {
-                ImGui::Text("Metallic Tex:");
-                ImGui::Image((void *)(intptr_t)mat->metallicTex, ImVec2(64, 64),
-                             ImVec2(0, 1), ImVec2(1, 0));
-            }
-            if (mat->roughnessTex != 0)
-            {
-                ImGui::Text("Roughness Tex:");
-                ImGui::Image((void *)(intptr_t)mat->roughnessTex, ImVec2(64, 64),
-                             ImVec2(0, 1), ImVec2(1, 0));
-            }
-            ImGui::ColorEdit3("Colour", (f32 *)&mat->colour);
-            ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f);
-            ImGui::SliderFloat("Roughness", &mat->roughness, 0.0f, 1.0f);
-            ImGui::SliderFloat("Transparency", &mat->transparency, 0.0f, 1.0f);
+                ImGui::Text("Material");
+                
+                // Albedo Texture
+                ImGui::Text("Albedo");
+                ImGui::Image((void *)(intptr_t)mat->albedoTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::SameLine();
+                if (ImGui::BeginCombo("##Select Albedo", "Select Texture"))
+                {
+                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    {
+                        if (resources->textureIDs.pairs[i].occupied)
+                        {
+                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            u32 textureHandle = resources->textureHandles[textureIndex];
 
+                            const bool is_selected = (mat->albedoTex == textureHandle);
+                            if (ImGui::Selectable(texName, is_selected))
+                            {
+                                mat->albedoTex = textureHandle;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                // Normal Texture
+                ImGui::Text("Normal");
+                ImGui::Image((void *)(intptr_t)mat->normalTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::SameLine();
+                if (ImGui::BeginCombo("##Select Normal", "Select Texture"))
+                {
+                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    {
+                        if (resources->textureIDs.pairs[i].occupied)
+                        {
+                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            u32 textureHandle = resources->textureHandles[textureIndex];
+
+                            const bool is_selected = (mat->normalTex == textureHandle);
+                            if (ImGui::Selectable(texName, is_selected))
+                            {
+                                mat->normalTex = textureHandle;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                // Metallic Texture
+                ImGui::Text("Metallic");
+                ImGui::Image((void *)(intptr_t)mat->metallicTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::SameLine();
+                if (ImGui::BeginCombo("##Select Metallic", "Select Texture"))
+                {
+                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    {
+                        if (resources->textureIDs.pairs[i].occupied)
+                        {
+                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            u32 textureHandle = resources->textureHandles[textureIndex];
+
+                            const bool is_selected = (mat->metallicTex == textureHandle);
+                            if (ImGui::Selectable(texName, is_selected))
+                            {
+                                mat->metallicTex = textureHandle;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                // Roughness Texture
+                ImGui::Text("Roughness");
+                ImGui::Image((void *)(intptr_t)mat->roughnessTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::SameLine();
+                if (ImGui::BeginCombo("##Select Roughness", "Select Texture"))
+                {
+                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    {
+                        if (resources->textureIDs.pairs[i].occupied)
+                        {
+                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            u32 textureHandle = resources->textureHandles[textureIndex];
+
+                            const bool is_selected = (mat->roughnessTex == textureHandle);
+                            if (ImGui::Selectable(texName, is_selected))
+                            {
+                                mat->roughnessTex = textureHandle;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                ImGui::ColorEdit3("Colour", (f32 *)&mat->colour);
+                ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f);
+                ImGui::SliderFloat("Roughness", &mat->roughness, 0.0f, 1.0f);
+                ImGui::SliderFloat("Transparency", &mat->transparency, 0.0f, 1.0f);
+
+                // Shader selection
+                const char* currentShaderName = "None";
+                // Find the name of the current shader
+                for (u32 i = 0; i < resources->shaderIDs.capacity; i++) {
+                    if (resources->shaderIDs.pairs[i].occupied) {
+                        u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[i].value;
+                        if (resources->shaderHandles[shaderIndex] == mat->shaderHandle) {
+                            currentShaderName = (const char*)resources->shaderIDs.pairs[i].key;
+                            break;
+                        }
+                    }
+                }
+
+                if (ImGui::BeginCombo("Shader", currentShaderName))
+                {
+                    for (u32 i = 0; i < resources->shaderIDs.capacity; i++)
+                    {
+                        if (resources->shaderIDs.pairs[i].occupied)
+                        {
+                            const char* shaderName = (const char*)resources->shaderIDs.pairs[i].key;
+                            u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[i].value;
+                            u32 shaderHandle = resources->shaderHandles[shaderIndex];
+
+                            const bool is_selected = (mat->shaderHandle == shaderHandle);
+                            if (ImGui::Selectable(shaderName, is_selected))
+                            {
+                                mat->shaderHandle = shaderHandle;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
         }
 
         // material

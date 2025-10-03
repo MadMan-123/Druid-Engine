@@ -1,4 +1,3 @@
-
 #include "../../include/druid.h"
 #include <string.h>
 #if PLATFORM_WINDOWS
@@ -31,6 +30,31 @@ u32 djb2Hash(const void *inStr, u32 capacity)
 b8 equals(const void *a, const void *b)
 {
     return strcmp((const char *)a, (const char *)b) == 0;
+}
+
+int compare_files_for_loading_priority(const void* a, const void* b) {
+    const char* fileA = *(const char**)a;
+    const char* fileB = *(const char**)b;
+
+    const char* extA = strrchr(fileA, '.');
+    const char* extB = strrchr(fileB, '.');
+
+    if (!extA || extA == fileA) return 1;      // No extension on A, B goes first
+    if (!extB || extB == fileB) return -1;     // No extension on B, A goes first
+
+    extA++;
+    extB++;
+
+    bool isTexA = (strcmp(extA, "png") == 0 || strcmp(extA, "jpg") == 0 || strcmp(extA, "bmp") == 0);
+    bool isTexB = (strcmp(extB, "png") == 0 || strcmp(extB, "jpg") == 0 || strcmp(extB, "bmp") == 0);
+
+    if (isTexA && !isTexB) {
+        return -1; // A (texture) comes before B
+    }
+    if (!isTexA && isTexB) {
+        return 1; // B (texture) comes before A
+    }
+    return 0; // Keep original order for same types
 }
 
 ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
@@ -74,7 +98,7 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     assert(manager->textureHandles != NULL && "texture handles not created");
     assert(manager->shaderHandles != NULL && "shader handles not created");
 
-    //    DEBUG("mangeger pointers: %p, %p, %p,
+    //    DEBUG("mangeger pointers: %p, %p, %p, 
     //    %p",manager->materialBuffer,manager->meshBuffer);
 
     // create hashmaps
@@ -133,15 +157,10 @@ void readResources(ResourceManager *manager, const char *filename)
 
     TRACE("Reading resources from %s\n", filename);
     // do a recursive search for all files in the RES_FOLDER directory
-    const u32 bufferSize = 1024;
     u32 outCount = 0;
-    char **output = listFilesInDirectory("..\\" RES_FOLDER, &outCount);
-    INFO("Found %d files in directory %s\n", outCount, "..\\" RES_FOLDER);
-    // as the resources will not be in the thousounds for a while this approach
-    // works well,
-    // note that as we progress in size we may need to create some O(1)
-    // solution
-    // list all files in the directory and take it to output
+    char **output = listFilesInDirectory("../" RES_FOLDER, &outCount);
+    qsort(output, outCount, sizeof(char*), compare_files_for_loading_priority);
+    INFO("Found %d files in directory %s\n", outCount, "../" RES_FOLDER);
 
     HashMap shaderNameMap;
     if (!createMap(&shaderNameMap, outCount, sizeof(char) * MAX_NAME_SIZE,
@@ -152,34 +171,25 @@ void readResources(ResourceManager *manager, const char *filename)
 
     if (outCount > 0)
     {
+        // First pass: populate shaderNameMap for vert/frag pairs
         for (u32 i = 0; i < outCount; i++)
         {
-            //  read the file extension
             const char *filePath = output[i];
-            // create a copy buffer to get the rest of the data
             char copyBuffer[512];
-            strcpy(copyBuffer, output[i]);
+            strcpy(copyBuffer, filePath);
+
             char *fileName = strrchr(copyBuffer, '/');
-            // remove the first slash
             if (fileName)
                 fileName++;
             else
                 fileName = copyBuffer;
 
-            char *nameNoExt = strtok(fileName, ".");
-            char *ext = strtok(NULL, ".");
-
-            if (ext == NULL)
+            char *ext = strrchr(fileName, '.');
+            if (ext && (strcmp(ext, ".vert") == 0 || strcmp(ext, ".frag") == 0))
             {
-                continue;
-            }
-
-            // check if its a shader
-            if ((strcmp(ext, "frag") == 0) || (strcmp(ext, "vert") == 0))
-            {
+                *ext = '\0'; // Strip extension for shader name grouping
                 u32 value = 0;
-                // incrament the map value
-                if (findInMap(&shaderNameMap, copyBuffer, &value))
+                if (findInMap(&shaderNameMap, fileName, &value))
                 {
                     value++;
                 }
@@ -187,143 +197,109 @@ void readResources(ResourceManager *manager, const char *filename)
                 {
                     value = 1;
                 }
-
-                insertMap(&shaderNameMap, copyBuffer, &value);
+                insertMap(&shaderNameMap, fileName, &value);
             }
         }
 
+        // Second pass: process all resources
         for (u32 i = 0; i < outCount; i++)
         {
-            DEBUG("File %d: %s\n", i, output[i]);
-            //  read the file extension
             const char *filePath = output[i];
-            // create a copy buffer to get the rest of the data
             char copyBuffer[512];
-            strcpy(copyBuffer, output[i]);
+            strcpy(copyBuffer, filePath);
+
             char *fileName = strrchr(copyBuffer, '/');
-            // remove the first slash
             if (fileName)
                 fileName++;
             else
                 fileName = copyBuffer;
 
-            char *nameNoExt = strtok(fileName, ".");
-            char *ext = strtok(NULL, ".");
-
-            if (ext == NULL)
-            {
+            char *ext = strrchr(fileName, '.');
+            if (!ext || ext == fileName)
                 continue;
-            }
+            ext++;
 
-            for (u32 m = 0;
-                 m < modelExtCount + shaderExtCount + textureExtCount; m++)
+            for (u32 m = 0; m < modelExtCount + shaderExtCount + textureExtCount; m++)
             {
-
-                // check if the extension matches any known types
-                // if it does save the index of what type it is
-                // work out what type of resource it is depending on the index
-                u32 result = strcmp(ext, fileExtentions[m]);
-                // print the result and extension
-                /*
-                INFO("Checking file %s with extension %s against %s, result:% "
-                     "d\n",
-                     filePath, ext ? ext : " No Extension ", fileExtentions[m],
-                     result);
-                */
-                if (ext && result == 0)
+                if (strcmp(ext, fileExtentions[m]) == 0)
                 {
                     if (m < modelExtCount)
                     {
-                        // Load the model and all its resources directly into the resource manager
                         loadModelFromAssimp(manager, filePath);
-                        continue;
+                        break; 
                     }
                     else if (m < modelExtCount + shaderExtCount)
                     {
+                        char pathNoExt[MAX_NAME_SIZE];
+                        strncpy(pathNoExt, filePath, sizeof(pathNoExt) - 1);
+                        pathNoExt[sizeof(pathNoExt) - 1] = '\0';
+                        char *dot = strrchr(pathNoExt, '.');
+                        if(dot) *dot = '\0';
+
+                        char *shaderNameForUI = strrchr(pathNoExt, '/');
+                        if (shaderNameForUI)
+                            shaderNameForUI++;
+                        else
+                            shaderNameForUI = pathNoExt;
+
                         u32 temp = 0;
-                        if (findInMap(&manager->shaderIDs, nameNoExt, &temp))
+                        if (findInMap(&manager->shaderIDs, shaderNameForUI, &temp))
                         {
-                            // if the value is at 1 or 2 then skip
                             if (temp >= 1)
                                 continue;
                         }
-                        // load shader program depending on if its a compute
-                        // shader or graphics shader
-                        u32 shaderHandle = 0;
 
+                        u32 shaderHandle = 0;
                         char shaderName[MAX_NAME_SIZE];
                         if (strcmp(ext, "comp") == 0)
                         {
                             shaderHandle = createComputeProgram(filePath);
-                            //  add to the hashmap
-                            //  TODO: also validate can add
-                            snprintf(shaderName, MAX_NAME_SIZE,
-                                     "compute-shader-%d", manager->shaderUsed);
-                            TRACE("Created Compute Shader %d",
-                                  manager->shaderUsed);
+                            snprintf(shaderName, MAX_NAME_SIZE, "compute-shader-%d", manager->shaderUsed);
                         }
-                        // frag will always be first
-                        else if ((strcmp(ext, "frag") == 0) ||
-                                 (strcmp(ext, "vert") == 0))
+                        else if (strcmp(ext, "vert") == 0 || strcmp(ext, "frag") == 0)
                         {
-                            // check if they should be created seperately or
-                            // individually
                             u32 out = 0;
-                            if (findInMap(&shaderNameMap, copyBuffer, &out))
+                            if (findInMap(&shaderNameMap, pathNoExt, &out))
                             {
-                                snprintf(shaderName, MAX_NAME_SIZE, "%s",
-                                         nameNoExt);
+                                snprintf(shaderName, MAX_NAME_SIZE, "%s", shaderNameForUI);
 
                                 char vertPath[MAX_NAME_SIZE];
                                 char fragPath[MAX_NAME_SIZE];
 
-                                // setup the paths
-                                snprintf(vertPath, MAX_NAME_SIZE, "%s.%s",
-                                         copyBuffer, "vert");
-
-                                snprintf(fragPath, MAX_NAME_SIZE, "%s.%s",
-                                         copyBuffer, "frag");
-                                shaderHandle =
-                                    createGraphicsProgram(vertPath, fragPath);
-                                TRACE("Created Graphics Shader %s", nameNoExt);
+                                snprintf(vertPath, MAX_NAME_SIZE, "%s.vert", pathNoExt);
+                                snprintf(fragPath, MAX_NAME_SIZE, "%s.frag", pathNoExt);
+                                shaderHandle = createGraphicsProgram(vertPath, fragPath);
                             }
                         }
 
-                        insertMap(&manager->shaderIDs, shaderName,
-                                  &manager->shaderUsed);
-
-                        // set the shader to the shader buffers
-                        manager->shaderHandles[manager->shaderUsed] =
-                            shaderHandle;
-
-                        manager->shaderUsed++;
-                        continue;
+                        if(shaderHandle != 0) {
+                            insertMap(&manager->shaderIDs, shaderName, &manager->shaderUsed);
+                            manager->shaderHandles[manager->shaderUsed] = shaderHandle;
+                            manager->shaderUsed++;
+                        }
+                        break; 
                     }
                     else
                     {
-                        // load texture
-                        TRACE("Loading file %s \nwith hash %s", filename,
-                              nameNoExt);
-
                         if (manager->textureUsed >= manager->textureCount)
                         {
-                            FATAL("Resource manager is full and cant add "
-                                  "texture");
+                            FATAL("Resource manager is full and cant add texture");
                             continue;
                         }
 
                         u32 texture = initTexture(filePath);
                         if (texture == 0) {
                             WARN("Failed to load texture: %s", filePath);
+                            continue;
                         }
                         manager->textureHandles[manager->textureUsed] = texture;
 
                         char texName[MAX_NAME_SIZE];
-                        snprintf(texName, MAX_NAME_SIZE, "%s", nameNoExt);
+                        snprintf(texName, MAX_NAME_SIZE, "%s", fileName);
 
-                        insertMap(&manager->textureIDs, texName,
-                                  &manager->textureUsed);
+                        insertMap(&manager->textureIDs, texName, &manager->textureUsed);
                         manager->textureUsed++;
+                        break; 
                     }
                 }
             }
@@ -331,11 +307,9 @@ void readResources(ResourceManager *manager, const char *filename)
     }
     else
     {
-        WARN("Failed to list files in directory %s\n", "..\\" RES_FOLDER);
+        WARN("Failed to list files in directory %s\n", "../" RES_FOLDER);
     }
 
-    // free the output list
-    // for (u32 i = 0; i < outCount; i++)
     for (u32 i = 0; i < outCount; i++)
     {
         free(output[i]);
@@ -345,12 +319,12 @@ void readResources(ResourceManager *manager, const char *filename)
 }
 
 #if PLATFORM_WINDOWS
-void listFilesRecursive(const char *directory, char ***fileList, u32 *count,
+void listFilesRecursive(const char *directory, char ***fileList, u32 *count, 
                         u32 *capacity)
 {
     WIN32_FIND_DATA findFileData;
     char searchPath[MAX_PATH];
-    snprintf(searchPath, MAX_PATH, "%s\\*", directory);
+    snprintf(searchPath, MAX_PATH, "%s/*", directory);
 
     HANDLE hFind = FindFirstFile(searchPath, &findFileData);
     if (hFind == INVALID_HANDLE_VALUE)
@@ -364,7 +338,7 @@ void listFilesRecursive(const char *directory, char ***fileList, u32 *count,
             continue;
 
         char fullPath[MAX_PATH];
-        snprintf(fullPath, MAX_PATH, "%s\\%s", directory, name);
+        snprintf(fullPath, MAX_PATH, "%s/%s", directory, name);
         normalizePath(fullPath);
 
         if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)

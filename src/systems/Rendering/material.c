@@ -5,8 +5,7 @@
 #include "../../../include/druid.h"
 #include <string.h>
 
-u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type,
-                        const char *base_path)
+u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type)
 {
     if (aiGetMaterialTextureCount(mat, type) == 0)
     {
@@ -28,44 +27,59 @@ u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type,
     if (lastSlash)
         fileName = lastSlash + 1;
 
-    const char *tryExtensions[] = {".png",  ".psd", ".jpg",
-                                   ".jpeg", ".tga", ".bmp"};
-    const u32 num_exts = sizeof(tryExtensions) / sizeof(tryExtensions[0]);
+    TRACE("Looking up texture key: '%s'", fileName);
 
-    for (u32 i = 0; i < num_exts; i++)
+    if (!resources)
     {
-        char tryPath[512];
+        ERROR("Resource manager is not initialized");
+        return 0;
+    }
 
-        // strip original extension and add new one
-        char baseName[256];
-        strncpy(baseName, fileName, sizeof(baseName));
-        char *dot = strrchr(baseName, '.');
-        if (dot)
-            *dot = '\0';
-
-        snprintf(tryPath, sizeof(tryPath), "%s/%s%s", base_path, baseName,
-                 tryExtensions[i]);
-
-        FILE *f = fopen(tryPath, "rb");
-        if (f)
+    // Look up texture in resource manager
+    u32 textureIndex = 0;
+    if (findInMap(&resources->textureIDs, fileName, &textureIndex))
+    {
+        // We found the texture, now we need to get the handle
+        if (textureIndex < resources->textureUsed)
         {
-            fclose(f);
-            DEBUG("Loading texture for material: %s\n", tryPath);
-            return initTexture(tryPath);
+            return resources->textureHandles[textureIndex];
         }
         else
         {
-            ERROR("file: %s not found for material\n", tryPath);
+            ERROR("Texture index out of bounds!");
+            return 0;
         }
-
     }
 
-    // No texture found with any extension
+    // If not found, try with different extensions
+    char baseName[256];
+    strncpy(baseName, fileName, sizeof(baseName) - 1);
+    baseName[sizeof(baseName) - 1] = '\0';
+    char *dot = strrchr(baseName, '.');
+    if (dot)
+        *dot = '\0';
+
+    const char *extensions[] = {".png", ".jpg", ".jpeg", ".bmp", ".tga"};
+    for (int i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++)
+    {
+        char tempName[256];
+        snprintf(tempName, sizeof(tempName), "%s%s", baseName, extensions[i]);
+        if (findInMap(&resources->textureIDs, tempName, &textureIndex))
+        {
+            // Found it!
+            if (textureIndex < resources->textureUsed)
+            {
+                return resources->textureHandles[textureIndex];
+            }
+        }
+    }
+
+    WARN("Texture '%s' not found in resource manager.", fileName);
     return 0;
 }
 
 // reads material and populates the struct
-void readMaterial(Material *out, struct aiMaterial *mat, const char *basePath)
+void readMaterial(Material *out, struct aiMaterial *mat)
 {
 
     if (mat == NULL)
@@ -74,12 +88,12 @@ void readMaterial(Material *out, struct aiMaterial *mat, const char *basePath)
         return;
     }
 
-    out->albedoTex = loadMaterialTexture(mat, aiTextureType_DIFFUSE, basePath);
-    out->normalTex = loadMaterialTexture(mat, aiTextureType_NORMALS, basePath);
+    out->albedoTex = loadMaterialTexture(mat, aiTextureType_DIFFUSE);
+    out->normalTex = loadMaterialTexture(mat, aiTextureType_NORMALS);
     out->metallicTex =
-        loadMaterialTexture(mat, aiTextureType_METALNESS, basePath);
+        loadMaterialTexture(mat, aiTextureType_METALNESS);
     out->roughnessTex =
-        loadMaterialTexture(mat, aiTextureType_DIFFUSE_ROUGHNESS, basePath);
+        loadMaterialTexture(mat, aiTextureType_DIFFUSE_ROUGHNESS);
 
     ai_real value;
     if (aiGetMaterialFloat(mat, AI_MATKEY_METALLIC_FACTOR, &value) ==
@@ -120,11 +134,9 @@ MaterialUniforms getMaterialUniforms(u32 shader)
     return uniforms;
 }
 
-void updateMaterial(Material *material)
+void updateMaterial(Material *material, const MaterialUniforms *uniforms)
 {
     const bool shouldDebug = false;
-    MaterialUniforms *uniforms = &material->unifroms;
-
 
     if (shouldDebug)
     {
@@ -199,7 +211,7 @@ Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count)
         struct aiMaterial *aimat = scene->mMaterials[i];
         
         // Read material properties using the existing readMaterial function
-        readMaterial(&materials[i], aimat, "../" TEXTURE_FOLDER);
+        readMaterial(&materials[i], aimat);
     }
     
     return materials;
