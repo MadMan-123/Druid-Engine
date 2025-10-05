@@ -131,6 +131,8 @@ Vec4 *rotations = nullptr;
 Vec3 *scales = nullptr;
 char *names = nullptr;
 u32 *modelIDs = nullptr;
+u32 *shaderIDs = nullptr;
+Material* materials = nullptr;
 
 void init()
 {
@@ -154,6 +156,7 @@ void init()
     isActive = (bool *)sceneEntities->fields[3];
     names = (char *)sceneEntities->fields[4];
    	modelIDs = (u32*)sceneEntities->fields[5];
+    shaderIDs = (u32*)sceneEntities->fields[6];
 	// set to empty strings
 	DEBUG("Setting up ImGui with SDL");
     // initializes imgui, resources and default scene
@@ -207,7 +210,13 @@ void init()
     skyboxViewLoc = glGetUniformLocation(skyboxShader, "view");
     skyboxProjLoc = glGetUniformLocation(skyboxShader, "projection");
 
+    // create a small cube mesh for gizmos and pickable handles
+    cubeMesh = createBoxMesh();
+
+    // initialize ID framebuffer for entity picking
     initIDFramebuffer();
+    
+    DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed, resources->meshUsed);
 }
 
 Vec2 cacheMouse = {0, 0};
@@ -260,8 +269,8 @@ void update(f32 dt)
                     u32 selectedEntity = id - 1;
                     inspectorEntityID = selectedEntity;
                     currentInspectorState = ENTITY_VIEW;
-                    // INFO("Selected Entity %d: %s\n", selectedEntity,
-                    // &names[selectedEntity * MAX_NAME_SIZE]);
+                    INFO("Selected Entity %d: %s (Model ID: %d)\n", selectedEntity,
+                         &names[selectedEntity * MAX_NAME_SIZE], modelIDs[selectedEntity]);
 
                     // engage the transform manipulation tools
                     manipulateTransform = true;
@@ -409,8 +418,11 @@ void destroy()
     freeMesh(skyboxMesh);
     freeTexture(cubeMapTexture);
     freeShader(skyboxShader);
-    freeShader(idShader);
-    freeTexture(idTexture);
+    destroyIDFramebuffer();
+    if (viewportFB.fbo != 0) {
+        destroyFramebuffer(&viewportFB);
+        viewportFB = (Framebuffer){0};
+    }
     ImGui::DestroyContext();      // destroy imgui core
     ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
     ImGui_ImplSDL3_Shutdown();    // shutdown imgui sdl backend

@@ -11,11 +11,9 @@
 extern Application* editor;
 
 // Shared rendering globals for the viewport
-extern u32 viewportFBO;
-extern u32 viewportTexture;
+extern Framebuffer viewportFB;
 extern u32 viewportWidth;
 extern u32 viewportHeight;
-extern u32 depthRB;
 
 // Skybox resources
 extern Mesh* skyboxMesh;
@@ -36,6 +34,7 @@ extern Vec4* rotations;
 extern Vec3* scales;
 extern char* names;
 extern u32 *modelIDs;
+extern u32 *shaderIDs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 
@@ -55,7 +54,7 @@ extern u32 arrowShader;
 extern u32 colourLocation;
 extern bool canMoveAxis;
 extern Vec3 manipulateAxis;
-extern ResourceManager* resources;
+
 extern MaterialUniforms materialUniforms;
 
 typedef enum{

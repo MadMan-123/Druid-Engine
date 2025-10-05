@@ -1,61 +1,36 @@
 #include "entitypicker.h"
 #include "editor.h"
 #include "scene.h"
-u32 idFBO = 0;
-u32 idTexture = 0;
-u32 idShader = 0;
 
+// Use the new Framebuffer API
+static Framebuffer idFB = {0};
+u32 idShader = 0;
 u32 idLocation = 0;
-u32 idDepthRB = 0;
 
 void initIDFramebuffer()
 {
-    idShader =
-        createGraphicsProgram("../res/idShader.vert", "../res/idShader.frag");
+    idShader = createGraphicsProgram("../res/idShader.vert", "../res/idShader.frag");
 
-    glGenTextures(1, &idTexture);
-    glBindTexture(GL_TEXTURE_2D, idTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, viewportWidth, viewportHeight, 0,
-                 GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    u32 width = (viewportWidth > 0) ? viewportWidth : 1920;
+    u32 height = (viewportHeight > 0) ? viewportHeight : 1080;
 
-    glGenFramebuffers(1, &idFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           idTexture, 0);
-
-    glGenRenderbuffers(1, &idDepthRB);
-    glBindRenderbuffer(GL_RENDERBUFFER, idDepthRB);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, viewportWidth,
-                          viewportHeight);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, idDepthRB);
-
-    // Make sure to set the draw buffer
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (status != GL_FRAMEBUFFER_COMPLETE)
-    {
-        ERROR("ID Framebuffer is not complete! Status: 0x%X\n", status);
-    }
+    idFB = createFramebuffer(width, height, GL_RGB8, true);
 
     idLocation = glGetUniformLocation(idShader, "entityID");
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 u32 count = 0;
 
 void renderIDPass()
 {
-    // bind the fbo
-    glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
+    // Ensure ID framebuffer exists
+    if (idFB.fbo == 0)
+    {
+        WARN("ID framebuffer not initialized, skipping ID pass");
+        return;
+    }
 
-    // set the viewport up
-    glViewport(0, 0, viewportWidth, viewportHeight);
+    bindFramebuffer(&idFB);
     // clear the screen
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     // use the id shader
@@ -89,6 +64,11 @@ void renderIDPass()
         
         u32 index = modelIDs[i];
 
+        if (index == (u32)-1)
+        {
+            // Entity has no model assigned, skip rendering
+            continue;
+        }
         if (index < resources->modelUsed)
         {
             Model *model = (&resources->modelBuffer[index]);
@@ -99,7 +79,23 @@ void renderIDPass()
                 for (u32 j = 0; j < model->meshCount; j++)
                 {
                     u32 meshIndex = model->meshIndices[j];
-                    drawMesh(&resources->meshBuffer[meshIndex]);
+                    
+                    // Check mesh index bounds
+                    if (meshIndex >= resources->meshUsed)
+                    {
+                        ERROR("Invalid mesh index: mesh=%d/%d", meshIndex, resources->meshUsed);
+                        continue;
+                    }
+                    
+                    Mesh *mesh = &resources->meshBuffer[meshIndex];
+                    if (mesh && mesh->vao != 0)
+                    {
+                        drawMeshIDPass(mesh);
+                    }
+                    else
+                    {
+                        ERROR("Invalid mesh at index %d (vao=%d)", meshIndex, mesh ? mesh->vao : 0);
+                    }
                 }  
             }
             else
@@ -141,7 +137,7 @@ void renderIDPass()
         drawMeshIDPass(cubeMesh);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    unbindFramebuffer();
 }
 
 PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
@@ -155,9 +151,9 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
 
     // read from ID buffer
     u8 pixel[3];
-    glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
+    bindFramebuffer(&idFB);
     glReadPixels(relativeX, flippedY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    unbindFramebuffer();
 
     // reconstruct ID
     u32 id = (pixel[0] << 16) | (pixel[1] << 8) | (pixel[2]);
@@ -201,9 +197,42 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
 
 void drawMeshIDPass(Mesh *mesh)
 {
+    if (!mesh)
+    {
+        ERROR("drawMeshIDPass: mesh is NULL");
+        return;
+    }
+    
+    if (mesh->vao == 0)
+    {
+        ERROR("drawMeshIDPass: mesh VAO is 0 (uninitialized)");
+        return;
+    }
+    
     // bind the mesh
     glBindVertexArray(mesh->vao);
     // draw the mesh elements
     glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+}
+
+void destroyIDFramebuffer()
+{
+    if (idFB.fbo != 0)
+    {
+        destroyFramebuffer(&idFB);
+        idFB = (Framebuffer){0};
+    }
+    if (idShader != 0)
+    {
+        freeShader(idShader);
+        idShader = 0;
+    }
+}
+
+void resizeIDFramebuffer(u32 width, u32 height)
+{
+    if (idFB.fbo == 0)
+        return;
+    resizeFramebuffer(&idFB, width, height);
 }

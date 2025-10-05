@@ -616,14 +616,13 @@ extern "C"
         u32 roughnessTex;
         u32 roughness;
         u32 metallic;
-        u32 transparancy;
+        u32 transparency;
         u32 colour;
     } MaterialUniforms;
 
     // Mesh
     typedef struct
     {
-        u32 shaderHandle;
         u32 albedoTex;
         u32 normalTex;
         u32 metallicTex;
@@ -632,7 +631,8 @@ extern "C"
         f32 metallic;
         f32 transparency;
         Vec3 colour;
-        MaterialUniforms unifroms;
+        u32 shaderHandle;
+        MaterialUniforms uniforms;
     } Material;
 
     typedef struct
@@ -697,6 +697,24 @@ extern "C"
                                  float cellSize);
     DAPI Mesh *createBoxMesh();
     DAPI Mesh *createSkyboxMesh();
+
+    // Simple framebuffer abstraction (for editor viewport and ID picking)
+    typedef struct Framebuffer
+    {
+        u32 fbo;
+        u32 texture;
+        u32 rbo;
+        u32 width;
+        u32 height;
+        GLenum internalFormat;
+        b32 hasDepth;
+    } Framebuffer;
+
+    DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b32 hasDepth);
+    DAPI void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height);
+    DAPI void bindFramebuffer(Framebuffer *fb);
+    DAPI void unbindFramebuffer(void);
+    DAPI void destroyFramebuffer(Framebuffer *fb);
 
     typedef struct
     {
@@ -1055,6 +1073,8 @@ extern "C"
 
     DAPI Collider *createCubeCollider(Vec3 scale);
     DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
+
+DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
 
 #ifdef __cplusplus
 }

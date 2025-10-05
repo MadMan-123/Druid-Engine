@@ -116,7 +116,7 @@ void readMaterial(Material *out, struct aiMaterial *mat)
         out->roughness = 1.0f;
     }
 
-    out->colour = (Vec3){255.0f, 255.0f, 255.0f};
+    out->colour = (Vec3){1.0f, 1.0f, 1.0f};
     out->transparency = 1.0f;
 }
 
@@ -130,7 +130,7 @@ MaterialUniforms getMaterialUniforms(u32 shader)
     uniforms.roughness = glGetUniformLocation(shader, "roughness");
     uniforms.metallic = glGetUniformLocation(shader, "metallic");
     uniforms.colour = glGetUniformLocation(shader, "colour");
-    uniforms.transparancy = glGetUniformLocation(shader, "transparancy");
+    uniforms.transparency = glGetUniformLocation(shader, "transparency");
     return uniforms;
 }
 
@@ -140,6 +140,7 @@ void updateMaterial(Material *material, const MaterialUniforms *uniforms)
 
     if (shouldDebug)
     {
+        
         DEBUG("Material Uniforms:\n");
         DEBUG("albedoTex: %d\n", uniforms->albedoTex);
         DEBUG("normalTex: %d\n", uniforms->normalTex);
@@ -147,7 +148,7 @@ void updateMaterial(Material *material, const MaterialUniforms *uniforms)
         DEBUG("roughnessTex: %d\n", uniforms->roughnessTex);
         DEBUG("metallic: %d\n", uniforms->metallic);
         DEBUG("roughness: %d\n", uniforms->roughness);
-        DEBUG("transparancy: %d\n", uniforms->transparancy);
+        DEBUG("transparency: %d\n", uniforms->transparency);
         DEBUG("colour: %d\n", uniforms->colour);
     }
 
@@ -172,7 +173,7 @@ void updateMaterial(Material *material, const MaterialUniforms *uniforms)
     glUniform1f(uniforms->metallic, material->metallic);
     glUniform1f(uniforms->roughness, material->roughness);
 
-    glUniform1f(uniforms->transparancy, material->transparency);
+    glUniform1f(uniforms->transparency, material->transparency);
     Vec3 col = material->colour;
     glUniform3f(uniforms->colour, col.x, col.y, col.z);
 }

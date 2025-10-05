@@ -169,6 +169,22 @@ void readResources(ResourceManager *manager, const char *filename)
         FATAL("Model Hash map failed to create");
     }
 
+    //load default shader which is called "shader.*"
+
+    const char *defaultShaderName = "default";
+    
+    //add default shader to resource manager
+    u32 defaultShaderHandle = createGraphicsProgram("../" RES_FOLDER "/shader.vert", "../" RES_FOLDER "/shader.frag");
+    if (defaultShaderHandle != 0) 
+    {
+        insertMap(&manager->shaderIDs, defaultShaderName, &manager->shaderUsed);
+        manager->shaderHandles[manager->shaderUsed] = defaultShaderHandle;
+        manager->shaderUsed++;
+    } else
+     {
+        WARN("Failed to load default shader");
+    }
+    
     if (outCount > 0)
     {
         // First pass: populate shaderNameMap for vert/frag pairs
@@ -196,7 +212,7 @@ void readResources(ResourceManager *manager, const char *filename)
                 else
                 {
                     value = 1;
-                }
+                }   
                 insertMap(&shaderNameMap, fileName, &value);
             }
         }
@@ -272,7 +288,9 @@ void readResources(ResourceManager *manager, const char *filename)
                             }
                         }
 
-                        if(shaderHandle != 0) {
+                        if(shaderHandle != 0) 
+                        {
+                            TRACE("Loaded shader: %s", shaderName);
                             insertMap(&manager->shaderIDs, shaderName, &manager->shaderUsed);
                             manager->shaderHandles[manager->shaderUsed] = shaderHandle;
                             manager->shaderUsed++;

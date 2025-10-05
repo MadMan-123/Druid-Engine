@@ -19,4 +19,5 @@ DEFINE_ARCHETYPE(SceneEntity,
     FIELD(bool, isActive), 
     FIELD(char[MAX_NAME_SIZE], name), 
     FIELD(u32, modelID),
+    FIELD(u32, shaderID),
 );

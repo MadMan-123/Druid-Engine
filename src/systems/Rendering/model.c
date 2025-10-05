@@ -21,10 +21,10 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     fileName = fileName ? fileName + 1 : filename;
 
     // load the model from file
-    const struct aiScene *scene = aiImportFile(
-        filename, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
-                      aiProcess_ImproveCacheLocality | aiProcess_SortByPType |
-                      aiProcess_CalcTangentSpace | aiProcess_GenSmoothNormals);
+    const struct aiScene *scene = aiImportFile(filename,
+         aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
+        aiProcess_ImproveCacheLocality | aiProcess_SortByPType |
+        aiProcess_CalcTangentSpace | aiProcess_GenSmoothNormals);
 
     // null check
     if (!scene)
@@ -76,6 +76,25 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         *material = (Material){0};
         readMaterial(material, aimat);
 
+        //if the material has no shader assigned, assign a default one
+        if (material->shaderHandle == 0 && manager->shaderUsed > 0)
+        {   
+            u32 defaultShaderIndex = 0;
+            if(!findInMap(&manager->shaderIDs, "default", &defaultShaderIndex)) 
+            {
+                WARN("Default shader not found in shader map. Using first shader in resource manager.");
+                material->shaderHandle = manager->shaderHandles[0];
+            } 
+            else
+            {
+                //set the shader handle to the default shader
+                material->shaderHandle = manager->shaderHandles[defaultShaderIndex];
+            }
+            WARN("Material %d in model %s has no shader assigned. Using default shader", i, fileName);
+        }
+
+        material->uniforms = getMaterialUniforms(material->shaderHandle);
+
         // Add material to hash map with unique name
         char matName[MAX_NAME_SIZE];
         snprintf(matName, MAX_NAME_SIZE, "%s-material-%d", fileName, i);
@@ -84,7 +103,8 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         TRACE(
             "Material %d added to resource manager at index %d with name %s\n",
             i, manager->materialUsed, matName);
-
+        
+        
         manager->materialUsed++;
     }
 
@@ -120,14 +140,14 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         char meshName[MAX_NAME_SIZE];
         snprintf(meshName, MAX_NAME_SIZE, "%s-mesh-%d", fileName, i);
 
+        // store the mesh index in the model BEFORE incrementing meshUsed
+        model.meshIndices[i] = manager->meshUsed;
+
         // add mesh to resource manager
         manager->meshBuffer[manager->meshUsed] = meshes[i];
 
         // add to hash map
         insertMap(&manager->mesheIDs, meshName, &manager->meshUsed);
-
-        // store the mesh index in the model (this is the ResourceManager index)
-        model.meshIndices[i] = manager->meshUsed;
 
         // Map Assimp material index to ResourceManager material index
         u32 assimpMaterialIndex = scene->mMeshes[i]->mMaterialIndex;
@@ -182,15 +202,18 @@ void draw(Model *model, u32 shader)
             continue;
         }
 
+        // Uniforms are now pre-cached in the material
+        updateMaterial(material, &material->uniforms);
 
-
-        // Use the material's shader if it has one, otherwise use the default shader
-        u32 shaderToUse = material->shaderHandle != 0 ? material->shaderHandle : shader;
-
-        material->unifroms = getMaterialUniforms(shaderToUse);
-        updateMaterial(material, &material->unifroms);
-
-        // Draw mesh
-        drawMesh(&resources->meshBuffer[meshIndex]);
+        // Check mesh validity before drawing
+        Mesh* mesh = &resources->meshBuffer[meshIndex];
+        if (mesh && mesh->vao != 0)
+        {
+            drawMesh(mesh);
+        }
+        else
+        {
+            ERROR("Invalid mesh at index %d in model rendering (vao=%d)", meshIndex, mesh ? mesh->vao : 0);
+        }
     }
 }

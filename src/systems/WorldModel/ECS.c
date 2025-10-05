@@ -65,6 +65,7 @@ bool freeEntityArena(EntityArena* arena)
 
 	//free the entity arena itself
 	free(arena);
+	return true;
 }
 
 //allocate an enitity

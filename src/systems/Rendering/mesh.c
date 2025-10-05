@@ -28,6 +28,18 @@ void freeMeshArray(Mesh *meshes, u32 meshCount)
 }
 void drawMesh(Mesh *mesh)
 {
+    if (!mesh)
+    {
+        ERROR("drawMesh: mesh is NULL");
+        return;
+    }
+    
+    if (mesh->vao == 0)
+    {
+        ERROR("drawMesh: mesh VAO is 0 (uninitialized)");
+        return;
+    }
+    
     glBindVertexArray(mesh->vao);
 
     glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);

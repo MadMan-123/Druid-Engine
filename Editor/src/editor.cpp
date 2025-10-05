@@ -1,4 +1,3 @@
-
 #include <druid.h>
 
 #include "../deps/imgui/imgui.h"
@@ -19,11 +18,9 @@ const char **consoleLines = NULL;
 // Allocate the storage here
 Application *editor = nullptr;
 
-u32 viewportFBO = 0;
-u32 viewportTexture = 0;
+Framebuffer viewportFB = {0};
 u32 viewportWidth = 0;
 u32 viewportHeight = 0;
-u32 depthRB = 0;
 
 Mesh *skyboxMesh = nullptr;
 u32 cubeMapTexture = 0;
@@ -68,47 +65,26 @@ static void resizeViewportFramebuffer(u32 width, u32 height)
     viewportWidth = width;
     viewportHeight = height;
 
-    if (viewportTexture == 0)
-        glGenTextures(1, &viewportTexture);
-
-    glBindTexture(GL_TEXTURE_2D, viewportTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, viewportWidth, viewportHeight, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    if (viewportFBO == 0)
-        glGenFramebuffers(1, &viewportFBO);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           viewportTexture, 0);
-
-    if (depthRB == 0)
-        glGenRenderbuffers(1, &depthRB);
-    glBindRenderbuffer(GL_RENDERBUFFER, depthRB);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, viewportWidth,
-                          viewportHeight);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                              GL_RENDERBUFFER, depthRB);
-
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (status != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "[Viewport] Framebuffer incomplete: 0x" << std::hex
-                  << status << std::dec << std::endl;
-
-    // initIDFramebuffer();
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (viewportFB.fbo == 0)
+    {
+        viewportFB = createFramebuffer(viewportWidth, viewportHeight, GL_RGBA8, true);
+    }
+    else
+    {
+        resizeFramebuffer(&viewportFB, viewportWidth, viewportHeight);
+    }
 }
 
 static void renderGameScene()
 {
-    // render the 3d scene to the off-screen framebuffer
-    glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-    glViewport(0, 0, viewportWidth, viewportHeight);
+    // Ensure framebuffer exists before rendering
+    if (viewportFB.fbo == 0 || viewportWidth == 0 || viewportHeight == 0)
+    {
+        // Framebuffer not initialized yet, skip rendering
+        return;
+    }
+
+    bindFramebuffer(&viewportFB);
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -130,10 +106,8 @@ static void renderGameScene()
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
 
-    // *** Use the main shader for all scene entities ***
-    glUseProgram(shader);
-    Transform newTransform = {0};
     // draw each scene entity
+    Transform newTransform = {0};
     for (u32 id = 0; id < entitySizeCache; id++)
     {
         if (!isActive[id])
@@ -146,12 +120,49 @@ static void renderGameScene()
       
         // draw the model
         u32 modelID = modelIDs[id];
+        if (modelID == (u32)-1)
+        {
+            // Entity has no model assigned, skip rendering
+            continue;
+        }
         if (modelID < resources->modelUsed)
         {
-            // update mvp 
-            updateShaderMVP(shader, newTransform, sceneCam); 
-
-            draw(&resources->modelBuffer[modelID],shader);
+            Model* model = &resources->modelBuffer[modelID];
+            if (!model)
+            {
+                ERROR("Model pointer is NULL for entity %d, modelID %d", id, modelID);
+                continue;
+            }
+            
+            for (u32 i = 0; i < model->meshCount; i++)
+            {
+                u32 meshIndex = model->meshIndices[i];
+                
+                // Check mesh index bounds
+                if (meshIndex >= resources->meshUsed)
+                {
+                    ERROR("Invalid mesh index in editor rendering: entity=%d, model=%d, mesh=%d/%d", id, modelID, meshIndex, resources->meshUsed);
+                    continue;
+                }
+                
+                Mesh* mesh = &resources->meshBuffer[meshIndex];
+                if (!mesh || mesh->vao == 0)
+                {
+                    ERROR("Invalid mesh in editor rendering: entity=%d, model=%d, meshIndex=%d (vao=%d)", id, modelID, meshIndex, mesh ? mesh->vao : 0);
+                    continue;
+                }
+                
+                Material* material = &resources->materialBuffer[model->materialIndices[i]];
+                u32 shaderToUse = (material->shaderHandle != 0) ? material->shaderHandle : shader;
+                glUseProgram(shaderToUse);
+                updateShaderMVP(shaderToUse, newTransform, sceneCam);
+                updateMaterial(material, &material->uniforms);
+                drawMesh(mesh);
+            }
+        }
+        else
+        {
+            ERROR("Invalid model ID for entity %d: modelID=%d, modelUsed=%d", id, modelID, resources->modelUsed);
         }
     }
 
@@ -185,7 +196,13 @@ static void renderGameScene()
         drawMesh(cubeMesh);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // Ensure we're in a clean OpenGL state before unbinding
+    unbindFramebuffer();
+
+    // Reset OpenGL state to defaults
+    glDisable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
 }
 
 ImVec2 g_viewportScreenPos = ImVec2(0, 0);
@@ -211,6 +228,8 @@ static void drawViewportWindow()
     }
 
     resizeViewportFramebuffer((int)targetW, (int)targetH);
+    // Keep the ID framebuffer sized to the viewport so picking reads use correct coords
+    resizeIDFramebuffer((int)targetW, (int)targetH);
 
     ImVec2 cursor = ImGui::GetCursorPos();
     ImVec2 imageOffset =
@@ -230,7 +249,7 @@ static void drawViewportWindow()
     renderIDPass();
     renderGameScene();
 
-    ImGui::Image((void *)(intptr_t)viewportTexture, ImVec2(targetW, targetH),
+    ImGui::Image((void *)(intptr_t)viewportFB.texture, ImVec2(targetW, targetH),
                  ImVec2(0, 1), ImVec2(1, 0));
 
     ImGui::End();
@@ -373,25 +392,36 @@ static void drawInspectorWindow()
         }
         ImGui::InputFloat3("scale", (f32 *)&scales[inspectorEntityID]);
 
-        u32 selectedIndex = 0;
+        u32 currentModelID = modelIDs[inspectorEntityID];
+        u32 selectedIndex = (currentModelID < resources->modelUsed) ? currentModelID : 0;
+        
+        // Show warning if entity has no model assigned
+        if (currentModelID == (u32)-1)
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "⚠ No model assigned to this entity");
+        }
+        
         if (ImGui::BeginListBox("Models"))
         {
-            for(u32 i = 0; i < resources->modelUsed; i++)
+            // Add "None" option for no model
+            bool isNoneSelected = (currentModelID == (u32)-1);
+            if(ImGui::Selectable("None", isNoneSelected))
             {
-
-                const bool isSelected = (selectedIndex == i);
-                Model *model = &resources->modelBuffer[i];
-                if(ImGui::Selectable(model->name,isSelected))
-                { 
-                    /*
-                    char *namePtr =
-                    &meshNames[inspectorEntityID * MAX_MESH_NAME_SIZE]; 
-                    memset(namePtr, 0, MAX_MESH_NAME_SIZE);
-                    strncpy(namePtr,meshName,MAX_MESH_NAME_SIZE - 1);
-                    namePtr[MAX_MESH_NAME_SIZE - 1] = '\0';
-                    */
-                    modelIDs[inspectorEntityID] = i;
+                modelIDs[inspectorEntityID] = (u32)-1;
+            }
+            
+            for(u32 modelIdx = 0; modelIdx < resources->modelUsed; modelIdx++)
+            {
+                const bool isSelected = (currentModelID == modelIdx);
+                Model *model = &resources->modelBuffer[modelIdx];
+                
+                // Create unique ID for each model selectable
+                ImGui::PushID(modelIdx);
+                if(ImGui::Selectable(model->name, isSelected))
+                {
+                    modelIDs[inspectorEntityID] = modelIdx;
                 }
+                ImGui::PopID();
             }
         }
         
@@ -417,12 +447,12 @@ static void drawInspectorWindow()
                 ImGui::SameLine();
                 if (ImGui::BeginCombo("##Select Albedo", "Select Texture"))
                 {
-                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    for (u32 albedoIdx = 0; albedoIdx < resources->textureIDs.capacity; albedoIdx++)
                     {
-                        if (resources->textureIDs.pairs[i].occupied)
+                        if (resources->textureIDs.pairs[albedoIdx].occupied)
                         {
-                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            const char* texName = (const char*)resources->textureIDs.pairs[albedoIdx].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[albedoIdx].value;
                             u32 textureHandle = resources->textureHandles[textureIndex];
 
                             const bool is_selected = (mat->albedoTex == textureHandle);
@@ -445,12 +475,12 @@ static void drawInspectorWindow()
                 ImGui::SameLine();
                 if (ImGui::BeginCombo("##Select Normal", "Select Texture"))
                 {
-                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    for (u32 normalIdx = 0; normalIdx < resources->textureIDs.capacity; normalIdx++)
                     {
-                        if (resources->textureIDs.pairs[i].occupied)
+                        if (resources->textureIDs.pairs[normalIdx].occupied)
                         {
-                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            const char* texName = (const char*)resources->textureIDs.pairs[normalIdx].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[normalIdx].value;
                             u32 textureHandle = resources->textureHandles[textureIndex];
 
                             const bool is_selected = (mat->normalTex == textureHandle);
@@ -473,12 +503,12 @@ static void drawInspectorWindow()
                 ImGui::SameLine();
                 if (ImGui::BeginCombo("##Select Metallic", "Select Texture"))
                 {
-                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    for (u32 metallicIdx = 0; metallicIdx < resources->textureIDs.capacity; metallicIdx++)
                     {
-                        if (resources->textureIDs.pairs[i].occupied)
+                        if (resources->textureIDs.pairs[metallicIdx].occupied)
                         {
-                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            const char* texName = (const char*)resources->textureIDs.pairs[metallicIdx].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[metallicIdx].value;
                             u32 textureHandle = resources->textureHandles[textureIndex];
 
                             const bool is_selected = (mat->metallicTex == textureHandle);
@@ -501,12 +531,12 @@ static void drawInspectorWindow()
                 ImGui::SameLine();
                 if (ImGui::BeginCombo("##Select Roughness", "Select Texture"))
                 {
-                    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+                    for (u32 roughnessIdx = 0; roughnessIdx < resources->textureIDs.capacity; roughnessIdx++)
                     {
-                        if (resources->textureIDs.pairs[i].occupied)
+                        if (resources->textureIDs.pairs[roughnessIdx].occupied)
                         {
-                            const char* texName = (const char*)resources->textureIDs.pairs[i].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[i].value;
+                            const char* texName = (const char*)resources->textureIDs.pairs[roughnessIdx].key;
+                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[roughnessIdx].value;
                             u32 textureHandle = resources->textureHandles[textureIndex];
 
                             const bool is_selected = (mat->roughnessTex == textureHandle);
@@ -531,11 +561,11 @@ static void drawInspectorWindow()
                 // Shader selection
                 const char* currentShaderName = "None";
                 // Find the name of the current shader
-                for (u32 i = 0; i < resources->shaderIDs.capacity; i++) {
-                    if (resources->shaderIDs.pairs[i].occupied) {
-                        u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[i].value;
-                        if (resources->shaderHandles[shaderIndex] == mat->shaderHandle) {
-                            currentShaderName = (const char*)resources->shaderIDs.pairs[i].key;
+                for (u32 shaderNameIdx = 0; shaderNameIdx < resources->shaderIDs.capacity; shaderNameIdx++) {
+                    if (resources->shaderIDs.pairs[shaderNameIdx].occupied) {
+                        u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderNameIdx].value;
+                        if (resources->shaderHandles[shaderIndex] == shaderIDs[inspectorEntityID]) {
+                            currentShaderName = (const char*)resources->shaderIDs.pairs[shaderNameIdx].key;
                             break;
                         }
                     }
@@ -543,18 +573,18 @@ static void drawInspectorWindow()
 
                 if (ImGui::BeginCombo("Shader", currentShaderName))
                 {
-                    for (u32 i = 0; i < resources->shaderIDs.capacity; i++)
+                    for (u32 shaderIdx = 0; shaderIdx < resources->shaderIDs.capacity; shaderIdx++)
                     {
-                        if (resources->shaderIDs.pairs[i].occupied)
+                        if (resources->shaderIDs.pairs[shaderIdx].occupied)
                         {
-                            const char* shaderName = (const char*)resources->shaderIDs.pairs[i].key;
-                            u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[i].value;
+                            const char* shaderName = (const char*)resources->shaderIDs.pairs[shaderIdx].key;
+                            u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderIdx].value;
                             u32 shaderHandle = resources->shaderHandles[shaderIndex];
 
-                            const bool is_selected = (mat->shaderHandle == shaderHandle);
+                            const bool is_selected = (shaderIDs[inspectorEntityID] == shaderHandle);
                             if (ImGui::Selectable(shaderName, is_selected))
                             {
-                                mat->shaderHandle = shaderHandle;
+                                shaderIDs[inspectorEntityID] = shaderHandle;
                             }
                             if (is_selected)
                             {
@@ -607,7 +637,8 @@ void drawDockspaceAndPanels()
         first_time = false;
         ImGui::DockBuilderRemoveNode(dockspace_id);
         ImGui::DockBuilderAddNode(
-            dockspace_id, dockspace_flags | ImGuiDockNodeFlags_DockSpace);
+            dockspace_id,
+            dockspace_flags | ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
 
         ImGuiID dock_main_id = dockspace_id;

@@ -50,7 +50,7 @@ u32 createCubeMapTexture(const char** faces,u32 count)
 	u32 textureHandler;
 	glGenTextures(1, &textureHandler);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, textureHandler);
-  	u32 width, height, nChannels;
+  	int width, height, nChannels;
     for (u32 i = 0; i < count; i++) 
 	{
         unsigned char* data = stbi_load(faces[i], &width, &height, &nChannels, 0);

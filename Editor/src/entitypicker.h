@@ -14,12 +14,8 @@
 
 
 
-extern u32 idFBO;
-extern u32 idTexture;
-
 extern u32 idShader;
 extern u32 idLocation;
-extern u32 idDepthRB;
 typedef enum
 {
     PICK_NONE = 0,
@@ -46,6 +42,11 @@ typedef struct{
 void initIDFramebuffer();
 
 void renderIDPass();
+
+// Resize the ID framebuffer to match the viewport
+void resizeIDFramebuffer(u32 width, u32 height);
+
+void destroyIDFramebuffer();
 
 PickResult getEntityAtMouse(ImVec2 mousePos, ImVec2 viewportTopLeft);
 
