@@ -301,7 +301,6 @@ void readResources(ResourceManager *manager, const char *filename)
 
                                     if (hasGeom)
                                     {
-                                        TRACE("loading geom shader");
                                         shaderHandle = createGraphicsProgramWithGeometry(vertPath, geomPath, fragPath);
                                     }
                                     else

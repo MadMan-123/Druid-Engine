@@ -589,6 +589,15 @@ extern "C"
     DAPI void updateShaderMVP(const u32 shader, const Transform transform,
                               const Camera camera);
 
+    // Uniform Buffer Object (UBO) helper API (simple wrapper similar to FBO API)
+    DAPI u32 createUBO(u32 size, const void *data, GLenum usage); // returns buffer handle
+    DAPI void updateUBO(u32 ubo, u32 offset, u32 size, const void *data);
+    DAPI void bindUBOBase(u32 ubo, u32 bindingPoint);
+    DAPI void freeUBO(u32 ubo);
+    // CoreShaderData UBO helpers (create once, update each frame)
+    DAPI u32 createCoreShaderUBO();
+    DAPI void updateCoreShaderUBO(float timeSeconds, const Mat4 *viewProj);
+
     // Textures
     // 32 textures MAX
     DAPI void bindTexture(u32 texture, unsigned int unit, GLenum type);

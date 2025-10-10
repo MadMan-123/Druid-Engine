@@ -173,8 +173,51 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // after link/validate bind the CoreShaderData uniform block (if present)
+    {
+        GLuint blockIndex = glGetUniformBlockIndex(program, "CoreShaderData");
+        if (blockIndex != GL_INVALID_INDEX)
+        {
+            const GLuint CORE_UBO_BINDING = 0;
+            glUniformBlockBinding(program, blockIndex, CORE_UBO_BINDING);
+        }
+    }
+
     return program;
 }
+
+// Simple UBO API
+u32 createUBO(u32 size, const void *data, GLenum usage)
+{
+    GLuint buf = 0;
+    glGenBuffers(1, &buf);
+    glBindBuffer(GL_UNIFORM_BUFFER, buf);
+    glBufferData(GL_UNIFORM_BUFFER, size, data, usage);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    return (u32)buf;
+}
+
+void updateUBO(u32 ubo, u32 offset, u32 size, const void *data)
+{
+    if (ubo == 0) return;
+    glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, size, data);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+void bindUBOBase(u32 ubo, u32 bindingPoint)
+{
+    if (ubo == 0) return;
+    glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
+}
+
+void freeUBO(u32 ubo)
+{
+    if (ubo == 0) return;
+    GLuint b = (GLuint)ubo;
+    glDeleteBuffers(1, &b);
+}
+
 
 u32 createGraphicsProgramWithGeometry(const char *vertPath,
                                     const char *geomPath,
@@ -232,6 +275,16 @@ u32 createGraphicsProgramWithGeometry(const char *vertPath,
     glDeleteShader(geomShader);
     glDeleteShader(fragmentShader);
 
+    // after link/validate bind the CoreShaderData uniform block (if present)
+    {
+        GLuint blockIndex = glGetUniformBlockIndex(program, "CoreShaderData");
+        if (blockIndex != GL_INVALID_INDEX)
+        {
+            const GLuint CORE_UBO_BINDING = 0;
+            glUniformBlockBinding(program, blockIndex, CORE_UBO_BINDING);
+        }
+    }
+
     return program;
 }
 
@@ -251,4 +304,49 @@ void updateShaderMVP(u32 shaderProgram, const Transform transform,
 
     glUniformMatrix4fv(modelUniform, 1, GL_FALSE, &model.m[0][0]);
     glUniformMatrix4fv(transformUniform, 1, GL_FALSE, &mvp.m[0][0]);
+}
+
+// Set a global time uniform on the shader program if it exists
+void updateShaderTime(u32 shaderProgram, float time)
+{
+    if (shaderProgram == 0) return;
+    GLint timeLoc = glGetUniformLocation(shaderProgram, "time");
+    if (timeLoc != -1)
+    {
+        glUniform1f(timeLoc, time);
+    }
+}
+
+// CoreShaderData UBO - std140 friendly layout
+typedef struct {
+    float time_x;
+    float pad0;
+    float pad1;
+    float pad2; // pad to vec4
+    float viewProj[16]; // mat4
+} CoreShaderData;
+
+static u32 g_coreUBO = 0;
+
+u32 createCoreShaderUBO()
+{
+    if (g_coreUBO != 0) return g_coreUBO;
+    CoreShaderData data = {0};
+    g_coreUBO = createUBO(sizeof(CoreShaderData), &data, GL_DYNAMIC_DRAW);
+    // bind to base 0
+    bindUBOBase(g_coreUBO, 0);
+    return g_coreUBO;
+}
+
+void updateCoreShaderUBO(float timeSeconds, const Mat4 *viewProj)
+{
+    if (g_coreUBO == 0) createCoreShaderUBO();
+    CoreShaderData data;
+    data.time_x = timeSeconds;
+    data.pad0 = data.pad1 = data.pad2 = 0.0f;
+    if (viewProj)
+    {
+        memcpy(data.viewProj, &viewProj->m[0][0], sizeof(float) * 16);
+    }
+    updateUBO(g_coreUBO, 0, sizeof(CoreShaderData), &data);
 }

@@ -114,6 +114,13 @@ static void renderGameScene()
         return;
     }
 
+    // Update core shader UBO (time + viewProj) once per frame
+    {
+        float t = (float)ImGui::GetTime();
+        Mat4 vp = getViewProjection(&sceneCam);
+        updateCoreShaderUBO(t, &vp);
+    }
+
     bindFramebuffer(&viewportFB);
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
