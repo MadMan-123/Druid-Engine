@@ -575,6 +575,10 @@ extern "C"
     // creates a program with two shaders, a vertex and fragment shader used to
     // render meshes with open gl
     DAPI u32 createGraphicsProgram(const char *vertPath, const char *fragPath);
+
+    // creates a program with three shaders, a vertex , geometry and fragment shader used to
+    // render meshes with open gl but with a geometry shader in between to control the primitives
+    DAPI u32 createGraphicsProgramWithGeometry(const char *vertPath, const char *geomPath, const char *fragPath);
     // craetes a compute shader program
     DAPI u32 createComputeProgram(const char *computePath);
     // error tool

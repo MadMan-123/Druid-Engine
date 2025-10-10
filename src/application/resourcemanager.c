@@ -264,7 +264,7 @@ void readResources(ResourceManager *manager, const char *filename)
                             if (temp >= 1)
                                 continue;
                         }
-
+                        b8 isGeom = strcmp(ext, "geom") == 0;
                         u32 shaderHandle = 0;
                         char shaderName[MAX_NAME_SIZE];
                         if (strcmp(ext, "comp") == 0)
@@ -272,8 +272,11 @@ void readResources(ResourceManager *manager, const char *filename)
                             shaderHandle = createComputeProgram(filePath);
                             snprintf(shaderName, MAX_NAME_SIZE, "compute-shader-%d", manager->shaderUsed);
                         }
-                        else if (strcmp(ext, "vert") == 0 || strcmp(ext, "frag") == 0)
+                        else if (strcmp(ext, "vert") == 0 || strcmp(ext, "frag") == 0 || isGeom)
                         {
+                            
+                            
+
                             u32 out = 0;
                             // shaderNameMap keys were stored as filenames (no path), so use shaderNameForUI
                             if (findInMap(&shaderNameMap, shaderNameForUI, &out))
@@ -285,7 +288,18 @@ void readResources(ResourceManager *manager, const char *filename)
 
                                 snprintf(vertPath, MAX_NAME_SIZE, "%s.vert", pathNoExt);
                                 snprintf(fragPath, MAX_NAME_SIZE, "%s.frag", pathNoExt);
-                                shaderHandle = createGraphicsProgram(vertPath, fragPath);
+                                //check if we have the geometry shader too
+                                if(isGeom)
+                                {
+                                    char geomPath[MAX_NAME_SIZE];
+                                    snprintf(geomPath, MAX_NAME_SIZE, "%s.geom", pathNoExt);
+                                    shaderHandle = createGraphicsProgramWithGeometry(vertPath, geomPath, fragPath);
+                                }  
+                                else
+                                {
+                                    shaderHandle = createGraphicsProgram(vertPath, fragPath);
+                                }
+
                             }
                         }
 

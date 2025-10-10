@@ -55,6 +55,36 @@ u32 colourLocation = 0;
 
 ManipulateTransformState manipulateState = MANIPULATE_POSITION;
 
+
+static void drawTextureSelector(const char *label, u32 *textureHandle, const char *comboID)
+{
+    if (!textureHandle || !resources) return;
+    ImGui::Text("%s", label);
+    ImGui::Image((void *)(intptr_t)(*textureHandle), ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
+    ImGui::SameLine();
+    if (ImGui::BeginCombo(comboID, "Select Texture"))
+    {
+        for (u32 texIdx = 0; texIdx < resources->textureIDs.capacity; texIdx++)
+        {
+            if (resources->textureIDs.pairs[texIdx].occupied)
+            {
+                const char *texName = (const char *)resources->textureIDs.pairs[texIdx].key;
+                u32 textureIndex = *(u32 *)resources->textureIDs.pairs[texIdx].value;
+                u32 handle = resources->textureHandles[textureIndex];
+
+                const bool is_selected = (*textureHandle == handle);
+                if (ImGui::Selectable(texName, is_selected))
+                {
+                    *textureHandle = handle;
+                }
+                if (is_selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+}
+
 static void resizeViewportFramebuffer(u32 width, u32 height)
 {
     if (width <= 0 || height <= 0)
@@ -152,8 +182,20 @@ static void renderGameScene()
                     continue;
                 }
                 
-                Material* material = &resources->materialBuffer[model->materialIndices[i]];
-                // Prefer per-entity shader handle if set, otherwise use material's shader, then global default shader
+                // Prefer per-entity material override if set, otherwise use model's material
+                u32 materialIndex = model->materialIndices[i];
+                if (entityMaterialIDs && entityMaterialIDs[id] != (u32)-1) 
+                {
+                    materialIndex = entityMaterialIDs[id];
+                }
+                if (materialIndex >= resources->materialUsed) 
+                {
+                    ERROR("Invalid material index in editor rendering: entity=%d, material=%d/%d", id, materialIndex, resources->materialUsed);
+                    continue;
+                }
+                Material* material = &resources->materialBuffer[materialIndex];
+
+                // Prefer per-entity shader handle if set, otherwise use global default shader
                 u32 entityShader = shaderHandles[id];
                 u32 shaderToUse = (entityShader != 0) ? entityShader : shader;
                 glUseProgram(shaderToUse);
@@ -328,6 +370,8 @@ static void drawSceneListWindow()
             positions[entityCount] = {0, 0, 0};
             rotations[entityCount] = quatIdentity();
             modelIDs[entityCount] = (u32)-1; // Initialize modelID to an invalid index
+            entityMaterialIDs[entityCount] = (u32)-1; // no custom material
+            shaderHandles[entityCount] = 0; // no custom shader
 
             // make the inital name this
             sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d", entityCount);
@@ -440,121 +484,85 @@ static void drawInspectorWindow()
             Model *model = &resources->modelBuffer[modelID];
             if (model->meshCount > 0)
             {
-                Material *mat = &resources->materialBuffer[model->materialIndices[0]];
+                // Determine default and effective material indices
+                u32 defaultMaterialIndex = model->materialIndices[0];
+                u32 effectiveMaterialIndex = defaultMaterialIndex;
+                if (entityMaterialIDs && entityMaterialIDs[inspectorEntityID] != (u32)-1) {
+                    effectiveMaterialIndex = entityMaterialIDs[inspectorEntityID];
+                }
+                // guard
+                if (effectiveMaterialIndex >= resources->materialUsed) {
+                    ERROR("Invalid material index for inspector: %u (used=%u)", effectiveMaterialIndex, resources->materialUsed);
+                    break;
+                }
+
+                Material *mat = &resources->materialBuffer[effectiveMaterialIndex];
+
+                bool isCustom = (effectiveMaterialIndex != defaultMaterialIndex);
 
                 ImGui::Text("Material");
-                
-                // Albedo Texture
-                ImGui::Text("Albedo");
-                ImGui::Image((void *)(intptr_t)mat->albedoTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
                 ImGui::SameLine();
-                if (ImGui::BeginCombo("##Select Albedo", "Select Texture"))
-                {
-                    for (u32 albedoIdx = 0; albedoIdx < resources->textureIDs.capacity; albedoIdx++)
-                    {
-                        if (resources->textureIDs.pairs[albedoIdx].occupied)
-                        {
-                            const char* texName = (const char*)resources->textureIDs.pairs[albedoIdx].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[albedoIdx].value;
-                            u32 textureHandle = resources->textureHandles[textureIndex];
-
-                            const bool is_selected = (mat->albedoTex == textureHandle);
-                            if (ImGui::Selectable(texName, is_selected))
-                            {
-                                mat->albedoTex = textureHandle;
-                            }
-                            if (is_selected)
-                            {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                    }
-                    ImGui::EndCombo();
+                if (isCustom) {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "(Custom)");
+                    ImGui::SameLine();
                 }
 
-                // Normal Texture
-                ImGui::Text("Normal");
-                ImGui::Image((void *)(intptr_t)mat->normalTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
-                ImGui::SameLine();
-                if (ImGui::BeginCombo("##Select Normal", "Select Texture"))
+                // Create a custom material clone for this entity
+                if (ImGui::Button("Make Custom Material"))
                 {
-                    for (u32 normalIdx = 0; normalIdx < resources->textureIDs.capacity; normalIdx++)
+                    if (!resources)
                     {
-                        if (resources->textureIDs.pairs[normalIdx].occupied)
-                        {
-                            const char* texName = (const char*)resources->textureIDs.pairs[normalIdx].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[normalIdx].value;
-                            u32 textureHandle = resources->textureHandles[textureIndex];
-
-                            const bool is_selected = (mat->normalTex == textureHandle);
-                            if (ImGui::Selectable(texName, is_selected))
-                            {
-                                mat->normalTex = textureHandle;
-                            }
-                            if (is_selected)
-                            {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
+                        WARN("Resource manager not initialized");
                     }
-                    ImGui::EndCombo();
+                    else if (resources->materialUsed >= resources->materialCount)
+                    {
+                        WARN("Cannot create custom material: material buffer full");
+                    }
+                    else
+                    {
+                        u32 newIndex = resources->materialUsed;
+                        // copy the model's default material into resource manager (so custom starts from default)
+                        resources->materialBuffer[newIndex] = resources->materialBuffer[defaultMaterialIndex];
+
+                        // generate a name for the material
+                        char newName[256];
+                        const char *entityName = &names[inspectorEntityID * MAX_NAME_SIZE];
+                        if (entityName == NULL || entityName[0] == '\0')
+                            entityName = model->name;
+                        snprintf(newName, sizeof(newName), "%s-custom-%u", entityName, newIndex);
+
+                        insertMap(&resources->materialIDs, newName, &resources->materialUsed);
+                        resources->materialUsed++;
+                        // assign to entity
+                        if (entityMaterialIDs)
+                            entityMaterialIDs[inspectorEntityID] = newIndex;
+
+                        INFO("Created custom material '%s' at index %u for entity %u", newName, newIndex, inspectorEntityID);
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear Custom Material"))
+                {
+                    if (entityMaterialIDs)
+                    {
+                        entityMaterialIDs[inspectorEntityID] = (u32)-1;
+                        INFO("Cleared custom material for entity %u", inspectorEntityID);
+                        // recompute effective material to default
+                        effectiveMaterialIndex = defaultMaterialIndex;
+                        mat = &resources->materialBuffer[effectiveMaterialIndex];
+                    }
+                }
+                // If we just created a custom material above, refresh mat/effective index
+                if (entityMaterialIDs && entityMaterialIDs[inspectorEntityID] != (u32)-1) {
+                    effectiveMaterialIndex = entityMaterialIDs[inspectorEntityID];
+                    if (effectiveMaterialIndex < resources->materialUsed)
+                        mat = &resources->materialBuffer[effectiveMaterialIndex];
                 }
 
-                // Metallic Texture
-                ImGui::Text("Metallic");
-                ImGui::Image((void *)(intptr_t)mat->metallicTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
-                ImGui::SameLine();
-                if (ImGui::BeginCombo("##Select Metallic", "Select Texture"))
-                {
-                    for (u32 metallicIdx = 0; metallicIdx < resources->textureIDs.capacity; metallicIdx++)
-                    {
-                        if (resources->textureIDs.pairs[metallicIdx].occupied)
-                        {
-                            const char* texName = (const char*)resources->textureIDs.pairs[metallicIdx].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[metallicIdx].value;
-                            u32 textureHandle = resources->textureHandles[textureIndex];
-
-                            const bool is_selected = (mat->metallicTex == textureHandle);
-                            if (ImGui::Selectable(texName, is_selected))
-                            {
-                                mat->metallicTex = textureHandle;
-                            }
-                            if (is_selected)
-                            {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-
-                // Roughness Texture
-                ImGui::Text("Roughness");
-                ImGui::Image((void *)(intptr_t)mat->roughnessTex, ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
-                ImGui::SameLine();
-                if (ImGui::BeginCombo("##Select Roughness", "Select Texture"))
-                {
-                    for (u32 roughnessIdx = 0; roughnessIdx < resources->textureIDs.capacity; roughnessIdx++)
-                    {
-                        if (resources->textureIDs.pairs[roughnessIdx].occupied)
-                        {
-                            const char* texName = (const char*)resources->textureIDs.pairs[roughnessIdx].key;
-                            u32 textureIndex = *(u32*)resources->textureIDs.pairs[roughnessIdx].value;
-                            u32 textureHandle = resources->textureHandles[textureIndex];
-
-                            const bool is_selected = (mat->roughnessTex == textureHandle);
-                            if (ImGui::Selectable(texName, is_selected))
-                            {
-                                mat->roughnessTex = textureHandle;
-                            }
-                            if (is_selected)
-                            {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
+                drawTextureSelector("Albedo", &mat->albedoTex, "##Select Albedo");
+                drawTextureSelector("Normal", &mat->normalTex, "##Select Normal");
+                drawTextureSelector("Metallic", &mat->metallicTex, "##Select Metallic");
+                drawTextureSelector("Roughness", &mat->roughnessTex, "##Select Roughness");
 
                 ImGui::ColorEdit3("Colour", (f32 *)&mat->colour);
                 ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f);
@@ -682,3 +690,5 @@ void editorLog(LogLevel level, const char *msg)
         }
     }
 }
+
+// Helper: draw a texture thumbnail+combo and write back selected texture handle
