@@ -34,7 +34,8 @@ extern Vec4* rotations;
 extern Vec3* scales;
 extern char* names;
 extern u32 *modelIDs;
-extern u32 *shaderIDs;
+extern u32 *shaderHandles;
+extern u32 *entityMaterialIDs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 

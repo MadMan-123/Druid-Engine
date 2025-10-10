@@ -125,6 +125,7 @@ u32 createComputeProgram(const char *computePath)
     return program;
 }
 
+
 u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
 {
     u32 program = glCreateProgram();
@@ -170,6 +171,65 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
     glDetachShader(program, vertexShader);
     glDetachShader(program, fragmentShader);
     glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return program;
+}
+
+u32 createGraphicsProgramWithGeometry(const char *vertPath,
+                                    const char *geomPath,
+                                    const char *fragPath)
+{
+    u32 program = glCreateProgram();
+
+    char *vertexShaderText = loadFileText(vertPath);
+    char *geomShaderText = loadFileText(geomPath);
+    char *fragShaderText = loadFileText(fragPath);
+
+    if (!fragShaderText || !vertexShaderText || !geomShaderText)
+    {
+        ERROR("Failed to load vertex, geometry or frag shader");
+    }
+
+    u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);
+    u32 geomShader = createShader(geomShaderText, GL_GEOMETRY_SHADER);
+    u32 fragmentShader = createShader(fragShaderText, GL_FRAGMENT_SHADER);
+
+    free(vertexShaderText);
+    free(geomShaderText);
+    free(fragShaderText);
+
+    if (vertexShader == 0 || fragmentShader == 0 || geomShader == 0)
+    {
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        glDeleteShader(geomShader);
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, geomShader);
+    glAttachShader(program, fragmentShader);
+
+    glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "texCoord");
+    glBindAttribLocation(program, 2, "normal");
+
+    glLinkProgram(program);
+    checkShaderError(program, GL_LINK_STATUS, true,
+                     "Error: Shader program linking failed");
+
+    glValidateProgram(program);
+    checkShaderError(program, GL_VALIDATE_STATUS, true,
+                     "Error: Shader program not valid");
+
+    // Clean up the shaders as they're now linked to the program
+    glDetachShader(program, vertexShader);
+    glDetachShader(program, geomShader);
+    glDetachShader(program, fragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(geomShader);
     glDeleteShader(fragmentShader);
 
     return program;

@@ -131,7 +131,8 @@ Vec4 *rotations = nullptr;
 Vec3 *scales = nullptr;
 char *names = nullptr;
 u32 *modelIDs = nullptr;
-u32 *shaderIDs = nullptr;
+u32 *shaderHandles = nullptr;
+u32 *entityMaterialIDs = nullptr;
 Material* materials = nullptr;
 
 void init()
@@ -155,8 +156,9 @@ void init()
     scales = (Vec3 *)sceneEntities->fields[2];
     isActive = (bool *)sceneEntities->fields[3];
     names = (char *)sceneEntities->fields[4];
-   	modelIDs = (u32*)sceneEntities->fields[5];
-    shaderIDs = (u32*)sceneEntities->fields[6];
+    modelIDs = (u32*)sceneEntities->fields[5];
+    entityMaterialIDs = (u32*)sceneEntities->fields[6];
+    shaderHandles = (u32*)sceneEntities->fields[7];
 	// set to empty strings
 	DEBUG("Setting up ImGui with SDL");
     // initializes imgui, resources and default scene

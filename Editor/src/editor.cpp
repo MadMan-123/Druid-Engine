@@ -153,10 +153,13 @@ static void renderGameScene()
                 }
                 
                 Material* material = &resources->materialBuffer[model->materialIndices[i]];
-                u32 shaderToUse = (material->shaderHandle != 0) ? material->shaderHandle : shader;
+                // Prefer per-entity shader handle if set, otherwise use material's shader, then global default shader
+                u32 entityShader = shaderHandles[id];
+                u32 shaderToUse = (entityShader != 0) ? entityShader : shader;
                 glUseProgram(shaderToUse);
                 updateShaderMVP(shaderToUse, newTransform, sceneCam);
-                updateMaterial(material, &material->uniforms);
+                MaterialUniforms uniforms = getMaterialUniforms(shaderToUse);
+                updateMaterial(material, &uniforms);
                 drawMesh(mesh);
             }
         }
@@ -564,7 +567,7 @@ static void drawInspectorWindow()
                 for (u32 shaderNameIdx = 0; shaderNameIdx < resources->shaderIDs.capacity; shaderNameIdx++) {
                     if (resources->shaderIDs.pairs[shaderNameIdx].occupied) {
                         u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderNameIdx].value;
-                        if (resources->shaderHandles[shaderIndex] == shaderIDs[inspectorEntityID]) {
+                        if (resources->shaderHandles[shaderIndex] == shaderHandles[inspectorEntityID]) {
                             currentShaderName = (const char*)resources->shaderIDs.pairs[shaderNameIdx].key;
                             break;
                         }
@@ -581,10 +584,10 @@ static void drawInspectorWindow()
                             u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderIdx].value;
                             u32 shaderHandle = resources->shaderHandles[shaderIndex];
 
-                            const bool is_selected = (shaderIDs[inspectorEntityID] == shaderHandle);
+                            const bool is_selected = (shaderHandles[inspectorEntityID] == shaderHandle);
                             if (ImGui::Selectable(shaderName, is_selected))
                             {
-                                shaderIDs[inspectorEntityID] = shaderHandle;
+                                shaderHandles[inspectorEntityID] = shaderHandle;
                             }
                             if (is_selected)
                             {

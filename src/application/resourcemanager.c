@@ -275,7 +275,8 @@ void readResources(ResourceManager *manager, const char *filename)
                         else if (strcmp(ext, "vert") == 0 || strcmp(ext, "frag") == 0)
                         {
                             u32 out = 0;
-                            if (findInMap(&shaderNameMap, pathNoExt, &out))
+                            // shaderNameMap keys were stored as filenames (no path), so use shaderNameForUI
+                            if (findInMap(&shaderNameMap, shaderNameForUI, &out))
                             {
                                 snprintf(shaderName, MAX_NAME_SIZE, "%s", shaderNameForUI);
 

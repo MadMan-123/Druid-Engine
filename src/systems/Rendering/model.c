@@ -76,24 +76,8 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         *material = (Material){0};
         readMaterial(material, aimat);
 
-        //if the material has no shader assigned, assign a default one
-        if (material->shaderHandle == 0 && manager->shaderUsed > 0)
-        {   
-            u32 defaultShaderIndex = 0;
-            if(!findInMap(&manager->shaderIDs, "default", &defaultShaderIndex)) 
-            {
-                WARN("Default shader not found in shader map. Using first shader in resource manager.");
-                material->shaderHandle = manager->shaderHandles[0];
-            } 
-            else
-            {
-                //set the shader handle to the default shader
-                material->shaderHandle = manager->shaderHandles[defaultShaderIndex];
-            }
-            WARN("Material %d in model %s has no shader assigned. Using default shader", i, fileName);
-        }
-
-        material->uniforms = getMaterialUniforms(material->shaderHandle);
+        // Previously materials stored a shader handle and cached uniforms.
+        // We no longer bind a shader per-material here. Shader selection is done per-entity or per-draw.
 
         // Add material to hash map with unique name
         char matName[MAX_NAME_SIZE];
@@ -202,8 +186,9 @@ void draw(Model *model, u32 shader)
             continue;
         }
 
-        // Uniforms are now pre-cached in the material
-        updateMaterial(material, &material->uniforms);
+    // Determine uniforms for the currently bound shader (shader passed to draw())
+    MaterialUniforms uniforms = getMaterialUniforms(shader);
+    updateMaterial(material, &uniforms);
 
         // Check mesh validity before drawing
         Mesh* mesh = &resources->meshBuffer[meshIndex];

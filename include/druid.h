@@ -631,8 +631,6 @@ extern "C"
         f32 metallic;
         f32 transparency;
         Vec3 colour;
-        u32 shaderHandle;
-        MaterialUniforms uniforms;
     } Material;
 
     typedef struct
