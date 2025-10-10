@@ -148,12 +148,13 @@ void cleanUpResourceManager(ResourceManager *manager)
 void readResources(ResourceManager *manager, const char *filename)
 {
     u32 modelExtCount = 3;
-    u32 shaderExtCount = 4;
+    // vert, frag, geom, glsl, comp
+    u32 shaderExtCount = 5;
     u32 textureExtCount = 3;
 
     const char *fileExtentions[] = {"fbx",  "obj",  "blend", "vert",
-                                    "frag", "glsl", "comp",  "png",
-                                    "jpg",  "bmp"}; // textures
+                                    "frag", "geom", "glsl", "comp",
+                                    "png",  "jpg",  "bmp"}; // textures
 
     TRACE("Reading resources from %s\n", filename);
     // do a recursive search for all files in the RES_FOLDER directory
@@ -201,7 +202,8 @@ void readResources(ResourceManager *manager, const char *filename)
                 fileName = copyBuffer;
 
             char *ext = strrchr(fileName, '.');
-            if (ext && (strcmp(ext, ".vert") == 0 || strcmp(ext, ".frag") == 0))
+            // include .vert, .frag, .geom and .glsl in the first-pass grouping
+            if (ext && (strcmp(ext, ".vert") == 0 || strcmp(ext, ".frag") == 0 || strcmp(ext, ".geom") == 0 || strcmp(ext, ".glsl") == 0))
             {
                 *ext = '\0'; // Strip extension for shader name grouping
                 u32 value = 0;
@@ -259,12 +261,14 @@ void readResources(ResourceManager *manager, const char *filename)
                             shaderNameForUI = pathNoExt;
 
                         u32 temp = 0;
+                        // if this shader name is already present in the manager, skip it
                         if (findInMap(&manager->shaderIDs, shaderNameForUI, &temp))
                         {
-                            if (temp >= 1)
-                                continue;
+                            continue;
                         }
-                        b8 isGeom = strcmp(ext, "geom") == 0;
+                        // initial extension flag (used only for early checks)
+                        
+                        b8 hasGeom = false;
                         u32 shaderHandle = 0;
                         char shaderName[MAX_NAME_SIZE];
                         if (strcmp(ext, "comp") == 0)
@@ -272,33 +276,38 @@ void readResources(ResourceManager *manager, const char *filename)
                             shaderHandle = createComputeProgram(filePath);
                             snprintf(shaderName, MAX_NAME_SIZE, "compute-shader-%d", manager->shaderUsed);
                         }
-                        else if (strcmp(ext, "vert") == 0 || strcmp(ext, "frag") == 0 || isGeom)
+                        else if (strcmp(ext, "vert") == 0 || strcmp(ext, "frag") == 0 || strcmp(ext, "geom") == 0 || strcmp(ext, "glsl") == 0 || strcmp(ext, "geom") == 0  )
                         {
-                            
-                            
-
                             u32 out = 0;
                             // shaderNameMap keys were stored as filenames (no path), so use shaderNameForUI
                             if (findInMap(&shaderNameMap, shaderNameForUI, &out))
                             {
-                                snprintf(shaderName, MAX_NAME_SIZE, "%s", shaderNameForUI);
+                                    snprintf(shaderName, MAX_NAME_SIZE, "%s", shaderNameForUI);
 
-                                char vertPath[MAX_NAME_SIZE];
-                                char fragPath[MAX_NAME_SIZE];
-
-                                snprintf(vertPath, MAX_NAME_SIZE, "%s.vert", pathNoExt);
-                                snprintf(fragPath, MAX_NAME_SIZE, "%s.frag", pathNoExt);
-                                //check if we have the geometry shader too
-                                if(isGeom)
-                                {
+                                    char vertPath[MAX_NAME_SIZE];
+                                    char fragPath[MAX_NAME_SIZE];
                                     char geomPath[MAX_NAME_SIZE];
+
+                                    snprintf(vertPath, MAX_NAME_SIZE, "%s.vert", pathNoExt);
+                                    snprintf(fragPath, MAX_NAME_SIZE, "%s.frag", pathNoExt);
                                     snprintf(geomPath, MAX_NAME_SIZE, "%s.geom", pathNoExt);
-                                    shaderHandle = createGraphicsProgramWithGeometry(vertPath, geomPath, fragPath);
-                                }  
-                                else
-                                {
-                                    shaderHandle = createGraphicsProgram(vertPath, fragPath);
-                                }
+
+                                    // check if a geometry shader file exists for this base name
+                                    FILE *f = fopen(geomPath, "r");
+                                    if (f) {
+                                        hasGeom = true;
+                                        fclose(f);
+                                    }
+
+                                    if (hasGeom)
+                                    {
+                                        TRACE("loading geom shader");
+                                        shaderHandle = createGraphicsProgramWithGeometry(vertPath, geomPath, fragPath);
+                                    }
+                                    else
+                                    {
+                                        shaderHandle = createGraphicsProgram(vertPath, fragPath);
+                                    }
 
                             }
                         }
@@ -306,6 +315,10 @@ void readResources(ResourceManager *manager, const char *filename)
                         if(shaderHandle != 0) 
                         {
                             TRACE("Loaded shader: %s", shaderName);
+                            if(hasGeom)
+                            {
+                                TRACE("Custom geometry shader added");
+                            }
                             insertMap(&manager->shaderIDs, shaderName, &manager->shaderUsed);
                             manager->shaderHandles[manager->shaderUsed] = shaderHandle;
                             manager->shaderUsed++;
