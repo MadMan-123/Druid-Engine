@@ -108,7 +108,7 @@ void renderIDPass()
     if (manipulateTransform)
     {
         Vec3 pos = positions[inspectorEntityID];
-        const f32 scaleSize = 0.1f;
+        const f32 scaleSize = 0.002f;
         const f32 scaleLength = 1.1f;
 
         // glBindFramebuffer(GL_FRAMEBUFFER, idFBO);

@@ -26,7 +26,7 @@ void initInput()
 		SDL_Gamepad* gamepad = SDL_OpenGamepad(i);
 		if(gamepad == NULL) 
 		{
-			goto skip; //if no gamepad found then skip
+			return;
 		} 
 		else 
 		{
@@ -37,7 +37,6 @@ void initInput()
 
 	}
 	
-skip:
 	
 }
 

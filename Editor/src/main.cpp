@@ -19,7 +19,7 @@ static const f32 camRotateSpeed = 5.0f; // degrees per second
 static const u32 entityDefaultCount = 128;
 MaterialUniforms materialUniforms = {0};
 
-EntityArena *sceneEntities;
+Archetype sceneArchetype;
 char inputBoxBuffer[100]; // this will be in numbers
 i32 entitySize = 0;
 // helper – move camera with wasd keys
@@ -141,25 +141,31 @@ void init()
 
     entitySize = entityDefaultCount;
     entitySizeCache = entitySize;
-    // create the scene entity EntityArena
-    sceneEntities = createEntityArena(&SceneEntity, entitySizeCache);
-    
-    if (!sceneEntities) {
-        FATAL("Failed to create entity arena");
+    u32 outArenas = 0;
+    // create the scene archetype (new archetype system)
+    if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype)) {
+        FATAL("Failed to create archetype for scene entities");
         return;
     }
 
-    DEBUG("Entity Arena created size: %d\n", entitySizeCache);
+    DEBUG("Archetype created with capacity: %d\n", entitySizeCache);
+   
 
-    positions = (Vec3 *)sceneEntities->fields[0];
-    rotations = (Vec4 *)sceneEntities->fields[1];
-    scales = (Vec3 *)sceneEntities->fields[2];
-    isActive = (bool *)sceneEntities->fields[3];
-    names = (char *)sceneEntities->fields[4];
-    modelIDs = (u32*)sceneEntities->fields[5];
-    entityMaterialIDs = (u32*)sceneEntities->fields[6];
-    shaderHandles = (u32*)sceneEntities->fields[7];
-	// set to empty strings
+    void **fields = getArchetypeFields(&sceneArchetype, 0);
+    if (!fields) {
+        FATAL("Failed to get archetype fields");
+        return;
+    }
+
+    positions = (Vec3 *)fields[0];
+    rotations = (Vec4 *)fields[1];
+    scales = (Vec3 *)fields[2];
+    isActive = (bool *)fields[3];
+    names = (char *)fields[4];
+    modelIDs = (u32 *)fields[5];
+    shaderHandles = (u32 *)fields[6];
+    entityMaterialIDs = (u32 *)fields[7];
+    // set to empty strings
 	DEBUG("Setting up ImGui with SDL");
     // initializes imgui, resources and default scene
     //  After SDL window and OpenGL context creation:
@@ -171,9 +177,9 @@ void init()
     io.ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigFlags |=
-        ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+
+    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     ImGui::StyleColorsDark();
 
     // Initialize ImGui backends
@@ -410,8 +416,17 @@ void render(f32 dt)
 
 void destroy()
 {
-
-    freeEntityArena(sceneEntities);
+    // destroy archetype and free its arenas
+    destroyArchetype(&sceneArchetype);
+    // clear pointers to archetype fields
+    positions = NULL;
+    rotations = NULL;
+    scales = NULL;
+    isActive = NULL;
+    names = NULL;
+    modelIDs = NULL;
+    shaderHandles = NULL;
+    entityMaterialIDs = NULL;
     // free editor resources before exiting
     freeMesh(cubeMesh);
     freeShader(shader);

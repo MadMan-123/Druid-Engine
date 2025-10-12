@@ -21,47 +21,93 @@ u32 getEntitySize(StructLayout* layout)
 
 
 //create Entity Arena
-EntityArena* createEntityArena(StructLayout* layout, u32 entityCount)
+EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outArenas)
 {
-	EntityArena* arena = (EntityArena*)malloc(sizeof(EntityArena));
+	const u32 ARENA_MAX_SIZE = 67108864; // 64MB max for now
 
 	//get total size of the arena
 	u32 entitySize = getEntitySize(layout);
 	const u32 total = entitySize * entityCount;
-	
-	//set inital meta data
-	arena->entityCount = entityCount;
-	arena->count = 0;
-	arena->layout = layout;
-	
-	//allocate the field pointers
-	arena->fields = (void**)malloc(sizeof(void*) * layout->count);
 
-	//allocate memory
-	arena->data = malloc(total);
-
-	//base of memory arena
-	u8* base = (u8*)arena->data;
-	//track the offset to adjust pointers by
-	u32 offset = 0;
-
-	//set the field pointers
-	for(u32 i = 0; i < layout->count; i++)
+	EntityArena* arena = NULL;	//set inital meta data
+	//work out if we need multple arenas
+	if(total > ARENA_MAX_SIZE)
 	{
-		arena->fields[i] = base + offset;
-		offset += layout->fields[i].size * entityCount; 	
+		f32 arenasNeeded = total / ARENA_MAX_SIZE;
+		DEBUG("Entity Arena requested size %d exceeds max of %d\nnow allocating %d arenas", total, ARENA_MAX_SIZE, (u32)arenasNeeded);
+		
+		arena = (EntityArena*)malloc(sizeof(EntityArena) * (u32)arenasNeeded);
+		//initialize each arena
+		for(u32 i = 0; i < (u32)arenasNeeded; i++)
+		{
+			arena[i].entityCount = entityCount;
+			arena[i].count = 0;
+			arena[i].layout = layout;
+
+			//allocate the field pointers
+			arena[i].fields = (void**)malloc(sizeof(void*) * layout->count);
+
+			//allocate memory
+			arena[i].data = malloc(ARENA_MAX_SIZE);
+
+			//base of memory arena
+			u8* base = (u8*)arena[i].data;
+			//track the offset to adjust pointers by
+			u32 offset = 0;
+			//set the field pointers
+			for(u32 j = 0; j < layout->count; j++)
+			{
+				arena[i].fields[j] = base + offset;
+				offset += layout->fields[j].size * entityCount; 	
+			}
+		}
+
+		*outArenas = (u32)arenasNeeded;
+	}
+	else 
+	{
+		DEBUG("Entity Arena requested size %d is within max of %d\n", total, ARENA_MAX_SIZE);
+		arena = (EntityArena*)malloc(sizeof(EntityArena));
+		
+		arena->entityCount = entityCount;
+		arena->count = 0;
+		arena->layout = layout;
+	
+		//allocate the field pointers
+		arena->fields = (void**)malloc(sizeof(void*) * layout->count);
+
+		//allocate memory
+		arena->data = malloc(total);
+		//base of memory arena
+		u8* base = (u8*)arena->data;
+		//track the offset to adjust pointers by
+		u32 offset = 0;
+
+		//set the field pointers
+		for(u32 i = 0; i < layout->count; i++)
+		{
+			arena->fields[i] = base + offset;
+			offset += layout->fields[i].size * entityCount; 	
+		}
+
+		*outArenas = 1;
 	}
 
-	//return the arena
+
 	return arena;
+	
 }
 
 //free the arena
-bool freeEntityArena(EntityArena* arena)
+bool freeEntityArena(EntityArena* arena, u32 arenaCount)
 {
-	free(arena->fields);
-	//free the whole thing
-	free(arena->data);
+	//free each arena if there are multiple
+	for(u32 i = 0; i < arenaCount; i++)
+	{
+		free(arena[i].fields);
+		//free the whole thing
+		free(arena[i].data);
+	}
 
 	//free the entity arena itself
 	free(arena);
@@ -71,9 +117,10 @@ bool freeEntityArena(EntityArena* arena)
 //allocate an enitity
 u32 createEntity(EntityArena* arena)
 {
+	
 	if(arena->count >= arena->entityCount)
 	{
-		printf("Arena Filled\n");
+		WARN("Arena Filled\n");
 		return 0;
 	}
 	u32 id = arena->count;
@@ -81,6 +128,47 @@ u32 createEntity(EntityArena* arena)
 	arena->count++;
 
 	return id;
+}
+
+// Remove entity from arena by index (0-based). Returns true on success.
+b8 removeEntityFromArena(EntityArena* arena, u32 index)
+{
+	if(arena == NULL)
+	{
+		ERROR("removeEntityFromArena: arena is NULL");
+		return false;
+	}
+
+	if(index >= arena->entityCount)
+	{
+		ERROR("removeEntityFromArena: index out of bounds");
+		return false;
+	}
+
+	if(arena->count == 0)
+	{
+		WARN("removeEntityFromArena: arena empty");
+		return false;
+	}
+
+	// move last element into the removed slot for each field to keep packed layout
+	u32 lastIndex = arena->count - 1;
+	if(index != lastIndex)
+	{
+		u8 *base = (u8*)arena->data;
+		u32 entitySize = 0;
+		// compute total entity size from layout
+		for(u32 i = 0; i < arena->layout->count; i++)
+			entitySize += arena->layout->fields[i].size;
+
+		// copy data from lastIndex to index for the entire entity block
+		u8 *dst = base + (index * entitySize);
+		u8 *src = base + (lastIndex * entitySize);
+		memcpy(dst, src, entitySize);
+	}
+
+	arena->count--;
+	return true;
 }
 
 

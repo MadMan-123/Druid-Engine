@@ -38,7 +38,7 @@ DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat,
 
 DAPI void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height)
 {
-    if (!fb) return;
+    if (!fb)  return;
     if (fb->width == width && fb->height == height) return;
     fb->width = width; fb->height = height;
 

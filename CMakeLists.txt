@@ -16,15 +16,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 # Source files
 file(GLOB_RECURSE ENGINE_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/*.c
-    ${CMAKE_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/**/*.c
+    ${CMAKE_SOURCE_DIR}/src/**/*.cpp
 )
 
 # Disable warnings on stb_image
 set_source_files_properties(${CMAKE_SOURCE_DIR}/src/stb_image.c PROPERTIES COMPILE_FLAGS "-w")
 
 # Build engine as a shared library
-add_library(druid SHARED ${ENGINE_SOURCES} "src/systems/Rendering/material.c" "src/core/logging.c" "src/application/resourcemanager.c" "src/systems/Rendering/model.c" "src/systems/Rendering/framebuffer.c")
+add_library(druid SHARED ${ENGINE_SOURCES} "src/systems/Rendering/material.c" "src/core/logging.c" "src/application/resourcemanager.c" "src/systems/Rendering/model.c" "src/systems/Rendering/framebuffer.c" "src/stb_image.c")
 
 # Include directories
 target_include_directories(druid PUBLIC

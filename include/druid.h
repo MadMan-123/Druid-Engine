@@ -328,14 +328,16 @@ extern "C"
     } EntityArena;
 
     // create Entity Arena
-    DAPI EntityArena *createEntityArena(StructLayout *layout, u32 entityCount);
+    DAPI EntityArena *createEntityArena(StructLayout *layout, u32 entityCount, u32 *outArenas);
 
     DAPI void printEntityArena(EntityArena *arena);
 
     // free the arena
-    DAPI bool freeEntityArena(EntityArena *arena);
-    // allocate an enitity
+    DAPI bool freeEntityArena(EntityArena* arena, u32 arenaCount);    
     DAPI u32 createEntity(EntityArena *arena);
+
+    // Low-level arena API: remove entity at index from an arena. Returns true on success.
+    DAPI b8 removeEntityFromArena(EntityArena *arena, u32 index);
 
     // calculate Entity Size based of a struct layout
     DAPI u32 getEntitySize(StructLayout *layout);
@@ -373,6 +375,31 @@ extern "C"
     extern FieldInfo name##_fields[];                                          \
     extern StructLayout name;
 #endif
+
+    //=====================================================================================================================
+    // Archetypes 
+
+    typedef struct Archetype
+    {
+        u32 id;               
+        StructLayout *layout; 
+        EntityArena *arena;
+        u32 arenaCount;
+        u32 capacity;         
+    } Archetype;
+
+  
+    // Archetype API (declarations only) - implementations live in world model
+    DAPI b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype);
+    DAPI b8 destroyArchetype(Archetype *arch);
+
+    // Create an entity in the given archetype. Returns a packed u64 handle
+    // (arch id + index) via outEntity. Returns true on success.
+    DAPI b8 removeEntityFromArchetype(Archetype *arch, u32 arenaIndex, u32 index);
+
+    // Get the archetype soa field pointers for the given arena index.
+    DAPI void **getArchetypeFields(Archetype *arch, u32 arenaIndex);
+
 
     //=====================================================================================================================
     // Arenas
