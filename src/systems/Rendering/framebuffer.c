@@ -1,6 +1,6 @@
 #include "../../include/druid.h"
 
-DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b32 hasDepth)
+Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b8 hasDepth)
 {
     Framebuffer fb = {0};
     fb.width = width;
@@ -36,7 +36,7 @@ DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat,
     return fb;
 }
 
-DAPI void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height)
+void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height)
 {
     if (!fb)  return;
     if (fb->width == width && fb->height == height) return;
@@ -54,19 +54,19 @@ DAPI void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-DAPI void bindFramebuffer(Framebuffer *fb)
+void bindFramebuffer(Framebuffer *fb)
 {
     if (!fb) return;
     glBindFramebuffer(GL_FRAMEBUFFER, fb->fbo);
     glViewport(0,0, fb->width, fb->height);
 }
 
-DAPI void unbindFramebuffer(void)
+void unbindFramebuffer(void)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-DAPI void destroyFramebuffer(Framebuffer *fb)
+void destroyFramebuffer(Framebuffer *fb)
 {
     if (!fb) return;
     if (fb->texture) glDeleteTextures(1, &fb->texture);

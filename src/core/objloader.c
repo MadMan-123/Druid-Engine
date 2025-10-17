@@ -12,7 +12,7 @@ u32 hashOBJKey(const void* key, u32 capacity)
     return h % capacity;
 }
 
-bool equalsOBJKey(const void* a, const void* b)
+b8 equalsOBJKey(const void* a, const void* b)
 {
     const OBJKey* ka = (const OBJKey*)a;
     const OBJKey* kb = (const OBJKey*)b;
@@ -71,8 +71,8 @@ typedef struct
     u32 uvsCount;
     u32 normalsCount;
     u32 facesCount;
-    bool hasUVs;
-    bool hasNormals;
+    b8 hasUVs;
+    b8 hasNormals;
 } OBJMetadata;
 
 OBJMetadata parseOBJMetadata(const char* fileName)

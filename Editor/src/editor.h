@@ -28,7 +28,7 @@ extern i32 entitySize;
 extern u32 entitySizeCache;
 extern u32 entityCount;
 
-extern bool* isActive;
+extern b8* isActive;
 extern Vec3* positions;
 extern Vec4* rotations;
 extern Vec3* scales;
@@ -39,8 +39,8 @@ extern u32 *entityMaterialIDs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 
-extern bool canMoveViewPort;
-extern bool manipulateTransform;
+extern b8 canMoveViewPort;
+extern b8 manipulateTransform;
 extern u32 shader;
 extern f32 viewportWidthPixels;
 extern f32 viewportHeightPixels;
@@ -53,10 +53,12 @@ extern ImVec2 g_viewportSize;
 extern Mesh* cubeMesh;
 extern u32 arrowShader;
 extern u32 colourLocation;
-extern bool canMoveAxis;
+extern b8 canMoveAxis;
 extern Vec3 manipulateAxis;
 
 extern MaterialUniforms materialUniforms;
+
+extern SceneManager* sceneManager;
 
 typedef enum{
     MANIPULATE_POSITION = 0,

@@ -8,12 +8,11 @@ layout(location = 2) in vec3 aNormal;
 uniform mat4 transform;
 // Core shader data (time + viewProj) provided via UBO
 layout(std140) uniform CoreShaderData {
-    vec4 time;
-    mat4 viewProj;
+    vec3 camPos;
+    float time;
 } CSD;
 
-// keep existing code compatible
-#define time CSD.time.x
+#define time CSD.time
 const float warbleFreq = 0.01; // Frequency of the warble effect
 const float warbleAmp= 0.5;  // Amplitude of the warble effect
 

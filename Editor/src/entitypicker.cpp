@@ -1,6 +1,6 @@
 #include "entitypicker.h"
 #include "editor.h"
-#include "scene.h"
+#include <druid.h>
 
 // Use the new Framebuffer API
 static Framebuffer idFB = {0};

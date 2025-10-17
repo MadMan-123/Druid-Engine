@@ -39,7 +39,7 @@ char *loadFileText(const char *fileName)
     return buffer;
 }
 
-void checkShaderError(GLuint shader, GLuint flag, bool isProgram,
+void checkShaderError(GLuint shader, GLuint flag, b8 isProgram,
                       const char *errorMessage)
 {
     GLint success = 0;
@@ -307,7 +307,7 @@ void updateShaderMVP(u32 shaderProgram, const Transform transform,
 }
 
 // Set a global time uniform on the shader program if it exists
-void updateShaderTime(u32 shaderProgram, float time)
+void updateShaderTime(u32 shaderProgram, f32 time)
 {
     if (shaderProgram == 0) return;
     GLint timeLoc = glGetUniformLocation(shaderProgram, "time");
@@ -317,36 +317,3 @@ void updateShaderTime(u32 shaderProgram, float time)
     }
 }
 
-// CoreShaderData UBO - std140 friendly layout
-typedef struct {
-    float time_x;
-    float pad0;
-    float pad1;
-    float pad2; // pad to vec4
-    float viewProj[16]; // mat4
-} CoreShaderData;
-
-static u32 g_coreUBO = 0;
-
-u32 createCoreShaderUBO()
-{
-    if (g_coreUBO != 0) return g_coreUBO;
-    CoreShaderData data = {0};
-    g_coreUBO = createUBO(sizeof(CoreShaderData), &data, GL_DYNAMIC_DRAW);
-    // bind to base 0
-    bindUBOBase(g_coreUBO, 0);
-    return g_coreUBO;
-}
-
-void updateCoreShaderUBO(float timeSeconds, const Mat4 *viewProj)
-{
-    if (g_coreUBO == 0) createCoreShaderUBO();
-    CoreShaderData data;
-    data.time_x = timeSeconds;
-    data.pad0 = data.pad1 = data.pad2 = 0.0f;
-    if (viewProj)
-    {
-        memcpy(data.viewProj, &viewProj->m[0][0], sizeof(float) * 16);
-    }
-    updateUBO(g_coreUBO, 0, sizeof(CoreShaderData), &data);
-}

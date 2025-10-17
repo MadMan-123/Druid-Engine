@@ -76,9 +76,6 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         *material = (Material){0};
         readMaterial(material, aimat);
 
-        // Previously materials stored a shader handle and cached uniforms.
-        // We no longer bind a shader per-material here. Shader selection is done per-entity or per-draw.
-
         // Add material to hash map with unique name
         char matName[MAX_NAME_SIZE];
         snprintf(matName, MAX_NAME_SIZE, "%s-material-%d", fileName, i);

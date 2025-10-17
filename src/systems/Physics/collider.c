@@ -3,7 +3,7 @@
 
 typedef struct
 {
-	float radius;
+	f32 radius;
 }CircleCollider;
 
 typedef struct
@@ -65,7 +65,7 @@ Collider* createMeshCollider(Mesh* mesh, Transform* transform)
     
 	return col;
 }
-Collider* createCircleCollider(float radius)
+Collider* createCircleCollider(f32 radius)
 {
 	//Allocate memory for the collider
 	Collider* allocatedCollider = (Collider*)malloc(sizeof(Collider));
@@ -119,7 +119,7 @@ Collider* createBoxCollider(Vec2 scale)
 	return allocatedCollider;
 }
 
-float getRadius(Collider* col)
+f32 getRadius(Collider* col)
 {
 	CircleCollider* colState = (CircleCollider*)col->state;
 	return colState->radius;
@@ -130,7 +130,7 @@ Vec2 getScale(Collider* col)
 	return ((BoxCollider*)col->state)->scale;
 }
 
-bool setBoxScale(Collider* col, Vec2 scale)
+b8 setBoxScale(Collider* col, Vec2 scale)
 {
 	if(col == NULL)
 		return false;
@@ -140,7 +140,7 @@ bool setBoxScale(Collider* col, Vec2 scale)
 	return true;
 }
 
-bool cleanCollider(Collider* col)
+b8 cleanCollider(Collider* col)
 {
 	if(col == NULL)
 		return false;
@@ -153,13 +153,13 @@ bool cleanCollider(Collider* col)
 	return true;
 }
 
-bool isCircleColliding(Vec2 posA, float radA, Vec2 posB, float radB)
+b8 isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB)
 {
 	return v2Mag(v2Sub(posB, posA)) <= (radA + radB);
 }
 
 //AABB collision detection
-bool isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB)
+b8 isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB)
 {
 	return (posA.x + scaleA.x >= posB.x && posB.x + scaleB.x >= posA.x) && 
 		(posA.y + scaleA.y >= posB.y && posB.y + scaleB.y >= posA.y);

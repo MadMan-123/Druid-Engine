@@ -4,7 +4,6 @@
 #include "../deps/imgui/imgui_internal.h"
 #include "editor.h"
 #include "entitypicker.h"
-#include "scene.h"
 #include <druid.h>
 #include <iostream>
 
@@ -23,8 +22,8 @@ Archetype sceneArchetype;
 char inputBoxBuffer[100]; // this will be in numbers
 i32 entitySize = 0;
 // helper – move camera with wasd keys
-bool canMoveViewPort = false;
-bool canMoveAxis = false;
+b8 canMoveViewPort = false;
+b8 canMoveAxis = false;
 Vec3 manipulateAxis = v3Zero;
 
 // ImGui allocator wrappers
@@ -125,7 +124,7 @@ void reallocateSceneArena()
 {
 }
 
-bool *isActive = nullptr;
+b8 *isActive = nullptr;
 Vec3 *positions = nullptr;
 Vec4 *rotations = nullptr;
 Vec3 *scales = nullptr;
@@ -160,7 +159,7 @@ void init()
     positions = (Vec3 *)fields[0];
     rotations = (Vec4 *)fields[1];
     scales = (Vec3 *)fields[2];
-    isActive = (bool *)fields[3];
+    isActive = (b8 *)fields[3];
     names = (char *)fields[4];
     modelIDs = (u32 *)fields[5];
     shaderHandles = (u32 *)fields[6];
@@ -213,6 +212,13 @@ void init()
     skyboxMesh = createSkyboxMesh(); // generate cube mesh (36 verts)
     skyboxShader =
         createGraphicsProgram("../res/Skybox.vert", "../res/Skybox.frag");
+
+    // Enable seamless cubemap sampling to reduce visible seams when sampling
+    // across cube faces (requires OpenGL 3.2+). This tells the GL to sample
+    // consistently across edges instead of using per-face coordinates.
+#ifdef GL_TEXTURE_CUBE_MAP_SEAMLESS
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+#endif
 
     // cache uniform locations for efficiency
     skyboxViewLoc = glGetUniformLocation(skyboxShader, "view");

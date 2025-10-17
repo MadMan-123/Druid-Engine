@@ -400,6 +400,47 @@ extern "C"
     // Get the archetype soa field pointers for the given arena index.
     DAPI void **getArchetypeFields(Archetype *arch, u32 arenaIndex);
 
+    // ------------------------------------------------------------------
+    // Scenes
+    typedef struct {
+        Archetype *archetypes;
+        u32 archetypeCount;
+    } Scene;
+
+    typedef struct{
+        u32 entityCount;
+        Archetype savedEntities;
+    } SceneMetaData;
+
+    typedef struct{
+        SceneMetaData* scenes;
+        u32 sceneCount;    // number of scenes currently stored
+        u32 sceneCapacity; // allocated capacity
+        u32 currentScene;  // index of active scene
+    } SceneManager;
+
+    // Define an editor-visible name size constant if not present elsewhere
+    #ifndef MAX_NAME_SIZE
+    #define MAX_NAME_SIZE 256
+    #endif
+
+    // SceneEntity archetype symbols (defined in world model scene.c)
+    DAPI extern FieldInfo SceneEntity_fields[];
+    DAPI extern StructLayout SceneEntity;
+
+    // Scene manager API
+    DAPI SceneManager* createSceneManager(u32 sceneCapacity);
+    DAPI void destroySceneManager(SceneManager* manager);
+    DAPI u32 addScene(SceneManager* manager, SceneMetaData* sceneData);
+    DAPI void removeScene(SceneManager* manager, u32 sceneIndex);
+    DAPI void switchScene(SceneManager* manager, u32 sceneIndex);
+
+    // Persist/load SceneMetaData to disk (implementation flexible)
+    DAPI void saveScene(const char *filePath, SceneMetaData* data);
+    DAPI SceneMetaData loadScene(const char *filePath);
+    DAPI SceneMetaData bakeScene(Scene* scene);
+    // ------------------------------------------------------------------
+
 
     //=====================================================================================================================
     // Arenas
@@ -623,7 +664,9 @@ extern "C"
     DAPI void freeUBO(u32 ubo);
     // CoreShaderData UBO helpers (create once, update each frame)
     DAPI u32 createCoreShaderUBO();
-    DAPI void updateCoreShaderUBO(float timeSeconds, const Mat4 *viewProj);
+
+    DAPI void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos);
+
 
     // Textures
     // 32 textures MAX
@@ -745,10 +788,11 @@ extern "C"
         u32 width;
         u32 height;
         GLenum internalFormat;
-        b32 hasDepth;
+        b8 hasDepth;
+
     } Framebuffer;
 
-    DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b32 hasDepth);
+    DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b8 hasDepth);
     DAPI void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height);
     DAPI void bindFramebuffer(Framebuffer *fb);
     DAPI void unbindFramebuffer(void);

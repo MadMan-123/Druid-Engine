@@ -15,12 +15,12 @@ out vec2 TexCoords;
 
 // Core shader data (time + viewProj) provided via UBO
 layout(std140) uniform CoreShaderData {
-    vec4 time;
-    mat4 viewProj;
+    vec3 camPos; 
+    float time;
 } CSD;
 
 // keep existing code compatible
-#define time CSD.time.x
+#define time CSD.time
 
 
 vec4 explode(vec4 position, vec3 normal)

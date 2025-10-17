@@ -1,22 +1,29 @@
-#include <druid.h>
 
+#include "editor.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
-#include "editor.h"
 #include <cstdio>
 #include <cstring>
 #include <iostream>
 
 #include "../deps/imgui/imgui_internal.h"
 #include "entitypicker.h"
-#include "scene.h"
 
 // buffer of 2D array of strings
 const char **consoleLines = NULL;
 
 // Allocate the storage here
 Application *editor = nullptr;
+
+// Scene manager instance (defined here so UI can reference it)
+SceneManager* sceneManager = NULL;
+
+// UI state for scene menu modals
+static char scenePathBuffer[512] = "";
+static b8 showSaveModal = false;
+static b8 showLoadModal = false;
+static b8 showNewSceneModal = false;
 
 Framebuffer viewportFB = {0};
 u32 viewportWidth = 0;
@@ -37,7 +44,7 @@ Camera sceneCam = {0};
 u32 entitySizeCache = 0;
 Vec3 EulerAngles = v3Zero;
 
-bool manipulateTransform = false;
+b8 manipulateTransform = false;
 
 // entity data
 u32 entityCount = 0;
@@ -72,7 +79,7 @@ static void drawTextureSelector(const char *label, u32 *textureHandle, const cha
                 u32 textureIndex = *(u32 *)resources->textureIDs.pairs[texIdx].value;
                 u32 handle = resources->textureHandles[textureIndex];
 
-                const bool is_selected = (*textureHandle == handle);
+                const b8 is_selected = (*textureHandle == handle);
                 if (ImGui::Selectable(texName, is_selected))
                 {
                     *textureHandle = handle;
@@ -116,9 +123,8 @@ static void renderGameScene()
 
     // Update core shader UBO (time + viewProj) once per frame
     {
-        float t = (float)ImGui::GetTime();
-        Mat4 vp = getViewProjection(&sceneCam);
-        updateCoreShaderUBO(t, &vp);
+        f32 t = (f32)ImGui::GetTime();
+        updateCoreShaderUBO(t, &sceneCam.pos);
     }
 
     bindFramebuffer(&viewportFB);
@@ -270,9 +276,9 @@ static void drawViewportWindow()
     canMoveViewPort =
         ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
-    const float targetAspect = 16.0f / 9.0f;
-    float targetW = avail.x;
-    float targetH = avail.x / targetAspect;
+    const f32 targetAspect = 16.0f / 9.0f;
+    f32 targetW = avail.x;
+    f32 targetH = avail.x / targetAspect;
     if (targetH > avail.y)
     {
         targetH = avail.y;
@@ -458,7 +464,7 @@ static void drawInspectorWindow()
         if (ImGui::BeginListBox("Models"))
         {
             // Add "None" option for no model
-            bool isNoneSelected = (currentModelID == (u32)-1);
+            b8 isNoneSelected = (currentModelID == (u32)-1);
             if(ImGui::Selectable("None", isNoneSelected))
             {
                 modelIDs[inspectorEntityID] = (u32)-1;
@@ -466,7 +472,7 @@ static void drawInspectorWindow()
             
             for(u32 modelIdx = 0; modelIdx < resources->modelUsed; modelIdx++)
             {
-                const bool isSelected = (currentModelID == modelIdx);
+                const b8 isSelected = (currentModelID == modelIdx);
                 Model *model = &resources->modelBuffer[modelIdx];
                 
                 // Create unique ID for each model selectable
@@ -505,7 +511,7 @@ static void drawInspectorWindow()
 
                 Material *mat = &resources->materialBuffer[effectiveMaterialIndex];
 
-                bool isCustom = (effectiveMaterialIndex != defaultMaterialIndex);
+                b8 isCustom = (effectiveMaterialIndex != defaultMaterialIndex);
 
                 ImGui::Text("Material");
                 ImGui::SameLine();
@@ -572,7 +578,7 @@ static void drawInspectorWindow()
                 drawTextureSelector("Roughness", &mat->roughnessTex, "##Select Roughness");
 
                 ImGui::ColorEdit3("Colour", (f32 *)&mat->colour);
-                ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f);
+                ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f); 
                 ImGui::SliderFloat("Roughness", &mat->roughness, 0.0f, 1.0f);
                 ImGui::SliderFloat("Transparency", &mat->transparency, 0.0f, 1.0f);
 
@@ -599,7 +605,7 @@ static void drawInspectorWindow()
                             u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderIdx].value;
                             u32 shaderHandle = resources->shaderHandles[shaderIndex];
 
-                            const bool is_selected = (shaderHandles[inspectorEntityID] == shaderHandle);
+                            const b8 is_selected = (shaderHandles[inspectorEntityID] == shaderHandle);
                             if (ImGui::Selectable(shaderName, is_selected))
                             {
                                 shaderHandles[inspectorEntityID] = shaderHandle;
@@ -624,7 +630,7 @@ static void drawInspectorWindow()
 
 void drawDockspaceAndPanels()
 {
-    static bool dockspaceOpen = true;
+    static b8 dockspaceOpen = true;
     static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
     ImGuiWindowFlags window_flags =
         ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
@@ -648,8 +654,53 @@ void drawDockspaceAndPanels()
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceID");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
 
+    // Main menu bar (Scene menu)
+    if (ImGui::BeginMenuBar())
+    {
+        if (ImGui::BeginMenu("Scene"))
+        {
+            if (ImGui::MenuItem("New Scene"))
+            {
+                // Optionally show a modal to set name/capacity
+                showNewSceneModal = true;
+            }
+            if (ImGui::MenuItem("Save Scene As..."))
+            {
+                showSaveModal = true;
+            }
+            if (ImGui::MenuItem("Load Scene..."))
+            {
+                showLoadModal = true;
+            }
+            ImGui::Separator();
+            if (sceneManager && sceneManager->sceneCount > 0)
+            {
+                // List existing scenes for quick switch/remove
+                for (u32 i = 0; i < sceneManager->sceneCount; i++)
+                {
+                    char label[64];
+                    snprintf(label, sizeof(label), "Scene %u", i);
+                    if (ImGui::MenuItem(label, NULL, (int)(sceneManager->currentScene == i)))
+                    {
+                        // switch scene
+                        switchScene(sceneManager, i);
+                    }
+                    ImGui::SameLine();
+                    ImGui::PushID(i);
+                    if (ImGui::SmallButton("Remove"))
+                    {
+                        removeScene(sceneManager, i);
+                    }
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+
     // build default layout once
-    static bool first_time = true;
+    static b8 first_time = true;
     if (first_time)
     {
         first_time = false;
@@ -683,6 +734,81 @@ void drawDockspaceAndPanels()
     drawInspectorWindow();
 
     ImGui::End(); // MainDockSpace
+
+    // --- Scene menu modals ---
+    if (showSaveModal)
+    {
+        ImGui::OpenPopup("Save Scene As");
+        showSaveModal = false;
+    }
+    if (ImGui::BeginPopupModal("Save Scene As", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
+        if (ImGui::Button("Save"))
+        {
+            if (sceneManager && sceneManager->sceneCount > 0)
+            {
+                // Save current scene by index
+                u32 idx = sceneManager->currentScene;
+                saveScene(scenePathBuffer, &sceneManager->scenes[idx]);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+
+    if (showLoadModal)
+    {
+        ImGui::OpenPopup("Load Scene");
+        showLoadModal = false;
+    }
+    if (ImGui::BeginPopupModal("Load Scene", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
+        if (ImGui::Button("Load"))
+        {
+            SceneMetaData md = loadScene(scenePathBuffer);
+            if (sceneManager)
+            {
+                addScene(sceneManager, &md);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+
+    if (showNewSceneModal)
+    {
+        ImGui::OpenPopup("New Scene");
+        showNewSceneModal = false;
+    }
+    if (ImGui::BeginPopupModal("New Scene", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        // For new scene we only need capacity for now
+        static int newCapacity = 128;
+        ImGui::InputInt("Initial Capacity", &newCapacity);
+        if (ImGui::Button("Create"))
+        {
+            if (!sceneManager)
+            {
+                sceneManager = createSceneManager((u32)newCapacity);
+            }
+            else
+            {
+                // Optionally add an empty SceneMetaData
+                SceneMetaData md = {0};
+                addScene(sceneManager, &md);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
 }
 
 void editorLog(LogLevel level, const char *msg)
@@ -698,4 +824,3 @@ void editorLog(LogLevel level, const char *msg)
     }
 }
 
-// Helper: draw a texture thumbnail+combo and write back selected texture handle
