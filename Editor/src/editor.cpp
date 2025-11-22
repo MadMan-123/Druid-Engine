@@ -25,10 +25,15 @@ static b8 showSaveModal = false;
 static b8 showLoadModal = false;
 static b8 showNewSceneModal = false;
 
-Framebuffer viewportFB = {0};
+// Multi-FBO system
+Framebuffer viewportFBs[MAX_FBOS] = {0};
+Framebuffer finalDisplayFB = {0};  // Final processed result for ImGui
 u32 viewportWidth = 0;
 u32 viewportHeight = 0;
+u32 activeFBO = 0;  // Which FBO to render to
 
+// Screen quad for FBO rendering
+Mesh *screenQuadMesh = nullptr;
 Mesh *skyboxMesh = nullptr;
 u32 cubeMapTexture = 0;
 u32 skyboxShader = 0;
@@ -56,9 +61,7 @@ u32 inspectorEntityID =
 
 u32 arrowShader = 0;
 u32 colourLocation = 0;
-// Helper that (re)creates the framebuffer and attached texture when the
-// viewport size changes
-// recreates viewport framebuffer when size changes
+u32 fboShader = 0;  // FBO post-processing shader
 
 ManipulateTransformState manipulateState = MANIPULATE_POSITION;
 
@@ -92,7 +95,7 @@ static void drawTextureSelector(const char *label, u32 *textureHandle, const cha
     }
 }
 
-static void resizeViewportFramebuffer(u32 width, u32 height)
+static void resizeViewportFramebuffers(u32 width, u32 height)
 {
     if (width <= 0 || height <= 0)
         return; // Ignore invalid sizes
@@ -102,20 +105,34 @@ static void resizeViewportFramebuffer(u32 width, u32 height)
     viewportWidth = width;
     viewportHeight = height;
 
-    if (viewportFB.fbo == 0)
+    // Resize all FBOs
+    for (u32 i = 0; i < MAX_FBOS; i++)
     {
-        viewportFB = createFramebuffer(viewportWidth, viewportHeight, GL_RGBA8, true);
+        if (viewportFBs[i].fbo == 0)
+        {
+            viewportFBs[i] = createFramebuffer(viewportWidth, viewportHeight, GL_RGBA8, true);
+        }
+        else
+        {
+            resizeFramebuffer(&viewportFBs[i], viewportWidth, viewportHeight);
+        }
+    }
+    
+    // Resize final display FBO
+    if (finalDisplayFB.fbo == 0)
+    {
+        finalDisplayFB = createFramebuffer(viewportWidth, viewportHeight, GL_RGBA8, false);
     }
     else
     {
-        resizeFramebuffer(&viewportFB, viewportWidth, viewportHeight);
+        resizeFramebuffer(&finalDisplayFB, viewportWidth, viewportHeight);
     }
 }
 
 static void renderGameScene()
 {
     // Ensure framebuffer exists before rendering
-    if (viewportFB.fbo == 0 || viewportWidth == 0 || viewportHeight == 0)
+    if (viewportFBs[activeFBO].fbo == 0 || viewportWidth == 0 || viewportHeight == 0)
     {
         // Framebuffer not initialized yet, skip rendering
         return;
@@ -127,9 +144,9 @@ static void renderGameScene()
         updateCoreShaderUBO(t, &sceneCam.pos);
     }
 
-    bindFramebuffer(&viewportFB);
+    bindFramebuffer(&viewportFBs[activeFBO]);
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClearColor(0.2f, 0.4f, 0.8f, 1.0f); // Blue clear color to test scene rendering
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // skybox
@@ -231,12 +248,12 @@ static void renderGameScene()
         const f32 scaleLength = 1.1f;
 
         Transform X = {v3Add(pos, v3Right), quatIdentity(),
-                       (Vec3){scaleLength, scaleSize, scaleSize}};
+                       {scaleLength, scaleSize, scaleSize}};
         Transform Y = {v3Add(pos, v3Up), quatIdentity(),
-                       (Vec3){scaleSize, scaleLength, scaleSize}};
+                       {scaleSize, scaleLength, scaleSize}};
 
         Transform Z = {v3Add(pos, v3Back), quatIdentity(),
-                       (Vec3){scaleSize, scaleSize, scaleLength}};
+                       {scaleSize, scaleSize, scaleLength}};
 
         // visually draw the arrows
 
@@ -285,7 +302,7 @@ static void drawViewportWindow()
         targetW = targetH * targetAspect;
     }
 
-    resizeViewportFramebuffer((int)targetW, (int)targetH);
+    resizeViewportFramebuffers((int)targetW, (int)targetH);
     // Keep the ID framebuffer sized to the viewport so picking reads use correct coords
     resizeIDFramebuffer((int)targetW, (int)targetH);
 
@@ -307,8 +324,35 @@ static void drawViewportWindow()
     renderIDPass();
     renderGameScene();
 
-    ImGui::Image((void *)(intptr_t)viewportFB.texture, ImVec2(targetW, targetH),
-                 ImVec2(0, 1), ImVec2(1, 0));
+    // Debug: Show what's happening with the conditions
+    bool shaderReady = (fboShader != 0);
+    bool finalFBOReady = (finalDisplayFB.fbo != 0);  
+    bool activeFBOReady = (viewportFBs[activeFBO].fbo != 0);
+    
+    // Post-processing pipeline: render active FBO through shader to final display FBO
+    if (shaderReady && finalFBOReady && activeFBOReady) {
+        // Bind final display FBO as render target
+        bindFramebuffer(&finalDisplayFB);
+        glClear(GL_COLOR_BUFFER_BIT);
+        
+        // Render active FBO through post-processing shader
+        renderFBOToScreen(activeFBO, fboShader);
+        
+        // Unbind FBO
+        unbindFramebuffer();
+        
+        // Display the processed result
+        ImGui::Image((void *)(intptr_t)finalDisplayFB.texture, ImVec2(targetW, targetH),
+                     ImVec2(0, 1), ImVec2(1, 0));
+    } else {
+        // Fallback to raw texture if available
+        if (activeFBOReady) {
+            ImGui::Image((void *)(intptr_t)viewportFBs[activeFBO].texture, ImVec2(targetW, targetH),
+                         ImVec2(0, 1), ImVec2(1, 0));
+        } else {
+            ImGui::Text("FBOs not ready - Viewport: %dx%d", viewportWidth, viewportHeight);
+        }
+    }
 
     ImGui::End();
 
@@ -329,6 +373,27 @@ static void drawDebugWindow()
     ImGui::Text("Inspector State: %d",
                 inspectorStateNames[currentInspectorState]);
     ImGui::Text("Viewport Size: %.0f x %.0f", viewportWidth, viewportHeight);
+    
+    // Multi-FBO System Info
+    ImGui::Separator();
+    ImGui::Text("Multi-FBO System");
+    ImGui::Text("Active FBO: %d (ID: %d)", activeFBO, viewportFBs[activeFBO].fbo);
+    ImGui::Text("Final Display FBO: ID %d", finalDisplayFB.fbo);
+    ImGui::Text("FBO Shader: ID %d", fboShader);
+    ImGui::Text("Screen Quad: %s", screenQuadMesh ? "Created" : "NULL");
+    ImGui::Text("FBOs Created: %d/%d", 
+               (viewportFBs[0].fbo != 0) + (viewportFBs[1].fbo != 0) + (viewportFBs[2].fbo != 0) + (viewportFBs[3].fbo != 0),
+               MAX_FBOS);
+    
+    // Scene rendering debug info
+    ImGui::Separator();
+    ImGui::Text("Scene Content");
+    ImGui::Text("Skybox Mesh: %s (VAO: %d)", skyboxMesh ? "Loaded" : "NULL", skyboxMesh ? skyboxMesh->vao : 0);
+    ImGui::Text("Skybox Shader: %d", skyboxShader);
+    ImGui::Text("Entities: %d/%d active", entityCount, entitySizeCache);
+    if (entityCount > 0) {
+        ImGui::Text("First entity model ID: %d", modelIDs[0]);
+    }
     // input axis
     ImGui::Text("Input Axis: (%.2f, %.2f)", xInputAxis, yInputAxis);
     ImGui::Text("Mouse Position: (%.2f, %.2f)", ImGui::GetMousePos().x,
@@ -626,6 +691,82 @@ static void drawInspectorWindow()
     }
 
     ImGui::End();
+}
+
+
+
+// Initialize all FBOs and screen quad
+void initMultiFBOs()
+{
+    // Create screen quad mesh if not already created
+    if (screenQuadMesh == nullptr)
+    {
+        screenQuadMesh = createQuadMesh();
+    }
+    
+    // Initialize all FBOs as empty - they will be created on first resize
+    for (u32 i = 0; i < MAX_FBOS; i++)
+    {
+        memset(&viewportFBs[i], 0, sizeof(Framebuffer));
+    }
+    memset(&finalDisplayFB, 0, sizeof(Framebuffer));
+    
+    // Reset viewport dimensions
+    viewportWidth = 0;
+    viewportHeight = 0;
+    activeFBO = 0;
+}
+
+// Cleanup all FBOs and screen quad
+void destroyMultiFBOs()
+{
+    for (u32 i = 0; i < MAX_FBOS; i++)
+    {
+        if (viewportFBs[i].fbo != 0)
+        {
+            destroyFramebuffer(&viewportFBs[i]);
+            memset(&viewportFBs[i], 0, sizeof(Framebuffer));
+        }
+    }
+    
+    if (finalDisplayFB.fbo != 0) 
+    {
+        destroyFramebuffer(&finalDisplayFB);
+        memset(&finalDisplayFB, 0, sizeof(Framebuffer));
+    }
+    
+    if (screenQuadMesh)
+    {
+        freeMesh(screenQuadMesh);
+        screenQuadMesh = nullptr;
+    }
+}
+
+// Render FBO texture to screen using screen quad
+void renderFBOToScreen(u32 fboIndex, u32 shaderProgram)
+{
+    if (fboIndex >= MAX_FBOS || !screenQuadMesh || viewportFBs[fboIndex].fbo == 0 || shaderProgram == 0) return;
+    
+    glDisable(GL_DEPTH_TEST);
+    glUseProgram(shaderProgram);
+    
+    // Set the screenTexture uniform
+    u32 textureUniform = glGetUniformLocation(shaderProgram, "screenTexture");
+    if (textureUniform != (u32)-1)
+    {
+        glUniform1i(textureUniform, 0);
+    }
+    
+    // Bind texture to unit 0
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, viewportFBs[fboIndex].texture);
+    
+    // Draw screen quad using glDrawArrays since it has no indices
+    glBindVertexArray(screenQuadMesh->vao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    
+    glEnable(GL_DEPTH_TEST);
 }
 
 void drawDockspaceAndPanels()

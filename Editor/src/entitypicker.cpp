@@ -2,35 +2,29 @@
 #include "editor.h"
 #include <druid.h>
 
-// Use the new Framebuffer API
-static Framebuffer idFB = {0};
+// ID framebuffer is now part of the multi-FBO system
 u32 idShader = 0;
 u32 idLocation = 0;
 
 void initIDFramebuffer()
 {
     idShader = createGraphicsProgram("../res/idShader.vert", "../res/idShader.frag");
-
-    u32 width = (viewportWidth > 0) ? viewportWidth : 1920;
-    u32 height = (viewportHeight > 0) ? viewportHeight : 1080;
-
-    idFB = createFramebuffer(width, height, GL_RGB8, true);
-
     idLocation = glGetUniformLocation(idShader, "entityID");
+    // ID framebuffer is now part of the multi-FBO system at index ID_FBO_INDEX
 }
 
 u32 count = 0;
 
 void renderIDPass()
 {
-    // Ensure ID framebuffer exists
-    if (idFB.fbo == 0)
+    // Ensure ID framebuffer exists in multi-FBO system
+    if (viewportFBs[ID_FBO_INDEX].fbo == 0)
     {
         WARN("ID framebuffer not initialized, skipping ID pass");
         return;
     }
 
-    bindFramebuffer(&idFB);
+    bindFramebuffer(&viewportFBs[ID_FBO_INDEX]);
     // clear the screen
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     // use the id shader
@@ -108,18 +102,18 @@ void renderIDPass()
     if (manipulateTransform)
     {
         Vec3 pos = positions[inspectorEntityID];
-        const f32 scaleSize = 0.002f;
+        const f32 scaleSize = 0.1f;
         const f32 scaleLength = 1.1f;
 
         // glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
 
         Transform X = {v3Add(pos, v3Right), quatIdentity(),
-                       (Vec3){scaleLength, scaleSize, scaleSize}};
+                       {scaleLength, scaleSize, scaleSize}};
         Transform Y = {v3Add(pos, v3Up), quatIdentity(),
-                       (Vec3){scaleSize, scaleLength, scaleSize}};
+                       {scaleSize, scaleLength, scaleSize}};
 
         Transform Z = {v3Add(pos, v3Back), quatIdentity(),
-                       (Vec3){scaleSize, scaleSize, scaleLength}};
+                       {scaleSize, scaleSize, scaleLength}};
 
         updateShaderMVP(idShader, X, sceneCam);
         glUniform3f(idLocation, 1.0f / 255.0f, 0.0f,
@@ -146,17 +140,30 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     u32 relativeX = (u32)(mouse.x - viewportTopLeft.x);
     u32 relativeY = (u32)(mouse.y - viewportTopLeft.y);
 
+    // bounds check
+    if (relativeX >= viewportWidth || relativeY >= viewportHeight)
+    {
+        PickResult result;
+        result.type = PICK_NONE;
+        return result;
+    }
+
     // flip Y for OpenGL (origin is bottom-left)
-    u32 flippedY = (viewportHeight - relativeY) - 2;
+    u32 flippedY = (viewportHeight - relativeY - 1);
 
     // read from ID buffer
     u8 pixel[3];
-    bindFramebuffer(&idFB);
+    bindFramebuffer(&viewportFBs[ID_FBO_INDEX]);
     glReadPixels(relativeX, flippedY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
     unbindFramebuffer();
 
     // reconstruct ID
     u32 id = (pixel[0] << 16) | (pixel[1] << 8) | (pixel[2]);
+    
+    // Debug output
+    DEBUG("Mouse pick at (%d, %d) -> pixel RGB(%d, %d, %d) -> ID: 0x%06X", 
+          relativeX, flippedY, pixel[0], pixel[1], pixel[2], id);
+    
     PickResult result;
     if (id == 0)
     {
@@ -218,11 +225,7 @@ void drawMeshIDPass(Mesh *mesh)
 
 void destroyIDFramebuffer()
 {
-    if (idFB.fbo != 0)
-    {
-        destroyFramebuffer(&idFB);
-        idFB = (Framebuffer){0};
-    }
+    // ID framebuffer is now destroyed as part of destroyMultiFBOs()
     if (idShader != 0)
     {
         freeShader(idShader);
@@ -232,7 +235,6 @@ void destroyIDFramebuffer()
 
 void resizeIDFramebuffer(u32 width, u32 height)
 {
-    if (idFB.fbo == 0)
-        return;
-    resizeFramebuffer(&idFB, width, height);
+    // ID framebuffer is now resized as part of resizeViewportFramebuffers()
+    // Nothing needed here since it's handled in the multi-FBO system
 }

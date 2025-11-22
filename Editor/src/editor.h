@@ -10,10 +10,17 @@
 // Forward declarations and global variables shared across the Editor
 extern Application* editor;
 
-// Shared rendering globals for the viewport
-extern Framebuffer viewportFB;
+// Shared rendering globals for the viewport - Multi-FBO system
+#define MAX_FBOS 5
+#define ID_FBO_INDEX 4  // Last FBO slot for ID picking
+extern Framebuffer viewportFBs[MAX_FBOS];
+extern Framebuffer finalDisplayFB;
 extern u32 viewportWidth;
 extern u32 viewportHeight;
+extern u32 activeFBO;
+
+// Screen quad for FBO rendering
+extern Mesh* screenQuadMesh;
 
 // Skybox resources
 extern Mesh* skyboxMesh;
@@ -53,6 +60,7 @@ extern ImVec2 g_viewportSize;
 extern Mesh* cubeMesh;
 extern u32 arrowShader;
 extern u32 colourLocation;
+extern u32 fboShader;
 extern b8 canMoveAxis;
 extern Vec3 manipulateAxis;
 
@@ -88,3 +96,8 @@ void destroy();
 void drawDockspaceAndPanels();
 
 void editorLog(LogLevel level, const char* msg);
+
+// Multi-FBO system functions
+void initMultiFBOs();
+void destroyMultiFBOs();
+void renderFBOToScreen(u32 fboIndex, u32 shaderProgram);

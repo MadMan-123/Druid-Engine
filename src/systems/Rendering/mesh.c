@@ -774,3 +774,62 @@ Mesh *createSkyboxMesh()
 
     return skyboxMesh;
 }
+
+Mesh *createQuadMesh()
+{
+    // Create vertices for fullscreen quad
+    Vertices *quadVertices = (Vertices *)malloc(sizeof(Vertices));
+    if (!quadVertices) return NULL;
+    
+    quadVertices->ammount = 6;
+    quadVertices->positions = (Vec3 *)malloc(6 * sizeof(Vec3));
+    quadVertices->texCoords = (Vec2 *)malloc(6 * sizeof(Vec2));
+    quadVertices->normals = (Vec3 *)malloc(6 * sizeof(Vec3));
+    
+    if (!quadVertices->positions || !quadVertices->texCoords || !quadVertices->normals)
+    {
+        if (quadVertices->positions) free(quadVertices->positions);
+        if (quadVertices->texCoords) free(quadVertices->texCoords);
+        if (quadVertices->normals) free(quadVertices->normals);
+        free(quadVertices);
+        return NULL;
+    }
+    
+    // Quad vertices (positions and texture coordinates)
+    // Triangle 1
+    quadVertices->positions[0] = (Vec3){-1.0f, 1.0f, 0.0f}; // Top-left
+    quadVertices->texCoords[0] = (Vec2){0.0f, 1.0f};
+    quadVertices->positions[1] = (Vec3){-1.0f, -1.0f, 0.0f}; // Bottom-left
+    quadVertices->texCoords[1] = (Vec2){0.0f, 0.0f};
+    quadVertices->positions[2] = (Vec3){1.0f, -1.0f, 0.0f}; // Bottom-right
+    quadVertices->texCoords[2] = (Vec2){1.0f, 0.0f};
+    
+    // Triangle 2
+    quadVertices->positions[3] = (Vec3){-1.0f, 1.0f, 0.0f}; // Top-left
+    quadVertices->texCoords[3] = (Vec2){0.0f, 1.0f};
+    quadVertices->positions[4] = (Vec3){1.0f, -1.0f, 0.0f}; // Bottom-right
+    quadVertices->texCoords[4] = (Vec2){1.0f, 0.0f};
+    quadVertices->positions[5] = (Vec3){1.0f, 1.0f, 0.0f}; // Top-right
+    quadVertices->texCoords[5] = (Vec2){1.0f, 1.0f};
+    
+    // Set dummy normals (not used for screen quad)
+    for (int i = 0; i < 6; i++)
+    {
+        quadVertices->normals[i] = (Vec3){0.0f, 0.0f, 1.0f};
+    }
+    
+    // Create the mesh
+    Mesh *quadMesh = (Mesh *)malloc(sizeof(Mesh));
+    if (quadMesh)
+    {
+        createMesh(quadMesh, quadVertices, 6, NULL, 0);
+    }
+    
+    // Clean up
+    free(quadVertices->positions);
+    free(quadVertices->texCoords);
+    free(quadVertices->normals);
+    free(quadVertices);
+    
+    return quadMesh;
+}

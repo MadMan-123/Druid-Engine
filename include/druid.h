@@ -778,6 +778,7 @@ extern "C"
                                  float cellSize);
     DAPI Mesh *createBoxMesh();
     DAPI Mesh *createSkyboxMesh();
+    DAPI Mesh *createQuadMesh();
 
     // Simple framebuffer abstraction (for editor viewport and ID picking)
     typedef struct Framebuffer

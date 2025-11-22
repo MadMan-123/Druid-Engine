@@ -223,12 +223,21 @@ void init()
     // cache uniform locations for efficiency
     skyboxViewLoc = glGetUniformLocation(skyboxShader, "view");
     skyboxProjLoc = glGetUniformLocation(skyboxShader, "projection");
+    
+    // Load FBO post-processing shader
+    fboShader = createGraphicsProgram("../res/FBOShader.vert", "../res/FBOShader.frag");
+    if (fboShader == 0) {
+        WARN("Failed to load FBO shader - post-processing effects disabled");
+    }
 
     // create a small cube mesh for gizmos and pickable handles
     cubeMesh = createBoxMesh();
 
     // initialize ID framebuffer for entity picking
     initIDFramebuffer();
+    
+    // initialize multi-FBO system
+    initMultiFBOs();
     
     DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed, resources->meshUsed);
 }
@@ -437,15 +446,13 @@ void destroy()
     freeMesh(cubeMesh);
     freeShader(shader);
     freeShader(arrowShader);
+    freeShader(fboShader);
     // free skybox resources
     freeMesh(skyboxMesh);
     freeTexture(cubeMapTexture);
     freeShader(skyboxShader);
     destroyIDFramebuffer();
-    if (viewportFB.fbo != 0) {
-        destroyFramebuffer(&viewportFB);
-        viewportFB = (Framebuffer){0};
-    }
+    destroyMultiFBOs();
     ImGui::DestroyContext();      // destroy imgui core
     ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
     ImGui_ImplSDL3_Shutdown();    // shutdown imgui sdl backend
