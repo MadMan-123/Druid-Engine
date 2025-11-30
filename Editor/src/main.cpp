@@ -197,7 +197,7 @@ void init()
     colourLocation = glGetUniformLocation(arrowShader, "colour");
 
     // setup camera that looks at the origin from z = +5
-    initCamera(&sceneCam, (Vec3){0.0f, 0.0f, 5.0f}, // position
+    initCamera(&sceneCam, {0.0f, 0.0f, 5.0f}, // position
                70.0f,                               // field of view
                1.0f,          // aspect (real aspect fixed every frame)
                0.1f, 100.0f); // near/far clip planes
@@ -240,6 +240,42 @@ void init()
     initMultiFBOs();
     
     DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed, resources->meshUsed);
+
+    
+    sceneManager = createSceneManager(DEFAULT_SCENE_CAPACITY);
+    if (!sceneManager) 
+    {
+        FATAL("Failed to create scene manager");
+        return;
+    }
+
+    DEBUG("Scene manager created with capacity: %d", DEFAULT_SCENE_CAPACITY);
+
+    //get all the .scene files in the scenes directory
+    u32 out = 0;
+    char** sceneFiles = listFilesInDirectory("../scenes/", &out);
+
+    //check if there are any scene files
+    if (out > 0)
+    {
+        SceneMetaData sceneData = {0};
+        //TODO: Implement proper scene loading but for now just load the first scene
+        sceneData = loadScene(sceneFiles[0]);
+        if (sceneData.entityCount > 0)
+        {
+            INFO("Loaded scene '%s' with %d entities", sceneFiles[0], sceneData.entityCount);
+            //add the loaded scene to the scene manager
+            sceneManager->scenes[0] = sceneData;
+            sceneManager->sceneCount = 1;
+        
+            // instantiate entities in the scene
+            for (u32 i = 0; i < sceneData.entityCount; i++)
+            {
+                
+            }
+        }
+    }
+
 }
 
 Vec2 cacheMouse = {0, 0};
@@ -431,6 +467,7 @@ void render(f32 dt)
 
 void destroy()
 {
+
     // destroy archetype and free its arenas
     destroyArchetype(&sceneArchetype);
     // clear pointers to archetype fields
@@ -452,10 +489,14 @@ void destroy()
     freeTexture(cubeMapTexture);
     freeShader(skyboxShader);
     destroyIDFramebuffer();
+    destroySceneManager(sceneManager);
+    free(sceneManager);
     destroyMultiFBOs();
-    ImGui::DestroyContext();      // destroy imgui core
+
     ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
+
     ImGui_ImplSDL3_Shutdown();    // shutdown imgui sdl backend
+    ImGui::DestroyContext();      // destroy imgui core
 }
 
 int main(int argc, char **argv)

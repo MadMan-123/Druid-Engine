@@ -39,13 +39,68 @@ SceneMetaData bakeScene(Scene* scene)
 
 SceneManager* createSceneManager(u32 sceneCapacity)
 {
+
     // TODO: allocate and initialize SceneManager
-    return NULL;
+    SceneManager* manager = (SceneManager*)malloc(sizeof(SceneManager));
+    if (!manager)
+    {
+        ERROR("Failed to allocate memory for SceneManager");
+        return NULL;
+    }
+
+
+    //create an arena for scene data
+    manager->data = (Arena*)malloc(sizeof(Arena));
+    if (!manager->data)
+    {
+        ERROR("Failed to allocate memory for SceneManager arena");
+        free(manager);
+        return NULL;
+    }
+
+    if (!arenaCreate(manager->data, sizeof(SceneManager) + sizeof(SceneMetaData) * sceneCapacity + sizeof(Scene) ))
+    {
+        ERROR("Failed to create arena for SceneManager");
+        free(manager->data);
+        free(manager);
+        return NULL;
+    }
+    manager->scenes = (SceneMetaData*)aalloc(manager->data, sizeof(SceneMetaData) * sceneCapacity);
+    if (!manager->scenes)
+    {
+        ERROR("Failed to allocate memory for SceneMetaData array");
+        free(manager);
+        return NULL;
+    }
+
+    manager->sceneCapacity = sceneCapacity;
+    manager->sceneCount = 0;
+
+    //allocate the current scene as an empty scene
+    manager->currentScene = (Scene*)aalloc(manager->data, sizeof(Scene));
+    if (!manager->currentScene)
+    {
+        ERROR("Failed to allocate memory for current Scene");
+        arenaDestroy(manager->data);
+        free(manager);
+        return NULL;
+    }
+
+
+    return manager;
 }
 
 void destroySceneManager(SceneManager* manager)
 {
-    // TODO: free nested archetypes and manager memory
+    // free all data associated with the scene manager
+    if (!manager)
+        return;
+
+    
+
+    arenaDestroy(manager->data);
+
+    DEBUG("Destroyed scene manager");    
 }
 
 u32 addScene(SceneManager* manager, SceneMetaData* sceneData)

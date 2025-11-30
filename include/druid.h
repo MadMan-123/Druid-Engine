@@ -400,6 +400,19 @@ extern "C"
     // Get the archetype soa field pointers for the given arena index.
     DAPI void **getArchetypeFields(Archetype *arch, u32 arenaIndex);
 
+    
+    //=====================================================================================================================
+    // Arenas
+    typedef struct
+    {
+        void *data;
+        u32 size;
+        u32 used;
+    } Arena;
+
+    DAPI bool arenaCreate(Arena *arena, u32 maxSize);
+    DAPI void *aalloc(Arena *arena, u32 size);
+    DAPI void arenaDestroy(Arena *arena);
     // ------------------------------------------------------------------
     // Scenes
     typedef struct {
@@ -413,10 +426,11 @@ extern "C"
     } SceneMetaData;
 
     typedef struct{
+        Arena* data;
         SceneMetaData* scenes;
+        Scene* currentScene;  // index of active scene
         u32 sceneCount;    // number of scenes currently stored
         u32 sceneCapacity; // allocated capacity
-        u32 currentScene;  // index of active scene
     } SceneManager;
 
     // Define an editor-visible name size constant if not present elsewhere
@@ -441,19 +455,6 @@ extern "C"
     DAPI SceneMetaData bakeScene(Scene* scene);
     // ------------------------------------------------------------------
 
-
-    //=====================================================================================================================
-    // Arenas
-    typedef struct
-    {
-        void *data;
-        u32 size;
-        u32 used;
-    } Arena;
-
-    DAPI bool arenaCreate(Arena *arena, u32 maxSize);
-    DAPI void *aalloc(Arena *arena, u32 size);
-    DAPI void arenaDestroy(Arena *arena);
 
     //=====================================================================================================================
     // Hash Map

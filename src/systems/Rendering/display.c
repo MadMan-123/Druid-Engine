@@ -69,6 +69,5 @@ void onDestroy(Display* display)
         //destroy the display context and window
 		SDL_GL_DestroyContext(display->glContext); // delete context
     	SDL_DestroyWindow(display->sdlWindow); 
-    	SDL_Quit();
 		free(display);
 }

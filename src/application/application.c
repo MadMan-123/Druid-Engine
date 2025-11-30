@@ -58,8 +58,15 @@ Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat rend
 //destroy the application
 void destroyApplication(Application* app)
 {
+    //call the developer's destroy function first 
+	app->destroy();
+    
     //destroy the display
 	onDestroy(app->display);
+    
+    //shutdown SDL after ImGui has been properly cleaned up
+    SDL_Quit();
+    
     //free app data	
 	shutdownLogging();
 	cleanUpResourceManager(resources);
@@ -146,6 +153,9 @@ void startApplication(Application* app)
 		}
 		app->fps = FPS;
 	}
+
+	//destroy the app
+	destroyApplication(app);
 }
 
 

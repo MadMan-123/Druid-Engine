@@ -325,11 +325,9 @@ static void drawViewportWindow()
     renderGameScene();
 
     // Debug: Show what's happening with the conditions
-    bool shaderReady = (fboShader != 0);
-    bool finalFBOReady = (finalDisplayFB.fbo != 0);  
-    bool activeFBOReady = (viewportFBs[activeFBO].fbo != 0);
-    
-    // Post-processing pipeline: render active FBO through shader to final display FBO
+        bool shaderReady = (fboShader != 0);
+        bool finalFBOReady = (finalDisplayFB.fbo != 0);  
+        bool activeFBOReady = (viewportFBs[activeFBO].fbo != 0);    // Post-processing pipeline: render active FBO through shader to final display FBO
     if (shaderReady && finalFBOReady && activeFBOReady) {
         // Bind final display FBO as render target
         bindFramebuffer(&finalDisplayFB);
@@ -750,14 +748,7 @@ void renderFBOToScreen(u32 fboIndex, u32 shaderProgram)
     glDisable(GL_DEPTH_TEST);
     glUseProgram(shaderProgram);
     
-    // Set the screenTexture uniform
-    u32 textureUniform = glGetUniformLocation(shaderProgram, "screenTexture");
-    if (textureUniform != (u32)-1)
-    {
-        glUniform1i(textureUniform, 0);
-    }
-    
-    // Bind texture to unit 0
+    // Bind texture to unit 0 (OpenGL will use this by default)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, viewportFBs[fboIndex].texture);
     
@@ -814,27 +805,27 @@ void drawDockspaceAndPanels()
                 showLoadModal = true;
             }
             ImGui::Separator();
-            if (sceneManager && sceneManager->sceneCount > 0)
-            {
-                // List existing scenes for quick switch/remove
-                for (u32 i = 0; i < sceneManager->sceneCount; i++)
-                {
-                    char label[64];
-                    snprintf(label, sizeof(label), "Scene %u", i);
-                    if (ImGui::MenuItem(label, NULL, (int)(sceneManager->currentScene == i)))
-                    {
-                        // switch scene
-                        switchScene(sceneManager, i);
-                    }
-                    ImGui::SameLine();
-                    ImGui::PushID(i);
-                    if (ImGui::SmallButton("Remove"))
-                    {
-                        removeScene(sceneManager, i);
-                    }
-                    ImGui::PopID();
-                }
-            }
+            //if (sceneManager && sceneManager->sceneCount > 0)
+            // {
+            //     // List existing scenes for quick switch/remove
+            //     for (u32 i = 0; i < sceneManager->sceneCount; i++)
+            //     {
+            //         char label[64];
+            //         snprintf(label, sizeof(label), "Scene %u", i);
+            //         if (ImGui::MenuItem(label, NULL, (int)(sceneManager->currentScene == i)))
+            //         {
+            //             // switch scene
+            //             switchScene(sceneManager, i);
+            //         }
+            //         ImGui::SameLine();
+            //         ImGui::PushID(i);
+            //         if (ImGui::SmallButton("Remove"))
+            //         {
+            //             removeScene(sceneManager, i);
+            //         }
+            //         ImGui::PopID();
+            //     }
+            //}
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -890,8 +881,8 @@ void drawDockspaceAndPanels()
             if (sceneManager && sceneManager->sceneCount > 0)
             {
                 // Save current scene by index
-                u32 idx = sceneManager->currentScene;
-                saveScene(scenePathBuffer, &sceneManager->scenes[idx]);
+                //u32 idx = sceneManager->currentScene;
+                //saveScene(scenePathBuffer, &sceneManager->scenes[idx]);
             }
             ImGui::CloseCurrentPopup();
         }
