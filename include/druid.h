@@ -438,9 +438,7 @@ extern "C"
     #define MAX_NAME_SIZE 256
     #endif
 
-    // SceneEntity archetype symbols (defined in world model scene.c)
-    DAPI extern FieldInfo SceneEntity_fields[];
-    DAPI extern StructLayout SceneEntity;
+
 
     // Scene manager API
     DAPI SceneManager* createSceneManager(u32 sceneCapacity);

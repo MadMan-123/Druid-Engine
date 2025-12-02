@@ -1,4 +1,7 @@
 
+// Define DRUID_H to enable archetype definitions in this compilation unit
+#define DRUID_H
+
 #include "editor.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
@@ -9,6 +12,18 @@
 
 #include "../deps/imgui/imgui_internal.h"
 #include "entitypicker.h"
+
+// SceneEntity archetype definition (moved from druid.h)
+DEFINE_ARCHETYPE(SceneEntity,
+    FIELD(Vec3, position),
+    FIELD(Vec4, rotation), 
+    FIELD(Vec3, scale),
+    FIELD(b8, isActive),
+    FIELD(char[MAX_NAME_SIZE], name),
+    FIELD(u32, modelID),
+    FIELD(u32, shaderHandle),
+    FIELD(u32, materialID)
+);
 
 // buffer of 2D array of strings
 const char **consoleLines = NULL;

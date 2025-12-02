@@ -10,6 +10,10 @@
 // Forward declarations and global variables shared across the Editor
 extern Application* editor;
 
+// SceneEntity archetype (defined in editor.cpp)
+extern FieldInfo SceneEntity_fields[];
+extern StructLayout SceneEntity;
+
 // Shared rendering globals for the viewport - Multi-FBO system
 #define MAX_FBOS 5
 #define ID_FBO_INDEX 4  // Last FBO slot for ID picking

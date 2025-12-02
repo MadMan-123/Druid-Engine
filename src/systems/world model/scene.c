@@ -2,25 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// Define archetype layout for SceneEntity
-DAPI FieldInfo SceneEntity_fields[] = {
-    FIELD(Vec3, position),
-    FIELD(Vec4, rotation),
-    FIELD(Vec3, scale),
-    FIELD(b8, isActive),
-    FIELD(char[MAX_NAME_SIZE], name),
-    FIELD(u32, modelID),
-    FIELD(u32, materialID),
-    FIELD(u32, shaderHandle),
-};
 
-
-DAPI StructLayout SceneEntity = {"SceneEntity", SceneEntity_fields, (u32)(sizeof(SceneEntity_fields) / sizeof(FieldInfo))};
 
 SceneMetaData bakeScene(Scene* scene)
 {
     SceneMetaData md = {0};
-
+    
     //iterate through the scene archetypes and copy the transform data into the saved archetype
     for (u32 i = 0; i < scene->archetypeCount; i++)
     {
@@ -28,7 +15,7 @@ SceneMetaData bakeScene(Scene* scene)
         if(!archetype)
             continue;
 
-        //get the positions, rotations, scales fields and what archetype id
+        //get the positions, rotations, scales fields and what archetype 
         
 
 
@@ -86,6 +73,8 @@ SceneManager* createSceneManager(u32 sceneCapacity)
         return NULL;
     }
 
+    
+
 
     return manager;
 }
@@ -96,8 +85,6 @@ void destroySceneManager(SceneManager* manager)
     if (!manager)
         return;
 
-    
-
     arenaDestroy(manager->data);
 
     DEBUG("Destroyed scene manager");    
@@ -106,12 +93,37 @@ void destroySceneManager(SceneManager* manager)
 u32 addScene(SceneManager* manager, SceneMetaData* sceneData)
 {
     // TODO: add scene (grow array if necessary)
-    return (u32)-1;
+    if (manager->sceneCount >= manager->sceneCapacity)
+    {
+        WARN("SceneManager capacity reached, cannot add more scenes");
+        return (u32)-1;
+    }
+
+    //copy the scene data into the manager
+    manager->scenes[manager->sceneCount] = *sceneData;
+    manager->sceneCount++;
+    return manager->sceneCount - 1;
 }
 
 void removeScene(SceneManager* manager, u32 sceneIndex)
 {
-    // TODO: remove scene and free associated resources
+    //goto the index and remove it, shift all scenes down
+    if (sceneIndex >= manager->sceneCount)
+    {
+        WARN("Invalid scene index %d for removal", sceneIndex);
+        return;
+    } 
+
+    //remove the scene 
+    manager->scenes[sceneIndex] = (SceneMetaData){0};
+
+    //shift all scenes down from the removed index up to sceneCount - 1
+    for (u32 i = sceneIndex; i < manager->sceneCount - 1; i++)
+    {
+        manager->scenes[i] = manager->scenes[i + 1];
+    }
+    manager->sceneCount--;
+
 }
 
 void switchScene(SceneManager* manager, u32 sceneIndex)
