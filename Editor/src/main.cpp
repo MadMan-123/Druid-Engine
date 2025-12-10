@@ -27,8 +27,14 @@ b8 canMoveAxis = false;
 Vec3 manipulateAxis = v3Zero;
 
 // ImGui allocator wrappers
-static void* MyMalloc(size_t size, void*) { return malloc(size); }
-static void MyFree(void* ptr, void*) { free(ptr); }
+static void *MyMalloc(size_t size, void *)
+{
+    return malloc(size);
+}
+static void MyFree(void *ptr, void *)
+{
+    free(ptr);
+}
 
 static void moveCamera(f32 dt)
 {
@@ -132,7 +138,7 @@ char *names = nullptr;
 u32 *modelIDs = nullptr;
 u32 *shaderHandles = nullptr;
 u32 *entityMaterialIDs = nullptr;
-Material* materials = nullptr;
+Material *materials = nullptr;
 
 void init()
 {
@@ -142,16 +148,17 @@ void init()
     entitySizeCache = entitySize;
     u32 outArenas = 0;
     // create the scene archetype (new archetype system)
-    if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype)) {
+    if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype))
+    {
         FATAL("Failed to create archetype for scene entities");
         return;
     }
 
     DEBUG("Archetype created with capacity: %d\n", entitySizeCache);
-   
 
     void **fields = getArchetypeFields(&sceneArchetype, 0);
-    if (!fields) {
+    if (!fields)
+    {
         FATAL("Failed to get archetype fields");
         return;
     }
@@ -165,18 +172,19 @@ void init()
     shaderHandles = (u32 *)fields[6];
     entityMaterialIDs = (u32 *)fields[7];
     // set to empty strings
-	DEBUG("Setting up ImGui with SDL");
+    DEBUG("Setting up ImGui with SDL");
     // initializes imgui, resources and default scene
     //  After SDL window and OpenGL context creation:
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-	DEBUG("Created Context");
+    DEBUG("Created Context");
     ImGuiIO &io = ImGui::GetIO();
     (void)io;
     io.ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+    io.ConfigFlags |=
+        ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
 
     // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     ImGui::StyleColorsDark();
@@ -198,7 +206,7 @@ void init()
 
     // setup camera that looks at the origin from z = +5
     initCamera(&sceneCam, {0.0f, 0.0f, 5.0f}, // position
-               70.0f,                               // field of view
+               70.0f,                         // field of view
                1.0f,          // aspect (real aspect fixed every frame)
                0.1f, 100.0f); // near/far clip planes
 
@@ -223,10 +231,12 @@ void init()
     // cache uniform locations for efficiency
     skyboxViewLoc = glGetUniformLocation(skyboxShader, "view");
     skyboxProjLoc = glGetUniformLocation(skyboxShader, "projection");
-    
+
     // Load FBO post-processing shader
-    fboShader = createGraphicsProgram("../res/FBOShader.vert", "../res/FBOShader.frag");
-    if (fboShader == 0) {
+    fboShader =
+        createGraphicsProgram("../res/FBOShader.vert", "../res/FBOShader.frag");
+    if (fboShader == 0)
+    {
         WARN("Failed to load FBO shader - post-processing effects disabled");
     }
 
@@ -235,15 +245,15 @@ void init()
 
     // initialize ID framebuffer for entity picking
     initIDFramebuffer();
-    
+
     // initialize multi-FBO system
     initMultiFBOs();
-    
-    DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed, resources->meshUsed);
 
-    
+    DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed,
+          resources->meshUsed);
+
     sceneManager = createSceneManager(DEFAULT_SCENE_CAPACITY);
-    if (!sceneManager) 
+    if (!sceneManager)
     {
         FATAL("Failed to create scene manager");
         return;
@@ -251,31 +261,31 @@ void init()
 
     DEBUG("Scene manager created with capacity: %d", DEFAULT_SCENE_CAPACITY);
 
-    //get all the .scene files in the scenes directory
+    // get all the .scene files in the scenes directory
     u32 out = 0;
-    char** sceneFiles = listFilesInDirectory("../scenes/", &out);
+    char **sceneFiles = listFilesInDirectory("../scenes/", &out);
 
-    //check if there are any scene files
+    // check if there are any scene files
     if (out > 0)
     {
         SceneMetaData sceneData = {0};
-        //TODO: Implement proper scene loading but for now just load the first scene
+        // TODO: Implement proper scene loading but for now just load the first
+        // scene
         sceneData = loadScene(sceneFiles[0]);
         if (sceneData.entityCount > 0)
         {
-            INFO("Loaded scene '%s' with %d entities", sceneFiles[0], sceneData.entityCount);
-            //add the loaded scene to the scene manager
+            INFO("Loaded scene '%s' with %d entities", sceneFiles[0],
+                 sceneData.entityCount);
+            // add the loaded scene to the scene manager
             sceneManager->scenes[0] = sceneData;
             sceneManager->sceneCount = 1;
-        
+
             // instantiate entities in the scene
             for (u32 i = 0; i < sceneData.entityCount; i++)
             {
-                
             }
         }
     }
-
 }
 
 Vec2 cacheMouse = {0, 0};
@@ -328,8 +338,9 @@ void update(f32 dt)
                     u32 selectedEntity = id - 1;
                     inspectorEntityID = selectedEntity;
                     currentInspectorState = ENTITY_VIEW;
-                    INFO("Selected Entity %d: %s (Model ID: %d)\n", selectedEntity,
-                         &names[selectedEntity * MAX_NAME_SIZE], modelIDs[selectedEntity]);
+                    INFO("Selected Entity %d: %s (Model ID: %d)\n",
+                         selectedEntity, &names[selectedEntity * MAX_NAME_SIZE],
+                         modelIDs[selectedEntity]);
 
                     // engage the transform manipulation tools
                     manipulateTransform = true;
@@ -374,8 +385,10 @@ void update(f32 dt)
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
         {
             // Add bounds checking for entity access
-            if (inspectorEntityID >= entitySizeCache) {
-                WARN("Inspector entity ID %u out of bounds (max: %u)", inspectorEntityID, entitySizeCache);
+            if (inspectorEntityID >= entitySizeCache)
+            {
+                WARN("Inspector entity ID %u out of bounds (max: %u)",
+                     inspectorEntityID, entitySizeCache);
                 return;
             }
 
@@ -495,8 +508,8 @@ void destroy()
 
     ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
 
-    ImGui_ImplSDL3_Shutdown();    // shutdown imgui sdl backend
-    ImGui::DestroyContext();      // destroy imgui core
+    ImGui_ImplSDL3_Shutdown(); // shutdown imgui sdl backend
+    ImGui::DestroyContext();   // destroy imgui core
 }
 
 int main(int argc, char **argv)

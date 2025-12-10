@@ -302,6 +302,55 @@ extern "C"
 
     static const Vec3 v3Forward = {0.0f, 0.0f, -1.0f};
     static const Vec3 v3Back = {0.0f, 0.0f, 1.0f};
+    //=====================================================================================================================
+    // Arenas
+
+    typedef struct
+    {
+        u32 size;
+        u32 used;
+    } Arena;
+
+    DAPI bool arenaCreate(Arena *arena, u32 maxSize);
+    DAPI void *aalloc(Arena *arena, u32 size);
+    DAPI void arenaDestroy(Arena *arena);
+
+    //=====================================================================================================================
+    // Hash Map
+
+    // Thank you Jacob Sorber for your video on hash tables in C
+
+#define MAX__NAME 256
+
+    typedef struct
+    {
+        void *key;     // pointer to key data
+        void *value;   // pointer to value data
+        bool occupied; // whether this slot is in use
+    } Pair;
+
+    typedef struct
+    {
+        u32 capacity;
+        u32 count;
+        Pair *pairs;
+        u32 keySize;
+        u32 valueSize;
+        Arena *arena;
+
+        u32 (*hashFunc)(const void *key, u32 capacity);
+        bool (*equalsFunc)(const void *keyA, const void *keyB);
+    } HashMap;
+
+    DAPI bool createMap(HashMap *map, u32 capacity, u32 keySize, u32 valueSize,
+                        u32 (*hashFunc)(const void *, u32),
+                        bool (*equalsFunc)(const void *, const void *));
+    DAPI u32 hash(char *name, u32 mapSize);
+    DAPI void printMap(HashMap *map);
+    DAPI bool insertMap(HashMap *map, const void *key, const void *value);
+    DAPI void destroyMap(HashMap *map);
+
+    DAPI bool findInMap(HashMap *map, const void *key, void *outValue);
 
     //=====================================================================================================================
     // SOA ECS
@@ -328,15 +377,17 @@ extern "C"
     } EntityArena;
 
     // create Entity Arena
-    DAPI EntityArena *createEntityArena(StructLayout *layout, u32 entityCount, u32 *outArenas);
+    DAPI EntityArena *createEntityArena(StructLayout *layout, u32 entityCount,
+                                        u32 *outArenas);
 
     DAPI void printEntityArena(EntityArena *arena);
 
     // free the arena
-    DAPI bool freeEntityArena(EntityArena* arena, u32 arenaCount);    
+    DAPI bool freeEntityArena(EntityArena *arena, u32 arenaCount);
     DAPI u32 createEntity(EntityArena *arena);
 
-    // Low-level arena API: remove entity at index from an arena. Returns true on success.
+    // Low-level arena API: remove entity at index from an arena. Returns true
+    // on success.
     DAPI b8 removeEntityFromArena(EntityArena *arena, u32 index);
 
     // calculate Entity Size based of a struct layout
@@ -377,119 +428,87 @@ extern "C"
 #endif
 
     //=====================================================================================================================
-    // Archetypes 
+    // Archetypes
 
     typedef struct Archetype
     {
-        u32 id;               
-        StructLayout *layout; 
+        u32 id;
+        StructLayout *layout;
         EntityArena *arena;
         u32 arenaCount;
-        u32 capacity;         
+        u32 capacity;
     } Archetype;
 
-  
     // Archetype API (declarations only) - implementations live in world model
-    DAPI b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype);
+    DAPI b8 createArchetype(StructLayout *layout, u32 capacity,
+                            Archetype *outArchetype);
     DAPI b8 destroyArchetype(Archetype *arch);
 
     // Create an entity in the given archetype. Returns a packed u64 handle
     // (arch id + index) via outEntity. Returns true on success.
-    DAPI b8 removeEntityFromArchetype(Archetype *arch, u32 arenaIndex, u32 index);
+    DAPI b8 removeEntityFromArchetype(Archetype *arch, u32 arenaIndex,
+                                      u32 index);
 
     // Get the archetype soa field pointers for the given arena index.
     DAPI void **getArchetypeFields(Archetype *arch, u32 arenaIndex);
 
-    
     //=====================================================================================================================
-    // Arenas
+
+    typedef void (*SystemFn)(Archetype, f32);
+
+    // Entity manager
     typedef struct
     {
-        void *data;
-        u32 size;
-        u32 used;
-    } Arena;
+        u32 archetypeCount;
+        Archetype *archetypes;
+        SystemFn *systems;
+        HashMap indexMap;
+    } EntityManager;
 
-    DAPI bool arenaCreate(Arena *arena, u32 maxSize);
-    DAPI void *aalloc(Arena *arena, u32 size);
-    DAPI void arenaDestroy(Arena *arena);
     // ------------------------------------------------------------------
     // Scenes
-    typedef struct {
-        Archetype *archetypes;
-        u32 archetypeCount;
+
+#define MAX_SCENE_NAME 128
+    typedef struct
+    {
+        EntityManager manager;
+
     } Scene;
 
-    typedef struct{
-        u32 entityCount;
-        Archetype savedEntities;
-    } SceneMetaData;
+    typedef struct
+    {
+        u32 archetypeCount;
+        char *archetypeNames[MAX_SCENE_NAME];
+        Archetype *archetypes;
+    } SceneData;
 
-    typedef struct{
-        Arena* data;
-        SceneMetaData* scenes;
-        Scene* currentScene;  // index of active scene
+    typedef struct
+    {
+        Arena *data;
+        SceneData *scenes;
+        Scene *currentScene;
         u32 sceneCount;    // number of scenes currently stored
         u32 sceneCapacity; // allocated capacity
     } SceneManager;
 
-    // Define an editor-visible name size constant if not present elsewhere
-    #ifndef MAX_NAME_SIZE
-    #define MAX_NAME_SIZE 256
-    #endif
-
-
+    DAPI extern SceneManager *sceneManager;
+// Define an editor-visible name size constant if not present elsewhere
+#ifndef MAX_NAME_SIZE
+#define MAX_NAME_SIZE 256
+#endif
 
     // Scene manager API
-    DAPI SceneManager* createSceneManager(u32 sceneCapacity);
-    DAPI void destroySceneManager(SceneManager* manager);
-    DAPI u32 addScene(SceneManager* manager, SceneMetaData* sceneData);
-    DAPI void removeScene(SceneManager* manager, u32 sceneIndex);
-    DAPI void switchScene(SceneManager* manager, u32 sceneIndex);
+    DAPI SceneManager *createSceneManager(u32 sceneCapacity);
+    DAPI void destroySceneManager(SceneManager *manager);
+    DAPI u32 addScene(SceneManager *manager, SceneData *sceneData);
+    DAPI void removeScene(SceneManager *manager, u32 sceneIndex);
+    DAPI void switchScene(SceneManager *manager, u32 sceneIndex);
 
-    // Persist/load SceneMetaData to disk (implementation flexible)
-    DAPI void saveScene(const char *filePath, SceneMetaData* data);
-    DAPI SceneMetaData loadScene(const char *filePath);
-    DAPI SceneMetaData bakeScene(Scene* scene);
+    // Persist/load SceneData to disk (implementation flexible)
+    DAPI void saveScene(const char *filePath, SceneData *data);
+    DAPI SceneData loadScene(const char *filePath);
+    DAPI SceneData bakeScene(Scene *scene);
     // ------------------------------------------------------------------
-
-
-    //=====================================================================================================================
-    // Hash Map
-
-    // Thank you Jacob Sorber for your video on hash tables in C
-
-#define MAX_NAME 256
-
-    typedef struct
-    {
-        void *key;     // pointer to key data
-        void *value;   // pointer to value data
-        bool occupied; // whether this slot is in use
-    } Pair;
-
-    typedef struct
-    {
-        u32 capacity;
-        u32 count;
-        Pair *pairs;
-        u32 keySize;
-        u32 valueSize;
-        Arena *arena;
-
-        u32 (*hashFunc)(const void *key, u32 capacity);
-        bool (*equalsFunc)(const void *keyA, const void *keyB);
-    } HashMap;
-
-    DAPI bool createMap(HashMap *map, u32 capacity, u32 keySize, u32 valueSize,
-                        u32 (*hashFunc)(const void *, u32),
-                        bool (*equalsFunc)(const void *, const void *));
-    DAPI u32 hash(char *name, u32 mapSize);
-    DAPI void printMap(HashMap *map);
-    DAPI bool insertMap(HashMap *map, const void *key, const void *value);
-    DAPI void destroyMap(HashMap *map);
-
-    DAPI bool findInMap(HashMap *map, const void *key, void *outValue);
 
     //=====================================================================================================================
 
@@ -643,9 +662,12 @@ extern "C"
     // render meshes with open gl
     DAPI u32 createGraphicsProgram(const char *vertPath, const char *fragPath);
 
-    // creates a program with three shaders, a vertex , geometry and fragment shader used to
-    // render meshes with open gl but with a geometry shader in between to control the primitives
-    DAPI u32 createGraphicsProgramWithGeometry(const char *vertPath, const char *geomPath, const char *fragPath);
+    // creates a program with three shaders, a vertex , geometry and fragment
+    // shader used to render meshes with open gl but with a geometry shader in
+    // between to control the primitives
+    DAPI u32 createGraphicsProgramWithGeometry(const char *vertPath,
+                                               const char *geomPath,
+                                               const char *fragPath);
     // craetes a compute shader program
     DAPI u32 createComputeProgram(const char *computePath);
     // error tool
@@ -656,8 +678,10 @@ extern "C"
     DAPI void updateShaderMVP(const u32 shader, const Transform transform,
                               const Camera camera);
 
-    // Uniform Buffer Object (UBO) helper API (simple wrapper similar to FBO API)
-    DAPI u32 createUBO(u32 size, const void *data, GLenum usage); // returns buffer handle
+    // Uniform Buffer Object (UBO) helper API (simple wrapper similar to FBO
+    // API)
+    DAPI u32 createUBO(u32 size, const void *data,
+                       GLenum usage); // returns buffer handle
     DAPI void updateUBO(u32 ubo, u32 offset, u32 size, const void *data);
     DAPI void bindUBOBase(u32 ubo, u32 bindingPoint);
     DAPI void freeUBO(u32 ubo);
@@ -665,7 +689,6 @@ extern "C"
     DAPI u32 createCoreShaderUBO();
 
     DAPI void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos);
-
 
     // Textures
     // 32 textures MAX
@@ -754,7 +777,8 @@ extern "C"
                                        u32 *meshCount);
     DAPI Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count);
 
-    DAPI void updateMaterial(Material *material, const MaterialUniforms *uniforms);
+    DAPI void updateMaterial(Material *material,
+                             const MaterialUniforms *uniforms);
     // draws a given mesh
     DAPI void drawMesh(Mesh *mesh);
     // creates a mesh from vertices and indices
@@ -792,7 +816,8 @@ extern "C"
 
     } Framebuffer;
 
-    DAPI Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b8 hasDepth);
+    DAPI Framebuffer createFramebuffer(u32 width, u32 height,
+                                       GLenum internalFormat, b8 hasDepth);
     DAPI void resizeFramebuffer(Framebuffer *fb, u32 width, u32 height);
     DAPI void bindFramebuffer(Framebuffer *fb);
     DAPI void unbindFramebuffer(void);
@@ -1156,7 +1181,7 @@ extern "C"
     DAPI Collider *createCubeCollider(Vec3 scale);
     DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
 
-DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
+    DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
 
 #ifdef __cplusplus
 }
