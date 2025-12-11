@@ -91,7 +91,6 @@ int main(int argc, char **argv) {
     assert(game != NULL && "Application could not be created");
     game->width = 1280; game->height = 720;
     run(game);
-    destroyApplication(game);
     return 0;
 }
 

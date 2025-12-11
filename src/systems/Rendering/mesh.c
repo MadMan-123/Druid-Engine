@@ -71,7 +71,6 @@ Mesh *loadMeshFromAssimp(const char *filename, u32 *meshCount)
 
 Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
 {
-
     // null check
     if (!scene)
     {
@@ -89,41 +88,61 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
     // set the mesh count
     *meshCount = scene->mNumMeshes;
 
+    // calculate total vertices and indices across all meshes
+    u32 totalVertices = 0;
+    u32 totalIndices = 0;
+    for (u32 m = 0; m < scene->mNumMeshes; m++)
+    {
+        struct aiMesh *aimesh = scene->mMeshes[m];
+        totalVertices += aimesh->mNumVertices;
+        // Since we use aiProcess_Triangulate, all faces are triangles (3 indices each)
+        totalIndices += aimesh->mNumFaces * 3;
+    }
+
+    // Calculate arena size: positions + texcoords + normals + indices
+    u32 arenaSize = (totalVertices * sizeof(Vec3)) +  // positions
+                    (totalVertices * sizeof(Vec2)) +  // texcoords  
+                    (totalVertices * sizeof(Vec3)) +  // normals
+                    (totalIndices * sizeof(u32));     // indices
+
+    // Create arena for all temporary mesh data (single allocation)
+    Arena meshArena;
+    if (!arenaCreate(&meshArena, arenaSize))
+    {
+        ERROR("Failed to create mesh loading arena (size: %u bytes)", arenaSize);
+        return NULL;
+    }
+
     // allocate array for output meshes
     Mesh *outputMesh = (Mesh *)malloc(sizeof(Mesh) * scene->mNumMeshes);
+    if (!outputMesh)
+    {
+        ERROR("Failed to allocate output mesh array");
+        arenaDestroy(&meshArena);
+        return NULL;
+    }
 
     // create each mesh individually
     for (u32 m = 0; m < scene->mNumMeshes; m++)
     {
         struct aiMesh *aimesh = scene->mMeshes[m];
 
-        // count indices for this mesh
-        u32 meshIndexCount = 0;
-        for (u32 i = 0; i < aimesh->mNumFaces; i++)
-        {
-            meshIndexCount += aimesh->mFaces[i].mNumIndices;
-        }
+        u32 meshIndexCount = aimesh->mNumFaces * 3;
 
-        // allocate vertex data for this mesh
+        // Allocate all vertex data from arena 
         Vertices vertices;
         vertices.ammount = aimesh->mNumVertices;
-        vertices.positions =
-            (Vec3 *)malloc(sizeof(Vec3) * aimesh->mNumVertices);
-        vertices.texCoords =
-            (Vec2 *)malloc(sizeof(Vec2) * aimesh->mNumVertices);
-        vertices.normals = (Vec3 *)malloc(sizeof(Vec3) * aimesh->mNumVertices);
-        u32 *indices =
-            malloc(sizeof(u32) * (meshIndexCount > 0 ? meshIndexCount : 1));
+        vertices.positions = (Vec3 *)aalloc(&meshArena, sizeof(Vec3) * aimesh->mNumVertices);
+        vertices.texCoords = (Vec2 *)aalloc(&meshArena, sizeof(Vec2) * aimesh->mNumVertices);
+        vertices.normals = (Vec3 *)aalloc(&meshArena, sizeof(Vec3) * aimesh->mNumVertices);
+        u32 *indices = (u32 *)aalloc(&meshArena, sizeof(u32) * meshIndexCount);
 
         // Check for allocation failures
-        if (!vertices.positions || !vertices.texCoords || !vertices.normals ||
-            !indices)
+        if (!vertices.positions || !vertices.texCoords || !vertices.normals || !indices)
         {
-            ERROR("Failed to allocate memory for mesh data");
-            free(vertices.positions);
-            free(vertices.texCoords);
-            free(vertices.normals);
-            free(indices);
+            ERROR("Arena allocation failed for mesh %u", m);
+            free(outputMesh);
+            arenaDestroy(&meshArena);
             return NULL;
         }
 
@@ -162,26 +181,23 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
             }
         }
 
-        // copy indices for this mesh
-        u32 indexOffset = 0;
+        // we can use memcpy per face instead of nested index loops
+        u32 *indexPtr = indices;
         for (u32 i = 0; i < aimesh->mNumFaces; i++)
         {
-            for (u32 j = 0; j < aimesh->mFaces[i].mNumIndices; j++)
-            {
-                indices[indexOffset + j] = aimesh->mFaces[i].mIndices[j];
-            }
-            indexOffset += aimesh->mFaces[i].mNumIndices;
+            // Direct memcpy of 3 indices (12 bytes) per face
+            memcpy(indexPtr, aimesh->mFaces[i].mIndices, 3 * sizeof(u32));
+            indexPtr += 3;
         }
 
-        // create mesh for this mesh data
+        // create mesh for this mesh data (uploads to GPU)
         createMesh(&outputMesh[m], &vertices, aimesh->mNumVertices, indices,
                    meshIndexCount);
-        // cleanup this mesh's data
-        free(vertices.positions);
-        free(vertices.texCoords);
-        free(vertices.normals);
-        free(indices);
+        
     }
+
+    arenaDestroy(&meshArena);
+    
     return outputMesh;
 }
 

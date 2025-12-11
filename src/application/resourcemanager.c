@@ -105,18 +105,18 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     if (!createMap(&manager->textureIDs, textureCount,
                    sizeof(char) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
     {
-        FATAL("Texture Hash map failed to create");
+            FATAL("Texture Hash map failed to create");
     }
     if (!createMap(&manager->shaderIDs, shaderCount,
                    sizeof(char) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
     {
-        FATAL("Shader Hash map failed to create");
+            FATAL("Shader Hash map failed to create");
     }
     // create hashmaps
     if (!createMap(&manager->materialIDs, materialCount,
                    sizeof(char) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
     {
-        FATAL("Material Hash map failed to create");
+            FATAL("Material Hash map failed to create");
     }
     if (!createMap(&manager->mesheIDs, meshCount, sizeof(char) * MAX_NAME_SIZE,
                    sizeof(u32), djb2Hash, equals))
@@ -129,6 +129,7 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
         FATAL("Model Hash map failed to create");
     }
 
+    if(DEBUG_RESOURCES)
     DEBUG("Resource Manager created successfully\n");
 
     return manager;
@@ -156,22 +157,23 @@ void readResources(ResourceManager *manager, const char *filename)
                                     "frag", "geom", "glsl", "comp",
                                     "png",  "jpg",  "bmp"}; // textures
 
-    TRACE("Reading resources from %s\n", filename);
+    if(DEBUG_RESOURCES)
+        TRACE("Reading resources from %s\n", filename);
     // do a recursive search for all files in the RES_FOLDER directory
     u32 outCount = 0;
     char **output = listFilesInDirectory("../" RES_FOLDER, &outCount);
     qsort(output, outCount, sizeof(char*), compare_files_for_loading_priority);
+    if(DEBUG_RESOURCES)
     INFO("Found %d files in directory %s\n", outCount, "../" RES_FOLDER);
 
     HashMap shaderNameMap;
     if (!createMap(&shaderNameMap, outCount, sizeof(char) * MAX_NAME_SIZE,
                    sizeof(u32), djb2Hash, equals))
     {
-        FATAL("Model Hash map failed to create");
+            FATAL("Model Hash map failed to create");
+        return;
     }
-
     //load default shader which is called "shader.*"
-
     const char *defaultShaderName = "default";
     
     //add default shader to resource manager
@@ -313,10 +315,12 @@ void readResources(ResourceManager *manager, const char *filename)
 
                         if(shaderHandle != 0) 
                         {
-                            TRACE("Loaded shader: %s", shaderName);
+                            if(DEBUG_RESOURCES)
+                                TRACE("Loaded shader: %s", shaderName);
                             if(hasGeom)
                             {
-                                TRACE("Custom geometry shader added");
+                                if(DEBUG_RESOURCES)
+                                    TRACE("Custom geometry shader added");
                             }
                             insertMap(&manager->shaderIDs, shaderName, &manager->shaderUsed);
                             manager->shaderHandles[manager->shaderUsed] = shaderHandle;
@@ -343,6 +347,8 @@ void readResources(ResourceManager *manager, const char *filename)
                         snprintf(texName, MAX_NAME_SIZE, "%s", fileName);
 
                         insertMap(&manager->textureIDs, texName, &manager->textureUsed);
+                        if(DEBUG_RESOURCES)
+                            INFO("Loaded texture: %s", texName);
                         manager->textureUsed++;
                         break; 
                     }
@@ -400,7 +406,8 @@ void listFilesRecursive(const char *directory, char ***fileList, u32 *count,
                 break;
             }
             (*fileList)[*count] = _strdup(fullPath);
-            TRACE("Found file: %s", fullPath);
+            if(DEBUG_RESOURCES)
+                TRACE("Found file: %s", fullPath);
             (*count)++;
         }
     } while (FindNextFile(hFind, &findFileData));

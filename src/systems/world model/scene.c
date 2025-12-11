@@ -32,11 +32,12 @@ SceneManager *createSceneManager(u32 sceneCapacity)
     }
 
     // 1024 bytes extra
-    const u32 EXTRA_DATA = 1024
+    const u32 EXTRA_DATA = 1024;
 
-    if (!arenaCreate(manager->data, sizeof(SceneManager) +
-                                        (sizeof(SceneData) + (EXTRA_DATA) * sceneCapacity +
-                                        sizeof(Scene)))
+    if (!arenaCreate(manager->data,
+                     sizeof(SceneManager) +
+                         (sizeof(SceneData) + (EXTRA_DATA)*sceneCapacity +
+                          sizeof(Scene))))
     {
         ERROR("Failed to create arena for SceneManager");
         free(manager->data);

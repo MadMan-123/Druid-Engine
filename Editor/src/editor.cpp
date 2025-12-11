@@ -31,9 +31,6 @@ const char **consoleLines = NULL;
 // Allocate the storage here
 Application *editor = nullptr;
 
-// Scene manager instance (defined here so UI can reference it)
-SceneManager* sceneManager = NULL;
-
 // UI state for scene menu modals
 static char scenePathBuffer[512] = "";
 static b8 showSaveModal = false;
@@ -893,12 +890,7 @@ void drawDockspaceAndPanels()
         ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
         if (ImGui::Button("Save"))
         {
-            if (sceneManager && sceneManager->sceneCount > 0)
-            {
-                // Save current scene by index
-                //u32 idx = sceneManager->currentScene;
-                //saveScene(scenePathBuffer, &sceneManager->scenes[idx]);
-            }
+            // TODO: Implement scene saving
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -916,11 +908,7 @@ void drawDockspaceAndPanels()
         ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
         if (ImGui::Button("Load"))
         {
-            SceneMetaData md = loadScene(scenePathBuffer);
-            if (sceneManager)
-            {
-                addScene(sceneManager, &md);
-            }
+            // TODO: Implement scene loading
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -940,16 +928,7 @@ void drawDockspaceAndPanels()
         ImGui::InputInt("Initial Capacity", &newCapacity);
         if (ImGui::Button("Create"))
         {
-            if (!sceneManager)
-            {
-                sceneManager = createSceneManager((u32)newCapacity);
-            }
-            else
-            {
-                // Optionally add an empty SceneMetaData
-                SceneMetaData md = {0};
-                addScene(sceneManager, &md);
-            }
+            // TODO: Implement new scene creation
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();

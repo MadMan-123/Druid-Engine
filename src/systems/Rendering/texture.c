@@ -15,6 +15,8 @@ u32 initTexture(const char* fileName)
 
 	if (imageData == NULL)
 	{
+
+		ERROR("STB ERROR %s", stbi_failure_reason());
 		ERROR("texture load failed %s", fileName);
 		return 0;
 	}

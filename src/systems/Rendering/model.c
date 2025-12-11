@@ -81,6 +81,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         snprintf(matName, MAX_NAME_SIZE, "%s-material-%d", fileName, i);
         insertMap(&manager->materialIDs, matName, &manager->materialUsed);
 
+        if(DEBUG_RESOURCES)
         TRACE(
             "Material %d added to resource manager at index %d with name %s\n",
             i, manager->materialUsed, matName);
@@ -133,7 +134,8 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         // Map Assimp material index to ResourceManager material index
         u32 assimpMaterialIndex = scene->mMeshes[i]->mMaterialIndex;
         model.materialIndices[i] = materialStartIndex + assimpMaterialIndex;
-
+        
+        if(DEBUG_RESOURCES)
         DEBUG("Mesh %d: Assimp material %d -> ResourceManager material %d", i,
               assimpMaterialIndex, model.materialIndices[i]);
 
@@ -153,7 +155,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     aiReleaseImport(scene);
 }
 
-void draw(Model *model, u32 shader)
+void draw(Model *model, u32 shader, bool shouldUpdateMaterials)
 {
  
     for (u32 i = 0; i < model->meshCount; i++)
@@ -168,7 +170,7 @@ void draw(Model *model, u32 shader)
             continue;
         }
 
-        if (materialIndex >= resources->materialUsed)
+        if (materialIndex >= resources->materialUsed && shouldUpdateMaterials)
         {
             ERROR("Invalid material index: material=%d/%d", materialIndex, resources->materialUsed);
             continue;
@@ -178,18 +180,20 @@ void draw(Model *model, u32 shader)
         Material *material = &resources->materialBuffer[materialIndex];
 
         //check if the material is valid
-        if (material == NULL) {
+        if (material == NULL && shouldUpdateMaterials) {
             ERROR("Material at index %d is NULL", materialIndex);
             continue;
         }
 
-    // Determine uniforms for the currently bound shader (shader passed to draw())
-    MaterialUniforms uniforms = getMaterialUniforms(shader);
-    updateMaterial(material, &uniforms);
-
+        if(shouldUpdateMaterials)
+        {
+            // Determine uniforms for the currently bound shader (shader passed to draw())
+            MaterialUniforms uniforms = getMaterialUniforms(shader);
+            updateMaterial(material, &uniforms);
+        }
         // Check mesh validity before drawing
         Mesh* mesh = &resources->meshBuffer[meshIndex];
-        if (mesh && mesh->vao != 0)
+        if (mesh)
         {
             drawMesh(mesh);
         }

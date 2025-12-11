@@ -9,7 +9,7 @@ char *loadFileText(const char *fileName)
     // null check
     if (file == NULL)
     {
-        ERROR("The File has not opened\n");
+        ERROR("The File %s has not opened\n", fileName);
         return NULL;
     }
 
@@ -125,7 +125,6 @@ u32 createComputeProgram(const char *computePath)
     return program;
 }
 
-
 u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
 {
     u32 program = glCreateProgram();
@@ -199,7 +198,8 @@ u32 createUBO(u32 size, const void *data, GLenum usage)
 
 void updateUBO(u32 ubo, u32 offset, u32 size, const void *data)
 {
-    if (ubo == 0) return;
+    if (ubo == 0)
+        return;
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
     glBufferSubData(GL_UNIFORM_BUFFER, offset, size, data);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -207,21 +207,22 @@ void updateUBO(u32 ubo, u32 offset, u32 size, const void *data)
 
 void bindUBOBase(u32 ubo, u32 bindingPoint)
 {
-    if (ubo == 0) return;
+    if (ubo == 0)
+        return;
     glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
 }
 
 void freeUBO(u32 ubo)
 {
-    if (ubo == 0) return;
+    if (ubo == 0)
+        return;
     GLuint b = (GLuint)ubo;
     glDeleteBuffers(1, &b);
 }
 
-
 u32 createGraphicsProgramWithGeometry(const char *vertPath,
-                                    const char *geomPath,
-                                    const char *fragPath)
+                                      const char *geomPath,
+                                      const char *fragPath)
 {
     u32 program = glCreateProgram();
 
@@ -309,11 +310,11 @@ void updateShaderMVP(u32 shaderProgram, const Transform transform,
 // Set a global time uniform on the shader program if it exists
 void updateShaderTime(u32 shaderProgram, f32 time)
 {
-    if (shaderProgram == 0) return;
+    if (shaderProgram == 0)
+        return;
     GLint timeLoc = glGetUniformLocation(shaderProgram, "time");
     if (timeLoc != -1)
     {
         glUniform1f(timeLoc, time);
     }
 }
-

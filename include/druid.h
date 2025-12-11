@@ -111,7 +111,14 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #endif
 #endif
 
+#ifndef RELEASE_BUILD
 #define RELEASE_BUILD 0
+#endif
+
+#ifndef DEBUG_RESOURCES
+#define DEBUG_RESOURCES 0
+#endif
+
 
 #ifdef __cplusplus
 extern "C"
@@ -307,6 +314,7 @@ extern "C"
 
     typedef struct
     {
+        void *data;
         u32 size;
         u32 used;
     } Arena;
@@ -831,7 +839,8 @@ extern "C"
         u32 meshCount;        // how many meshes are in the buffer
         u32 materialCount;    // how many materials are in the buffer
     } Model;
-    DAPI void draw(Model *model, u32 shader);
+    DAPI void draw(Model *model, u32 shader, bool shouldUpdateMaterials);
+
 
     // resource manager
     typedef struct

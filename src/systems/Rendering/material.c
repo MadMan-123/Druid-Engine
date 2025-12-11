@@ -27,7 +27,8 @@ u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type)
     if (lastSlash)
         fileName = lastSlash + 1;
 
-    TRACE("Looking up texture key: '%s'", fileName);
+    if(DEBUG_RESOURCES)
+        TRACE("Looking up texture key: '%s'", fileName);
 
     if (!resources)
     {

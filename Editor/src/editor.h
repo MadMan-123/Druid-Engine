@@ -69,9 +69,6 @@ extern b8 canMoveAxis;
 extern Vec3 manipulateAxis;
 
 extern MaterialUniforms materialUniforms;
-
-extern SceneManager* sceneManager;
-#define DEFAULT_SCENE_CAPACITY 4
 typedef enum{
     MANIPULATE_POSITION = 0,
     MANIPULATE_ROTATION = 1,

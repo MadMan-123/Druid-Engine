@@ -251,41 +251,6 @@ void init()
 
     DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed,
           resources->meshUsed);
-
-    sceneManager = createSceneManager(DEFAULT_SCENE_CAPACITY);
-    if (!sceneManager)
-    {
-        FATAL("Failed to create scene manager");
-        return;
-    }
-
-    DEBUG("Scene manager created with capacity: %d", DEFAULT_SCENE_CAPACITY);
-
-    // get all the .scene files in the scenes directory
-    u32 out = 0;
-    char **sceneFiles = listFilesInDirectory("../scenes/", &out);
-
-    // check if there are any scene files
-    if (out > 0)
-    {
-        SceneMetaData sceneData = {0};
-        // TODO: Implement proper scene loading but for now just load the first
-        // scene
-        sceneData = loadScene(sceneFiles[0]);
-        if (sceneData.entityCount > 0)
-        {
-            INFO("Loaded scene '%s' with %d entities", sceneFiles[0],
-                 sceneData.entityCount);
-            // add the loaded scene to the scene manager
-            sceneManager->scenes[0] = sceneData;
-            sceneManager->sceneCount = 1;
-
-            // instantiate entities in the scene
-            for (u32 i = 0; i < sceneData.entityCount; i++)
-            {
-            }
-        }
-    }
 }
 
 Vec2 cacheMouse = {0, 0};
@@ -502,8 +467,6 @@ void destroy()
     freeTexture(cubeMapTexture);
     freeShader(skyboxShader);
     destroyIDFramebuffer();
-    destroySceneManager(sceneManager);
-    free(sceneManager);
     destroyMultiFBOs();
 
     ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
