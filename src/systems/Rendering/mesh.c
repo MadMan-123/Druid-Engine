@@ -8,10 +8,12 @@
 
 void freeMesh(Mesh *mesh)
 {
-
+    if (!mesh) return;
+    
     mesh->drawCount = 0;
     glDeleteVertexArrays(1, &mesh->vao);
-    glDeleteBuffers(NUM_BUFFERS, mesh->vab);
+    glDeleteBuffers(1, &mesh->vbo);
+    glDeleteBuffers(1, &mesh->ebo);
     free(mesh);
 }
 void freeMeshArray(Mesh *meshes, u32 meshCount)
@@ -21,10 +23,20 @@ void freeMeshArray(Mesh *meshes, u32 meshCount)
 
     for (u32 i = 0; i < meshCount; i++)
     {
-        freeMesh(&meshes[i]);
+        // Only free GPU resources, not the mesh struct itself
+        if (meshes[i].vao != 0) {
+            glDeleteVertexArrays(1, &meshes[i].vao);
+        }
+        if (meshes[i].vbo != 0) {
+            glDeleteBuffers(1, &meshes[i].vbo);
+        }
+        if (meshes[i].ebo != 0) {
+            glDeleteBuffers(1, &meshes[i].ebo);
+        }
     }
 
-    free(meshes);
+    free(meshes);  // Free the whole array at once
+
 }
 void drawMesh(Mesh *mesh)
 {
@@ -42,8 +54,18 @@ void drawMesh(Mesh *mesh)
     
     glBindVertexArray(mesh->vao);
 
-    glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
-    // glDrawArrays(GL_TRIANGLES, 0, drawCount);
+    // Check if mesh has indices - if not, use glDrawArrays instead of glDrawElements
+    if (mesh->drawCount > 0) {
+        // If we have indices in EBO, use glDrawElements
+        GLint buffer_bound;
+        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &buffer_bound);
+        if (buffer_bound != 0) {
+            glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
+        } else {
+            // No index buffer, use vertex arrays
+            glDrawArrays(GL_TRIANGLES, 0, mesh->drawCount);
+        }
+    }
 
     glBindVertexArray(0);
 }
@@ -222,24 +244,37 @@ bool createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
     }
 
     IndexedModel model;
+    Arena indexModelArena;
+    u32 arenaSize = (numVertices * sizeof(Vec3)) +  // positions
+                    (numVertices * sizeof(Vec2)) +  // texcoords  
+                    (numVertices * sizeof(Vec3));   // normals
+    if (numIndices > 0) {
+        arenaSize += (numIndices * sizeof(u32));     // indices (only if needed)
+    }
+    
+    if (!arenaCreate(&indexModelArena, arenaSize))
+    {
+        ERROR("Failed to create arena for indexed model");
+        return false;
+    }
+
+
     model.positionsCount = numVertices;
     model.texCoordsCount = numVertices;
     model.normalsCount = numVertices;
     model.indicesCount = numIndices;
 
-    model.positions = malloc(sizeof(Vec3) * numVertices);
-    model.texCoords = malloc(sizeof(Vec2) * numVertices);
-    model.normals = malloc(sizeof(Vec3) * numVertices);
-    model.indices = malloc(sizeof(u32) * numIndices);
+    model.positions = aalloc(&indexModelArena, sizeof(Vec3) * numVertices);
+    model.texCoords = aalloc(&indexModelArena, sizeof(Vec2) * numVertices);
+    model.normals = aalloc(&indexModelArena, sizeof(Vec3) * numVertices);
+    model.indices = (numIndices > 0) ? aalloc(&indexModelArena, sizeof(u32) * numIndices) : NULL;
 
     if (!model.positions || !model.texCoords || !model.normals ||
-        !model.indices)
+        (numIndices > 0 && !model.indices))
     {
         ERROR("createMesh: model alloc failed");
-        free(model.positions);
-        free(model.texCoords);
-        free(model.normals);
-        free(model.indices);
+        // Don't free arena-allocated memory manually - the arena cleanup handles it
+        arenaDestroy(&indexModelArena);
         return false;
     }
 
@@ -247,69 +282,84 @@ bool createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
     memcpy(model.positions, vertices->positions, sizeof(Vec3) * numVertices);
     memcpy(model.texCoords, vertices->texCoords, sizeof(Vec2) * numVertices);
     memcpy(model.normals, vertices->normals, sizeof(Vec3) * numVertices);
-    memcpy(model.indices, indices, sizeof(u32) * numIndices);
+    if (indices && numIndices > 0) {
+        memcpy(model.indices, indices, sizeof(u32) * numIndices);
+    }
 
-    initModel(mesh, model);
+    initMeshFromModel(mesh, model);
 
     // cleanup
-    free(model.positions);
-    free(model.texCoords);
-    free(model.normals);
-    free(model.indices);
-
+    arenaDestroy(&indexModelArena);
     return true;
 }
 
-void initModel(Mesh *mesh, const IndexedModel model)
+void initMeshFromModel(Mesh *mesh, const IndexedModel model)
 {
-    if (!mesh || !model.positions || !model.texCoords || !model.normals ||
-        !model.indices)
+    if (!mesh || !model.positions || !model.texCoords || !model.normals)
     {
         ERROR("Invalid mesh or model data provided to initModel");
         return;
     }
 
-    mesh->drawCount = model.indicesCount;
+    // Set drawCount based on whether we have indices or not
+    mesh->drawCount = (model.indicesCount > 0) ? model.indicesCount : model.positionsCount;
 
     // generate our VAO to store the state of our vertex buffer
     glGenVertexArrays(1, &mesh->vao);
-    // bind our vao (this will allow us to render from our buffers)
+    // generate our buffer to store our interleaved vertex data on the GPU
+    glGenBuffers(1, &mesh->vbo);
+    // generate our buffer to store our index data on the GPU
+    glGenBuffers(1, &mesh->ebo);
+
+    // work out the total stride of our vertex data (position + texcoord + normal)
+    u32 stride = sizeof(Vec3) + sizeof(Vec2) + sizeof(Vec3);
+
+    //prepare interleaved vertex data (floats)
+    f32 *interleavedData = (f32 *)malloc(model.positionsCount * stride);
+    u32 offset = 0;
+    for (u32 i = 0; i < model.positionsCount; i++)
+    {
+        // Position (Vec3)
+        interleavedData[offset++] = model.positions[i].x;
+        interleavedData[offset++] = model.positions[i].y;
+        interleavedData[offset++] = model.positions[i].z;
+        // TexCoord (Vec2)
+        interleavedData[offset++] = model.texCoords[i].x;
+        interleavedData[offset++] = model.texCoords[i].y;
+        // Normal (Vec3)
+        interleavedData[offset++] = model.normals[i].x;
+        interleavedData[offset++] = model.normals[i].y;
+        interleavedData[offset++] = model.normals[i].z;
+    }
+
+    // upload interleaved vertex data to GPU
     glBindVertexArray(mesh->vao);
-    // generate our buffers to store our vertex data on the GPU
-    glGenBuffers(NUM_BUFFERS, mesh->vab);
 
-    // tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass
-    // the data
-    glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[POSITION_VERTEXBUFFER]);
-    glBufferData(GL_ARRAY_BUFFER,
-                 model.positionsCount * sizeof(model.positions[0]),
-                 model.positions, GL_STATIC_DRAW);
+    // specify the layout of our vertex data to OpenGL (position, normal, texcoord) 
+    glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
+    glBufferData(GL_ARRAY_BUFFER, model.positionsCount * stride, interleavedData, GL_STATIC_DRAW);
+    // index data to ebo (only if we have indices)
+    if (model.indicesCount > 0 && model.indices) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indicesCount * sizeof(u32), model.indices, GL_STATIC_DRAW);
+    }
+   
+    
+    // position attribute (location 0)
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-    // tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass
-    // the data
-    glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[TEXCOORD_VB]);
-    glBufferData(GL_ARRAY_BUFFER,
-                 model.texCoordsCount * sizeof(model.texCoords[0]),
-                 model.texCoords, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void *)0);
+    // texcoord attribute (location 1) - immediately after position
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, mesh->vab[NORMAL_VB]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(model.normals[0]) * model.normalsCount,
-                 model.normals, GL_STATIC_DRAW);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (void *)(sizeof(Vec3)));
+    // normal attribute (location 2) - after position + texcoord
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride, (void *)(sizeof(Vec3) + sizeof(Vec2)));
 
-    // tell opengl what type of data the buffer is (GL_ARRAY_BUFFER), and pass
-    // the data
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->vab[INDEX_VB]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 model.indicesCount * sizeof(model.indices[0]), model.indices,
-                 GL_STATIC_DRAW);
+    
 
-    glBindVertexArray(0); // unbind our VAO
+
+    
+    free(interleavedData);
 }
 
 // Function to generate height data using compute shader

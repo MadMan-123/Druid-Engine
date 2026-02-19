@@ -686,8 +686,7 @@ extern "C"
     DAPI void updateShaderMVP(const u32 shader, const Transform transform,
                               const Camera camera);
 
-    // Uniform Buffer Object (UBO) helper API (simple wrapper similar to FBO
-    // API)
+    // Uniform Buffer Object 
     DAPI u32 createUBO(u32 size, const void *data,
                        GLenum usage); // returns buffer handle
     DAPI void updateUBO(u32 ubo, u32 offset, u32 size, const void *data);
@@ -748,13 +747,15 @@ extern "C"
 
     typedef struct
     {
-        u32 ammount;
-        Vec3 *positions;
-        Vec2 *texCoords;
+        Vec3 *positions; 
         Vec3 *normals;
+        Vec2 *texCoords;
+        //32 bytes per vertex
+        u32 ammount;
     } Vertices;
 
     Vertices createVertices(const Vec3 pos, const Vec2 texCoord);
+
     typedef enum
     {
         POSITION_VERTEXBUFFER,
@@ -769,12 +770,15 @@ extern "C"
     {
         // vertex array object
         u32 vao;
-        // array of buffers
-        u32 vab[NUM_BUFFERS];
-        // todo: remove this , replace for index
+        // interleaved vertex buffer object
+        u32 vbo;
+        // index buffer object
+        u32 ebo;
+        
         u32 subMeshCount;
         u32 drawCount; // how much of the vertexArrayObject do we want to draw
     } Mesh;
+
     DAPI u32 loadMaterialTexture(struct aiMaterial *mat,
                                  enum aiTextureType type);
 
@@ -796,7 +800,7 @@ extern "C"
 
     // DAPI Mesh* loadMesh(const char* filename, u32* outMeshCount);
 
-    DAPI void initModel(Mesh *mesh, const IndexedModel model);
+    DAPI void initMeshFromModel(Mesh *mesh, const IndexedModel model);
     // free the mesh from memory
     DAPI void freeMesh(Mesh *mesh);
 
@@ -811,7 +815,7 @@ extern "C"
     DAPI Mesh *createSkyboxMesh();
     DAPI Mesh *createQuadMesh();
 
-    // Simple framebuffer abstraction (for editor viewport and ID picking)
+    // framebuffer 
     typedef struct Framebuffer
     {
         u32 fbo;
@@ -849,13 +853,12 @@ extern "C"
         Mesh *meshBuffer;
         Model *modelBuffer;
         u32 *textureHandles;
+        u32 *shaderHandles;
         HashMap textureIDs;
         HashMap shaderIDs;
         HashMap mesheIDs;
         HashMap modelIDs;
         HashMap materialIDs;
-        u32 *shaderHandles;
-
         // TODO: create seperate meta data struct
         //  meta data
         u32 materialCount;

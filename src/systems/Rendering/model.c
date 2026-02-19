@@ -157,7 +157,6 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
 
 void draw(Model *model, u32 shader, bool shouldUpdateMaterials)
 {
- 
     for (u32 i = 0; i < model->meshCount; i++)
     {
         u32 meshIndex = model->meshIndices[i];

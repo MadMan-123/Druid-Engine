@@ -68,7 +68,7 @@ vec4 edgeDetect(vec4 sampleTex[9],float strength)
 
 void main()
 { 
-    //vec4 color = texture(screenTexture, TexCoords);
+    vec4 color = texture(screenTexture, TexCoords);
     // vec4 sampleTex[9];
     // for(int i = 0; i < 9; i++)
     // {
@@ -79,9 +79,9 @@ void main()
     
     // color = quantize(color, 16.0);
 
-    vec4 color = pixelateTexture(TexCoords, 250);
+    // vec4 color = pixelateTexture(TexCoords, 250);
 
-    color = quantize(color, 16.0);
+    // color = quantize(color, 16.0);
 
 
     FragColor = color;

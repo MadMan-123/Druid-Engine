@@ -218,8 +218,16 @@ void drawMeshIDPass(Mesh *mesh)
     
     // bind the mesh
     glBindVertexArray(mesh->vao);
-    // draw the mesh elements
-    glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
+    // draw the mesh: prefer elements if an EBO is bound, otherwise arrays
+    if (mesh->drawCount > 0) {
+        GLint eboBound = 0;
+        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eboBound);
+        if (eboBound != 0) {
+            glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
+        } else {
+            glDrawArrays(GL_TRIANGLES, 0, mesh->drawCount);
+        }
+    }
     glBindVertexArray(0);
 }
 

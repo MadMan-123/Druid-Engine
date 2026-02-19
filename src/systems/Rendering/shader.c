@@ -185,32 +185,6 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
     return program;
 }
 
-// Simple UBO API
-u32 createUBO(u32 size, const void *data, GLenum usage)
-{
-    GLuint buf = 0;
-    glGenBuffers(1, &buf);
-    glBindBuffer(GL_UNIFORM_BUFFER, buf);
-    glBufferData(GL_UNIFORM_BUFFER, size, data, usage);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-    return (u32)buf;
-}
-
-void updateUBO(u32 ubo, u32 offset, u32 size, const void *data)
-{
-    if (ubo == 0)
-        return;
-    glBindBuffer(GL_UNIFORM_BUFFER, ubo);
-    glBufferSubData(GL_UNIFORM_BUFFER, offset, size, data);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-}
-
-void bindUBOBase(u32 ubo, u32 bindingPoint)
-{
-    if (ubo == 0)
-        return;
-    glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
-}
 
 void freeUBO(u32 ubo)
 {
