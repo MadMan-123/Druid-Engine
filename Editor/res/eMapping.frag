@@ -8,10 +8,12 @@ in Vertex_DATA
 } vs_Out;
 
 out vec4 FragColor;
-layout(std140) uniform CoreShaderData {
+layout (std140, binding = 0) uniform CoreShaderData {
     vec3 camPos;
     float time;
-} CSD;
+    mat4 view;
+    mat4 projection;
+};
 
 uniform samplerCube skybox;
 layout(binding = 2) uniform sampler2D albedoTexture;
@@ -19,7 +21,7 @@ layout(binding = 2) uniform sampler2D albedoTexture;
 float mixFactor = 0.7;
 void main()
 {
-    vec3 I = normalize(vs_Out.Position - CSD.camPos);
+    vec3 I = normalize(vs_Out.Position - camPos);
     vec3 R = reflect(I, normalize(vs_Out.Normal));
 
     vec4 colour = vec4(texture(skybox, R).rgb, 1.0);

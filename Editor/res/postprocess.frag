@@ -1,12 +1,18 @@
-#version 410
+#version 420
 
-
+//CoreShaderData UBO (binding = 0)
+layout (std140, binding = 0) uniform CoreShaderData
+{
+    vec3 camPos;
+    float time;
+    mat4 view;
+    mat4 projection;
+};
 
 in vec2 TexCoords;
 out vec4 FragColor;
 
 uniform sampler2D screenTexture;
-uniform float time;
 uniform float strength; // for shake
 uniform vec2 texelSize; // 1.0/textureSize
 

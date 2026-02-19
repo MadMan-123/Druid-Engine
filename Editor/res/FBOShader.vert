@@ -1,17 +1,18 @@
-#version 330 core
+#version 420 core
 layout (location = 0) in vec2 aPos;
 layout (location = 1) in vec2 aTexCoords;
 
 out vec2 TexCoords;
 
-//get core ubo
-layout(std140) uniform CoreShaderData {
+//CoreShaderData UBO (binding = 0)
+layout (std140, binding = 0) uniform CoreShaderData
+{
     vec3 camPos;
     float time;
-} CSD;
+    mat4 view;
+    mat4 projection;
+};
 
-
-#define time CSD.time
 
 vec4 shakeCamera(vec2 aPos)
 {

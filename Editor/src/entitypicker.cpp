@@ -68,7 +68,7 @@ void renderIDPass()
             Model *model = (&resources->modelBuffer[index]);
             if (model)
             {
-                updateShaderMVP(idShader, t, sceneCam);
+                updateShaderModel(idShader, t);  // Only set model matrix
 
                 for (u32 j = 0; j < model->meshCount; j++)
                 {
@@ -115,17 +115,17 @@ void renderIDPass()
         Transform Z = {v3Add(pos, v3Back), quatIdentity(),
                        {scaleSize, scaleSize, scaleLength}};
 
-        updateShaderMVP(idShader, X, sceneCam);
+        updateShaderModel(idShader, X);  // Only set model matrix
         glUniform3f(idLocation, 1.0f / 255.0f, 0.0f,
                     0.0f); // ID_TYPE_GIZMO_X = 0x010000
         drawMeshIDPass(cubeMesh);
 
-        updateShaderMVP(idShader, Y, sceneCam);
+        updateShaderModel(idShader, Y);
         glUniform3f(idLocation, 2.0f / 255.0f, 0.0f,
                     0.0f); // ID_TYPE_GIZMO_Y = 0x020000
         drawMeshIDPass(cubeMesh);
 
-        updateShaderMVP(idShader, Z, sceneCam);
+        updateShaderModel(idShader, Z);  // Only set model matrix
         glUniform3f(idLocation, 3.0f / 255.0f, 0.0f,
                     0.0f); // ID_TYPE_GIZMO_Z = 0x030000
         drawMeshIDPass(cubeMesh);

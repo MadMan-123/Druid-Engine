@@ -1,5 +1,5 @@
 //Version Number
-#version 410
+#version 420
 	
 //The layout qualifers
 layout (location = 0) in vec3 VertexPosition;
@@ -10,8 +10,17 @@ out VS_OUT {
 	vec2 texCoords;
 } vs_out;
 
+//CoreShaderData UBO (binding = 0)
+layout (std140, binding = 0) uniform CoreShaderData
+{
+    vec3 camPos;
+    float time;
+    mat4 view;
+    mat4 projection;
+};
+
 //Uniform variable
-uniform mat4 transform;
+uniform mat4 model;
 
 
 //Passing out the normal and position data
@@ -26,5 +35,5 @@ void main()
 
 	vs_out.texCoords = TexCoord;
 	// Sets the position of the current vertex
-	gl_Position = transform * vec4(VertexPosition, 1.0);
+	gl_Position = projection * view * model * vec4(VertexPosition, 1.0);
 }

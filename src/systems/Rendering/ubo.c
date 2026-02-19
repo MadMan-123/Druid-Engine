@@ -6,6 +6,10 @@
 typedef struct{
     f32 camPos[3];
     f32 time;
+
+    // Camera data
+    Mat4 view;
+    Mat4 projection;
 }CoreShaderData;
 
 
@@ -47,12 +51,15 @@ void bindUBOBase(u32 ubo, u32 bindingPoint)
     glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
 }
 
-void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos)
+void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos, const Mat4 *view, const Mat4 *projection)
 {
     if (g_coreUBO == 0) createCoreShaderUBO();
     CoreShaderData data;
     data.time = timeSeconds;
-    if (camPos)
+    if (view)
+        data.view = *view;
+    if (projection)
+        data.projection = *projection;
     {
         data.camPos[0] = camPos->x;
         data.camPos[1] = camPos->y;
@@ -62,3 +69,4 @@ void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos)
 
     updateUBO(g_coreUBO, 0, sizeof(CoreShaderData), &data);
 }
+

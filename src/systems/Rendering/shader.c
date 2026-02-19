@@ -271,15 +271,21 @@ void freeShader(u32 shader)
 void updateShaderMVP(u32 shaderProgram, const Transform transform,
                      const Camera camera)
 {
-    Mat4 model = getModel(&transform);
-    Mat4 mvp = mat4Mul(getViewProjection(&camera), model);
-
-    u32 modelUniform = glGetUniformLocation(shaderProgram, "model");
-    u32 transformUniform = glGetUniformLocation(shaderProgram, "transform");
-
-    glUniformMatrix4fv(modelUniform, 1, GL_FALSE, &model.m[0][0]);
-    glUniformMatrix4fv(transformUniform, 1, GL_FALSE, &mvp.m[0][0]);
+    // Legacy function - just set model matrix now
+    // View/Projection are handled by UBO
+    updateShaderModel(shaderProgram, transform);
 }
+
+// New optimized function that only sets model matrix
+void updateShaderModel(u32 shaderProgram, const Transform transform)
+{
+    Mat4 model = getModel(&transform);
+    u32 modelUniform = glGetUniformLocation(shaderProgram, "model");
+    if (modelUniform != -1) {
+        glUniformMatrix4fv(modelUniform, 1, GL_FALSE, &model.m[0][0]);
+    }
+}
+
 
 // Set a global time uniform on the shader program if it exists
 void updateShaderTime(u32 shaderProgram, f32 time)

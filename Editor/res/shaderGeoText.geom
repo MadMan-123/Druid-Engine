@@ -1,5 +1,5 @@
 //Version number
-#version 410 core
+#version 420 core
 
 //Layout qualfier
 layout (triangles) in;
@@ -13,14 +13,17 @@ in VS_OUT {
 //Passing out texture coordinates
 out vec2 TexCoords; 
 
-// Core shader data (time + viewProj) provided via UBO
-layout(std140) uniform CoreShaderData {
-    vec3 camPos; 
+// CoreShaderData UBO (binding = 0)
+layout (std140, binding = 0) uniform CoreShaderData
+{
+    vec3 camPos;
     float time;
-} CSD;
+    mat4 view;
+    mat4 projection;
+};
 
 // keep existing code compatible
-#define time CSD.time
+
 
 
 vec4 explode(vec4 position, vec3 normal)

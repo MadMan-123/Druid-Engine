@@ -153,7 +153,8 @@ static void renderGameScene()
     // Update core shader UBO (time + viewProj) once per frame
     {
         f32 t = (f32)ImGui::GetTime();
-        updateCoreShaderUBO(t, &sceneCam.pos);
+        Mat4 view = getView(&sceneCam, false);  
+        updateCoreShaderUBO(t, &sceneCam.pos, &view, &sceneCam.projection);
     }
 
     bindFramebuffer(&viewportFBs[activeFBO]);
@@ -166,11 +167,7 @@ static void renderGameScene()
     glDepthMask(GL_FALSE);
     glUseProgram(skyboxShader);
 
-    Mat4 sbView = getView(&sceneCam, true);
-    glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, &sbView.m[0][0]);
-    glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE,
-                       &sceneCam.projection.m[0][0]);
-
+    // Skybox now uses UBO data - no need for individual uniforms
     glBindVertexArray(skyboxMesh->vao);
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -241,7 +238,7 @@ static void renderGameScene()
                 u32 entityShader = shaderHandles[id];
                 u32 shaderToUse = (entityShader != 0) ? entityShader : shader;
                 glUseProgram(shaderToUse);
-                updateShaderMVP(shaderToUse, newTransform, sceneCam);
+                updateShaderModel(shaderToUse, newTransform);  // Only set model matrix
                 MaterialUniforms uniforms = getMaterialUniforms(shaderToUse);
                 updateMaterial(material, &uniforms);
                 drawMesh(mesh);
@@ -272,13 +269,13 @@ static void renderGameScene()
         // *** Use the arrow shader ONLY for the arrows ***
         glUseProgram(arrowShader);
 
-        updateShaderMVP(arrowShader, X, sceneCam);
+        updateShaderModel(arrowShader, X);  // Only set model matrix
         glUniform3f(colourLocation, 0.0f, 1.0f, 0.0f);
         drawMesh(cubeMesh);
-        updateShaderMVP(arrowShader, Y, sceneCam);
+        updateShaderModel(arrowShader, Y);
         glUniform3f(colourLocation, 1.0f, 0.0f, 0.0f);
         drawMesh(cubeMesh);
-        updateShaderMVP(arrowShader, Z, sceneCam);
+        updateShaderModel(arrowShader, Z);
         glUniform3f(colourLocation, 0.0f, 0.0f, 1.0f);
         drawMesh(cubeMesh);
     }

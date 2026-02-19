@@ -1,6 +1,13 @@
-#version 400
+#version 420
 
-uniform float time;
+//CoreShaderData UBO (binding = 0)
+layout (std140, binding = 0) uniform CoreShaderData
+{
+    vec3 camPos;
+    float time;
+    mat4 view;
+    mat4 projection;
+};
 
 uniform float maxDist; //fog max distance
 uniform float minDist; //fog min distance

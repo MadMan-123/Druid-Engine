@@ -11,14 +11,22 @@ out Vertex_DATA{
 
 } vs_Out;
 
+//CoreShaderData UBO (binding = 0)
+layout (std140, binding = 0) uniform CoreShaderData
+{
+    vec3 camPos;
+    float time;
+    mat4 view;
+    mat4 projection;
+};
+
 uniform mat4 model;
-uniform mat4 transform;
 
 void main()
 {
     vs_Out.Normal = mat3(transpose(inverse(model))) * aNormal;
     vs_Out.Position = vec3(model * vec4(aPos, 1.0));
     vs_Out.tC = TextCoords;
-    gl_Position = transform * vec4(aPos, 1.0);
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 
 }  

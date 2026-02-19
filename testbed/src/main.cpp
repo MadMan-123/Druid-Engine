@@ -28,7 +28,7 @@ u32* modelIDs = NULL;
 void init(void) 
 {
     // intentionally empty
-	initCamera(&cam, (Vec3){0,0,5}, fov, 16.0f/9.0f, 0.1f, 100.0f);
+	initCamera(&cam, {0,0,5}, fov, 16.0f/9.0f, 0.1f, 100.0f);	// Initialize core shader UBO for optimized rendering\n	createCoreShaderUBO();
 
 	//get the default shader from the resources
 
@@ -36,7 +36,7 @@ void init(void)
 	findInMap(&resources->shaderIDs, "default", &index);
 	defaultShader = resources->shaderHandles[index];
 	assert(defaultShader != 0 && "Default shader not found");
-	createEntityArena(&StaticEntites, 128);
+	createEntityArena(&StaticEntites, 128, NULL); 
 
 	//loop through the entities and set their model to default model 0
 	//get the field pointer for each field
@@ -62,7 +62,7 @@ void update(f32 dt) {
 }
 
 void render(f32 dt) {
-    clearDisplay(0.2f, 0.2f, 0.2f, 1.0f);
+    clearDisplay(0.2f, 0.2f, 0.2f, 1.0f);// Update core shader UBO once per frame\n\tstatic f32 totalTime = 0.0f;\n\ttotalTime += dt;\n\tMat4 view = getView(&cam, false);\n\tupdateCoreShaderUBO(totalTime, &cam.pos, &view, &cam.projection);
 	
 	//render model 0
 	glUseProgram(defaultShader);
@@ -70,9 +70,9 @@ void render(f32 dt) {
 	for(int i = 0; i < StaticEntites.count; i++) {
 		if(!isActive[i]) continue;
 		Transform t = {positions[i], rotations[i], scales[i]};
-		updateShaderMVP(defaultShader, t, cam);
+		updateShaderModel(defaultShader, t);  // Only set model matrix
 		//draw the model 
-		draw(model, defaultShader);
+		draw(model, defaultShader, false);
 
 
 

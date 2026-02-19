@@ -685,6 +685,9 @@ extern "C"
 
     DAPI void updateShaderMVP(const u32 shader, const Transform transform,
                               const Camera camera);
+    // New optimized functions for UBO rendering
+    DAPI void updateShaderModel(u32 shaderProgram, const Transform transform);  
+    DAPI void updateFrameUBOData(const Camera* camera, f32 deltaTime);
 
     // Uniform Buffer Object 
     DAPI u32 createUBO(u32 size, const void *data,
@@ -695,7 +698,7 @@ extern "C"
     // CoreShaderData UBO helpers (create once, update each frame)
     DAPI u32 createCoreShaderUBO();
 
-    DAPI void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos);
+    DAPI void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos, const Mat4 *view, const Mat4 *projection);
 
     // Textures
     // 32 textures MAX

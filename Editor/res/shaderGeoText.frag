@@ -1,14 +1,16 @@
 //Version number
-#version 410
+#version 420
 //Layout Qualifer
 layout( location = 0 ) out vec4 fragcolor;
 //Unfrom variabl
 uniform sampler2D albedoTexture;
 
-layout(std140) uniform CoreShaderData {
+layout (std140, binding = 0) uniform CoreShaderData {
     vec3 camPos;
     float time;
-} CSD;
+    mat4 view;
+    mat4 projection;
+};
 in vec2 TexCoords;
 
 void main()
