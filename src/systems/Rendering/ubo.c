@@ -24,7 +24,7 @@ u32 createCoreShaderUBO()
     bindUBOBase(g_coreUBO, 0);
     return g_coreUBO;
 }
-// Simple UBO API
+
 u32 createUBO(u32 size, const void *data, GLenum usage)
 {
     GLuint buf = 0;

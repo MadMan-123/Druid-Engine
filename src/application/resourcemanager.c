@@ -177,7 +177,7 @@ void readResources(ResourceManager *manager, const char *filename)
     const char *defaultShaderName = "default";
     
     //add default shader to resource manager
-    u32 defaultShaderHandle = createGraphicsProgram("../" RES_FOLDER "/shader.vert", "../" RES_FOLDER "/shader.frag");
+    u32 defaultShaderHandle = createGraphicsProgram("../" RES_FOLDER "shader.vert", "../" RES_FOLDER "shader.frag");
     if (defaultShaderHandle != 0) 
     {
         insertMap(&manager->shaderIDs, defaultShaderName, &manager->shaderUsed);

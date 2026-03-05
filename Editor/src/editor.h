@@ -6,6 +6,7 @@
 #include <imgui.h>
 #define MAX_CONSOLE_LINES 10000
 #define MAX_CONSOLE_LINE_LENGTH 256
+#define DRUID_PROFILE 1 // Set to 1 to enable profiling, 0 to disable
 
 // Forward declarations and global variables shared across the Editor
 extern Application* editor;

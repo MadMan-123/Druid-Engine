@@ -16,7 +16,7 @@ include_directories(
 )
 
 # Source files
-file(GLOB TESTBED_SOURCES
+file(GLOB TESTBED_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp
 )
 

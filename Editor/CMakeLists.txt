@@ -4,7 +4,7 @@ project(Editor CXX)
 set(CMAKE_CXX_STANDARD 17)
 
 # Source files
-file(GLOB EDITOR_SOURCES
+file(GLOB EDITOR_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
@@ -45,6 +45,8 @@ add_custom_command(TARGET editor POST_BUILD
 target_include_directories(editor PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui"
 )
+
+target_compile_definitions(editor PRIVATE DRUID_PROFILE)
 
 target_sources(editor PRIVATE ${IMGUI_SOURCES}) 
 

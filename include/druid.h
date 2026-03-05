@@ -818,6 +818,21 @@ extern "C"
     DAPI Mesh *createSkyboxMesh();
     DAPI Mesh *createQuadMesh();
 
+
+    typedef struct
+    {
+        u32   buffer;       // GL buffer object (bound as GL_SHADER_STORAGE_BUFFER)
+        Mat4* data;      // permanently mapped CPU->GPU memory — write directly, GPU reads
+        u32   capacity;  // fixed at creation (MAX_ENTITY)
+        u32   count;     // instances written this frame; reset to 0 before writing
+        b8  ready;
+    }InstanceBuffer;
+
+    DAPI void instanceBufferCreate (InstanceBuffer* buf, u32 capacity);
+    DAPI void instanceBufferDestroy(InstanceBuffer* buf);
+
+
+
     // framebuffer 
     typedef struct Framebuffer
     {
@@ -837,6 +852,16 @@ extern "C"
     DAPI void bindFramebuffer(Framebuffer *fb);
     DAPI void unbindFramebuffer(void);
     DAPI void destroyFramebuffer(Framebuffer *fb);
+   
+    typedef struct GBuffer {
+        u32 fbo;
+        u32 positionTex;
+        u32 normalTex;
+        u32 albedoSpecTex;
+        u32 depthTex;
+    } GBuffer;
+  
+    DAPI GBuffer createGBuffer(u32 width, u32 height);
 
     typedef struct
     {

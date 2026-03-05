@@ -16,7 +16,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 # Source files
 # Source files
-file(GLOB_RECURSE ENGINE_SOURCES
+file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.c
     ${CMAKE_SOURCE_DIR}/src/**/*.c
     ${CMAKE_SOURCE_DIR}/src/**/*.cpp
@@ -37,7 +37,7 @@ target_include_directories(druid PUBLIC
 
 
 # Compiler options
-target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32)
+target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32 DRUID_PROFILE)
 target_compile_options(druid PRIVATE -Wall -O3 -std=c11 -fPIC -g )
 
 target_link_libraries(druid PUBLIC
