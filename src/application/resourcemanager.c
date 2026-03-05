@@ -1,12 +1,6 @@
 #include "../../include/druid.h"
 #include <string.h>
-#if PLATFORM_WINDOWS
-#define NOGDI
-#define NOERROR
-#include <windows.h>
-#else
-#include <dirent.h>
-#endif
+
 #include <stdio.h>
 #define MAX_NAME_SIZE 256
 #define MAX_FILE_SIZE 1024
@@ -161,7 +155,7 @@ void readResources(ResourceManager *manager, const char *filename)
         TRACE("Reading resources from %s\n", filename);
     // do a recursive search for all files in the RES_FOLDER directory
     u32 outCount = 0;
-    char **output = listFilesInDirectory("../" RES_FOLDER, &outCount);
+    u8 **output = listFilesInDirectory((const u8 *)"../" RES_FOLDER, &outCount);
     qsort(output, outCount, sizeof(char*), compare_files_for_loading_priority);
     if(DEBUG_RESOURCES)
     INFO("Found %d files in directory %s\n", outCount, "../" RES_FOLDER);
@@ -193,7 +187,7 @@ void readResources(ResourceManager *manager, const char *filename)
         // First pass: populate shaderNameMap for vert/frag pairs
         for (u32 i = 0; i < outCount; i++)
         {
-            const char *filePath = output[i];
+            const char *filePath = (const char *)output[i];
             char copyBuffer[512];
             strcpy(copyBuffer, filePath);
 
@@ -224,7 +218,7 @@ void readResources(ResourceManager *manager, const char *filename)
         // Second pass: process all resources
         for (u32 i = 0; i < outCount; i++)
         {
-            const char *filePath = output[i];
+            const char *filePath = (const char *)output[i];
             char copyBuffer[512];
             strcpy(copyBuffer, filePath);
 
@@ -363,91 +357,12 @@ void readResources(ResourceManager *manager, const char *filename)
 
     for (u32 i = 0; i < outCount; i++)
     {
-        free(output[i]);
+        free((char *)output[i]);
     }
     free(output);
     destroyMap(&shaderNameMap);
 }
 
-#if PLATFORM_WINDOWS
-void listFilesRecursive(const char *directory, char ***fileList, u32 *count, 
-                        u32 *capacity)
-{
-    WIN32_FIND_DATA findFileData;
-    char searchPath[MAX_PATH];
-    snprintf(searchPath, MAX_PATH, "%s/*", directory);
 
-    HANDLE hFind = FindFirstFile(searchPath, &findFileData);
-    if (hFind == INVALID_HANDLE_VALUE)
-        return;
 
-    do
-    {
-        const char *name = findFileData.cFileName;
 
-        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-            continue;
-
-        char fullPath[MAX_PATH];
-        snprintf(fullPath, MAX_PATH, "%s/%s", directory, name);
-        normalizePath(fullPath);
-
-        if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-        {
-            // recurse into subdir
-            listFilesRecursive(fullPath, fileList, count, capacity);
-        }
-        else
-        {
-            // store file
-            if (*count >= *capacity)
-            {
-                WARN("File list capacity exceeded");
-                break;
-            }
-            (*fileList)[*count] = _strdup(fullPath);
-            if(DEBUG_RESOURCES)
-                TRACE("Found file: %s", fullPath);
-            (*count)++;
-        }
-    } while (FindNextFile(hFind, &findFileData));
-
-    FindClose(hFind);
-}
-#elif PLATFORM_LINUX || PLATFORM_MAC
-
-#endif
-
-char **listFilesInDirectory(const char *directory, u32 *outCount)
-{
-    u32 capacity = 256;
-    char **fileList = (char **)malloc(sizeof(char *) * capacity);
-    *outCount = 0;
-
-    listFilesRecursive(directory, &fileList, outCount, &capacity);
-
-    return fileList;
-}
-void normalizePath(char *path)
-{
-    char *src = path;
-    char *dst = path;
-
-    while (*src)
-    {
-        // convert backslash to slash
-        char c = (*src == '\\') ? '/' : *src;
-
-        // collapse multiple '/'
-        if (c == '/' && dst > path && dst[-1] == '/')
-        {
-            src++;
-            continue;
-        }
-
-        *dst++ = c;
-        src++;
-    }
-
-    *dst = '\0';
-}

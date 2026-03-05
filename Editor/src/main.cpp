@@ -4,6 +4,7 @@
 #include "../deps/imgui/imgui_internal.h"
 #include "editor.h"
 #include "entitypicker.h"
+#include "hub.h"
 #include <druid.h>
 #include <iostream>
 
@@ -477,8 +478,17 @@ void destroy()
 
 int main(int argc, char **argv)
 {
+    // Run the hub first so the user can select a project
+    hubApplication = createApplication(hubStart, hubUpdate, hubRender, hubDestroy);
+    hubApplication->width = 720.0f;
+    hubApplication->height = 480.0f;
+    hubApplication->inputProcess = hubProcessInput;
+    run(hubApplication);
 
-    // useCustomOutputSrc = true; //use custom output source for logging
+    // Only launch the editor if the user confirmed a project
+    if (!hubProjectSelected)
+        return 0;
+
     logOutputSrc = &editorLog;
     editor = createApplication(init, update, render, destroy);
     editor->width = (f32)(1920 * 1.25f);

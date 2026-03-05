@@ -310,6 +310,32 @@ extern "C"
     static const Vec3 v3Forward = {0.0f, 0.0f, -1.0f};
     static const Vec3 v3Back = {0.0f, 0.0f, 1.0f};
     //=====================================================================================================================
+    // File IO
+    #define MAX_PATH_LENGTH 512
+    typedef struct{
+    u8 path[MAX_PATH_LENGTH];
+    u8 *data;
+    u32 size;
+    } FileData;
+
+    DAPI FileData* loadFile(const u8 *filePath);
+    DAPI void freeFileData(FileData* fileData);
+    DAPI b8 writeFile(const u8 *filePath, const u8 *data, u32 size);
+    DAPI b8 fileExists(const u8 *filePath);
+    DAPI u8** listFilesInDirectory(const u8 *directory, u32 *outCount);
+    DAPI void normalizePath(u8 *path);
+
+    // Returns true if the given path is an existing directory.
+    DAPI b8 dirExists(const u8 *path);
+    // Creates a directory and all intermediate parents (like mkdir -p).
+    // Returns true on success or if the directory already exists.
+    DAPI b8 createDir(const u8 *path);
+   
+    
+
+
+
+    //=====================================================================================================================
     // Arenas
 
     typedef struct
@@ -677,10 +703,10 @@ extern "C"
                                                const char *geomPath,
                                                const char *fragPath);
     // craetes a compute shader program
-    DAPI u32 createComputeProgram(const char *computePath);
+    DAPI u32 createComputeProgram(const u8 *computePath);
     // error tool
-    DAPI void checkShaderError(u32 shader, u32 flag, bool isProgram,
-                               const char *errorMessage);
+    DAPI void checkShaderError(u32 shader, u32 flag, b8 isProgram,
+                               const u8 *errorMessage);
     DAPI void freeShader(u32 shader);
 
     DAPI void updateShaderMVP(const u32 shader, const Transform transform,
@@ -911,15 +937,8 @@ extern "C"
     void cleanUpResourceManager(ResourceManager *manager);
     void readResources(ResourceManager *manager, const char *filename);
 
-    // file utils
-    // returns the text of a file
-    // TODO: make file.c and remove these functions from resource manager and
     // shader
-    DAPI char *loadFileText(const char *fileName);
-    DAPI char **listFilesInDirectory(const char *directory, u32 *outCount);
-    void listFilesRecursive(const char *directory, char ***fileList, u32 *count,
-                            u32 *capacity);
-    void normalizePath(char *path);
+
 
     DAPI void loadModelFromAssimp(ResourceManager *manager,
                                   const char *filename);

@@ -35,6 +35,7 @@ void initDisplay(Display* display, f32 width, f32 height)
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1); // set up double buffer   
 
     //create the window
+	//TODO: change to upload custom title 
 	display->sdlWindow = SDL_CreateWindow("Game Window",(int)display->screenWidth, (int)display->screenHeight, SDL_WINDOW_OPENGL); // create window
 	
     //null check
