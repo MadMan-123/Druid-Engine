@@ -507,18 +507,41 @@ extern "C"
     // Scenes
 
 #define MAX_SCENE_NAME 128
+#define MAX_SCENE_ARCHETYPES 32
+#define MAX_FIELD_NAME 64
+#define SCENE_MAGIC 0x43535244 // "DRSC"
+#define SCENE_VERSION 2
+
     typedef struct
     {
         EntityManager manager;
-
     } Scene;
+
+    // Forward-declared so SceneData can hold a pointer
+    typedef struct Material Material;
 
     typedef struct
     {
         u32 archetypeCount;
-        c8 *archetypeNames[MAX_SCENE_NAME];
+        c8 archetypeNames[MAX_SCENE_ARCHETYPES][MAX_SCENE_NAME];
         Archetype *archetypes;
+        // Material data (shared across the scene)
+        u32 materialCount;
+        Material *materials;
     } SceneData;
+
+    typedef struct
+    {
+        u32 magic;   // SCENE_MAGIC
+        u32 version; // SCENE_VERSION
+        u32 archetypeCount;
+    } SceneFileHeader;
+
+    typedef struct
+    {
+        c8 name[MAX_FIELD_NAME];
+        u32 size;
+    } FieldFileHeader;
 
     typedef struct
     {
@@ -542,8 +565,8 @@ extern "C"
     DAPI void removeScene(SceneManager *manager, u32 sceneIndex);
     DAPI void switchScene(SceneManager *manager, u32 sceneIndex);
 
-    // Persist/load SceneData to disk (implementation flexible)
-    DAPI void saveScene(const c8 *filePath, SceneData *data);
+    // Persist/load SceneData to disk (binary format)
+    DAPI b8 saveScene(const c8 *filePath, SceneData *data);
     DAPI SceneData loadScene(const c8 *filePath);
     DAPI SceneData bakeScene(Scene *scene);
     // ------------------------------------------------------------------
@@ -766,7 +789,7 @@ extern "C"
     } MaterialUniforms;
 
     // Mesh
-    typedef struct
+    typedef struct Material
     {
         u32 albedoTex;
         u32 normalTex;

@@ -39,6 +39,7 @@ extern Camera sceneCam;
 extern i32 entitySize;
 extern u32 entitySizeCache;
 extern u32 entityCount;
+extern Archetype sceneArchetype;
 
 extern b8* isActive;
 extern Vec3* positions;
@@ -96,6 +97,9 @@ void destroy();
 
 // Editor UI drawing entry point (panels, dockspace, etc.)
 void drawDockspaceAndPanels();
+
+// Rebind the global field pointers after the archetype changes
+void rebindArchetypeFields();
 
 void editorLog(LogLevel level, const c8* msg);
 

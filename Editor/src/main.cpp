@@ -131,6 +131,24 @@ void reallocateSceneArena()
 {
 }
 
+void rebindArchetypeFields()
+{
+    void **fields = getArchetypeFields(&sceneArchetype, 0);
+    if (!fields)
+    {
+        FATAL("Failed to rebind archetype fields");
+        return;
+    }
+    positions         = (Vec3 *)fields[0];
+    rotations         = (Vec4 *)fields[1];
+    scales            = (Vec3 *)fields[2];
+    isActive          = (b8 *)fields[3];
+    names             = (c8 *)fields[4];
+    modelIDs          = (u32 *)fields[5];
+    shaderHandles     = (u32 *)fields[6];
+    entityMaterialIDs = (u32 *)fields[7];
+}
+
 b8 *isActive = nullptr;
 Vec3 *positions = nullptr;
 Vec4 *rotations = nullptr;
@@ -157,21 +175,7 @@ void init()
 
     DEBUG("Archetype created with capacity: %d\n", entitySizeCache);
 
-    void **fields = getArchetypeFields(&sceneArchetype, 0);
-    if (!fields)
-    {
-        FATAL("Failed to get archetype fields");
-        return;
-    }
-
-    positions = (Vec3 *)fields[0];
-    rotations = (Vec4 *)fields[1];
-    scales = (Vec3 *)fields[2];
-    isActive = (b8 *)fields[3];
-    names = (c8 *)fields[4];
-    modelIDs = (u32 *)fields[5];
-    shaderHandles = (u32 *)fields[6];
-    entityMaterialIDs = (u32 *)fields[7];
+    rebindArchetypeFields();
     // set to empty strings
     DEBUG("Setting up ImGui with SDL");
     // initializes imgui, resources and default scene
@@ -252,6 +256,68 @@ void init()
 
     DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed,
           resources->meshUsed);
+
+    // --- Auto-load first scene file on startup ---
+    {
+        c8 scenesDir[512];
+        snprintf(scenesDir, sizeof(scenesDir), "%s/scenes", hubProjectDir);
+
+        u32 totalFiles = 0;
+        c8 **allFiles = listFilesInDirectory(scenesDir, &totalFiles);
+
+        const c8 *firstScene = nullptr;
+        if (allFiles && totalFiles > 0)
+        {
+            for (u32 i = 0; i < totalFiles; i++)
+            {
+                u32 len = (u32)strlen(allFiles[i]);
+                if (len > 5 && strcmp(allFiles[i] + len - 5, ".drsc") == 0)
+                {
+                    if (!firstScene)
+                        firstScene = allFiles[i];
+                }
+            }
+        }
+
+        if (firstScene)
+        {
+            INFO("Auto-loading scene: %s", firstScene);
+            SceneData sd = loadScene(firstScene);
+            if (sd.archetypeCount > 0 && sd.archetypes)
+            {
+                destroyArchetype(&sceneArchetype);
+
+                sceneArchetype  = sd.archetypes[0];
+                entitySizeCache = sceneArchetype.capacity;
+                entityCount     = sceneArchetype.arena[0].count;
+                entitySize      = (i32)entitySizeCache;
+
+                rebindArchetypeFields();
+
+                if (sd.materialCount > 0 && sd.materials)
+                {
+                    u32 count = sd.materialCount;
+                    if (count > resources->materialCount)
+                        count = resources->materialCount;
+                    memcpy(resources->materialBuffer, sd.materials,
+                           sizeof(Material) * count);
+                    resources->materialUsed = count;
+                    free(sd.materials);
+                }
+
+                INFO("Loaded startup scene (%u entities, %u materials)",
+                     entityCount, sd.materialCount);
+            }
+        }
+
+        // Free file list
+        if (allFiles)
+        {
+            for (u32 i = 0; i < totalFiles; i++)
+                free(allFiles[i]);
+            free(allFiles);
+        }
+    }
 }
 
 Vec2 cacheMouse = {0, 0};

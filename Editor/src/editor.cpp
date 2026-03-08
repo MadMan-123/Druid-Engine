@@ -3,6 +3,7 @@
 #define DRUID_H
 
 #include "editor.h"
+#include "hub.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
@@ -795,9 +796,11 @@ void drawDockspaceAndPanels()
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceID");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
 
-    // Main menu bar (Scene menu)
+    // Main menu bar
     if (ImGui::BeginMenuBar())
     {
+
+        // Scene UI
         if (ImGui::BeginMenu("Scene"))
         {
             if (ImGui::MenuItem("New Scene"))
@@ -814,6 +817,8 @@ void drawDockspaceAndPanels()
                 showLoadModal = true;
             }
             ImGui::Separator();
+            
+            
             //if (sceneManager && sceneManager->sceneCount > 0)
             // {
             //     // List existing scenes for quick switch/remove
@@ -881,13 +886,46 @@ void drawDockspaceAndPanels()
     {
         ImGui::OpenPopup("Save Scene As");
         showSaveModal = false;
+        // Pre-fill with a default name if empty
+        if (scenePathBuffer[0] == '\0')
+            strncpy(scenePathBuffer, "scene", sizeof(scenePathBuffer) - 1);
     }
     if (ImGui::BeginPopupModal("Save Scene As", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
+        ImGui::Text("Saves to: %s/scenes/", hubProjectDir);
+        ImGui::InputText("Filename", scenePathBuffer, sizeof(scenePathBuffer));
         if (ImGui::Button("Save"))
         {
-            // TODO: Implement scene saving
+            // Build full path: <project>/scenes/<name>.drsc
+            c8 fullPath[1024];
+            // Strip .drsc if user already typed it
+            c8 cleanName[512];
+            strncpy(cleanName, scenePathBuffer, sizeof(cleanName) - 1);
+            cleanName[sizeof(cleanName) - 1] = '\0';
+            u32 nameLen = (u32)strlen(cleanName);
+            if (nameLen > 5 && strcmp(cleanName + nameLen - 5, ".drsc") == 0)
+                cleanName[nameLen - 5] = '\0';
+            snprintf(fullPath, sizeof(fullPath), "%s/scenes/%s.drsc", hubProjectDir, cleanName);
+
+            // Build a SceneData from the live archetype and save it
+            SceneData sd = {0};
+            sd.archetypeCount = 1;
+            sd.archetypes = &sceneArchetype;
+            strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
+            // Make sure the arena knows the live entity count
+            sceneArchetype.arena[0].count = entityCount;
+            // Sync material data
+            sd.materialCount = resources->materialUsed;
+            sd.materials     = resources->materialBuffer;
+
+            if (saveScene(fullPath, &sd))
+            {
+                INFO("Scene saved to %s", fullPath);
+            }
+            else
+            {
+                ERROR("Failed to save scene to %s", fullPath);
+            }
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -897,19 +935,127 @@ void drawDockspaceAndPanels()
 
     if (showLoadModal)
     {
+        // Scan for .drsc files when opening the modal
         ImGui::OpenPopup("Load Scene");
         showLoadModal = false;
     }
     if (ImGui::BeginPopupModal("Load Scene", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
+        // Scan scenes directory for .drsc files
+        static c8 **sceneFiles = nullptr;
+        static u32 sceneFileCount = 0;
+        static b8 needsScan = true;
+
+        if (needsScan)
+        {
+            // Free previous scan
+            if (sceneFiles)
+            {
+                for (u32 i = 0; i < sceneFileCount; i++)
+                    free(sceneFiles[i]);
+                free(sceneFiles);
+                sceneFiles = nullptr;
+            }
+            sceneFileCount = 0;
+
+            c8 scenesDir[512];
+            snprintf(scenesDir, sizeof(scenesDir), "%s/scenes", hubProjectDir);
+
+            u32 totalFiles = 0;
+            c8 **allFiles = listFilesInDirectory(scenesDir, &totalFiles);
+
+            // Filter for .drsc extension
+            if (allFiles && totalFiles > 0)
+            {
+                sceneFiles = (c8 **)malloc(sizeof(c8 *) * totalFiles);
+                for (u32 i = 0; i < totalFiles; i++)
+                {
+                    u32 len = (u32)strlen(allFiles[i]);
+                    if (len > 5 && strcmp(allFiles[i] + len - 5, ".drsc") == 0)
+                    {
+                        sceneFiles[sceneFileCount] = allFiles[i];
+                        sceneFileCount++;
+                    }
+                    else
+                    {
+                        free(allFiles[i]);
+                    }
+                }
+                free(allFiles);
+            }
+            needsScan = false;
+        }
+
+        ImGui::Text("Available Scenes:");
+        ImGui::Separator();
+        if (sceneFileCount == 0)
+        {
+            ImGui::TextDisabled("No .drsc files found in scenes/");
+        }
+        else
+        {
+            for (u32 i = 0; i < sceneFileCount; i++)
+            {
+                // Show just the filename
+                const c8 *name = sceneFiles[i];
+                const c8 *slash = strrchr(name, '/');
+                if (!slash) slash = strrchr(name, '\\');
+                const c8 *display = slash ? slash + 1 : name;
+
+                if (ImGui::Selectable(display))
+                {
+                    strncpy(scenePathBuffer, sceneFiles[i], sizeof(scenePathBuffer) - 1);
+                    scenePathBuffer[sizeof(scenePathBuffer) - 1] = '\0';
+                }
+            }
+        }
+        ImGui::Separator();
         ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
         if (ImGui::Button("Load"))
         {
-            // TODO: Implement scene loading
+            SceneData sd = loadScene(scenePathBuffer);
+            if (sd.archetypeCount > 0 && sd.archetypes)
+            {
+                // Tear down the current archetype
+                destroyArchetype(&sceneArchetype);
+
+                // Adopt the loaded archetype
+                sceneArchetype = sd.archetypes[0];
+                entitySizeCache = sceneArchetype.capacity;
+                entityCount     = sceneArchetype.arena[0].count;
+                entitySize      = (i32)entitySizeCache;
+
+                // Rebind all field pointers
+                rebindArchetypeFields();
+
+                // Apply loaded materials
+                if (sd.materialCount > 0 && sd.materials)
+                {
+                    u32 count = sd.materialCount;
+                    if (count > resources->materialCount)
+                        count = resources->materialCount; // clamp to buffer capacity
+                    memcpy(resources->materialBuffer, sd.materials,
+                           sizeof(Material) * count);
+                    resources->materialUsed = count;
+                    free(sd.materials);
+                }
+
+                // Reset inspector state
+                inspectorEntityID    = 0;
+                currentInspectorState = EMPTY_VIEW;
+                manipulateTransform  = false;
+
+                INFO("Loaded scene from %s (%u entities)", scenePathBuffer, entityCount);
+            }
+            else
+            {
+                ERROR("Failed to load scene from %s", scenePathBuffer);
+            }
+            needsScan = true; // rescan next time
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+        if (ImGui::Button("Cancel")) { needsScan = true; ImGui::CloseCurrentPopup(); }
         ImGui::EndPopup();
     }
 
@@ -923,9 +1069,28 @@ void drawDockspaceAndPanels()
         // For new scene we only need capacity for now
         static i32 newCapacity = 128;
         ImGui::InputInt("Initial Capacity", &newCapacity);
+        if (newCapacity < 1) newCapacity = 1;
         if (ImGui::Button("Create"))
         {
-            // TODO: Implement new scene creation
+            // Destroy old archetype and create a fresh empty one
+            destroyArchetype(&sceneArchetype);
+
+            entitySizeCache = (u32)newCapacity;
+            entitySize      = newCapacity;
+            entityCount     = 0;
+
+            if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype))
+            {
+                FATAL("Failed to create new scene archetype");
+            }
+            else
+            {
+                rebindArchetypeFields();
+                inspectorEntityID    = 0;
+                currentInspectorState = EMPTY_VIEW;
+                manipulateTransform  = false;
+                INFO("Created new scene with capacity %u", entitySizeCache);
+            }
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
