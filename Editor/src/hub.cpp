@@ -14,21 +14,16 @@ static const c8 *HUB_CONFIG = "../projects.conf";
 static const c8 *REQUIRED_DIRS[]  = { "src", "res", "bin", "scenes" };
 static const u32   REQUIRED_DIR_COUNT = 4;
 
-// ── saved project list (fixed capacity) ──────────────────────────────────────
 #define MAX_SAVED_PROJECTS 64
 static c8  savedProjects[MAX_SAVED_PROJECTS][MAX_PATH_LENGTH];
 static i32 savedCount          = 0;
 static i32 selectedProjectIdx  = -1;
 
-// ── status bar ────────────────────────────────────────────────────────────────
 static c8  statusMsg[MAX_PATH_LENGTH] = "";
 static f32   statusTimer                = 0.0f;
 
 static SDL_Event hubEvnt;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 static void setStatus(const c8 *msg)
 {
@@ -75,7 +70,6 @@ static b8 scaffoldProject(const c8 *path)
     return true;
 }
 
-// ── Config persistence using Druid file IO ────────────────────────────────────
 
 static void saveConfig()
 {
@@ -167,9 +161,6 @@ static void removeFromSaved(i32 idx)
     saveConfig();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Application callbacks
-// ─────────────────────────────────────────────────────────────────────────────
 
 void hubProcessInput(void *appData)
 {
@@ -220,7 +211,6 @@ void hubRender(f32 dt)
                  ImGuiWindowFlags_NoTitleBar  | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove      | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    // ── Title ─────────────────────────────────────────────────────────────────
     const c8 *title = "DRUID ENGINE";
     f32 titleW = ImGui::CalcTextSize(title).x;
     ImGui::SetCursorPosX((displaySize.x - titleW) * 0.5f);
@@ -228,7 +218,6 @@ void hubRender(f32 dt)
     ImGui::Separator();
     ImGui::Spacing();
 
-    // ── Left column: saved project list ──────────────────────────────────────
     const f32 listW = displaySize.x * 0.6f;
     ImGui::BeginChild("##projectList", ImVec2(listW, displaySize.y - 120.0f), true);
 
@@ -244,7 +233,6 @@ void hubRender(f32 dt)
         if (!valid)
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
 
-        // Build selectable label from the last path component
         c8 label[MAX_PATH_LENGTH + 16];
         snprintf(label, sizeof(label), "%s##%d", pathBasename(p), i);
 
@@ -271,7 +259,6 @@ void hubRender(f32 dt)
 
     ImGui::EndChild();
 
-    // ── Right column: actions ─────────────────────────────────────────────────
     ImGui::SameLine();
     ImGui::BeginChild("##actions", ImVec2(0.0f, displaySize.y - 120.0f), false);
 
@@ -337,7 +324,6 @@ void hubRender(f32 dt)
 
     ImGui::EndChild();
 
-    // ── Status bar ────────────────────────────────────────────────────────────
     ImGui::SetCursorPos(ImVec2(8.0f, displaySize.y - 30.0f));
     ImGui::Separator();
     if (statusTimer > 0.0f)

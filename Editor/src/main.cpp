@@ -322,6 +322,7 @@ void update(f32 dt)
                 result.type == PICK_GIZMO_Z)
             {
                 canMoveAxis = true;
+                cacheMouse = mPos; // seed so first drag delta is zero
 
                 switch (result.type)
                 {
@@ -348,7 +349,7 @@ void update(f32 dt)
             }
         }
 
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && canMoveAxis)
         {
             // Add bounds checking for entity access
             if (inspectorEntityID >= entitySizeCache)
@@ -364,19 +365,53 @@ void update(f32 dt)
             f32 speed = 1.0f;
             f32 mag = 0.0f;
 
-            // determine direction of movement
-            if (result.type == PICK_GIZMO_X)
+            // // determine direction of movement
+            // if (result.type == PICK_GIZMO_X)
+            // {
+            //     mag = delta.x * speed;
+            // }
+            // else if (result.type == PICK_GIZMO_Y)
+            // {
+            //     // flip the y
+            //     mag = -(delta.y * speed);
+            // }
+            // else if (result.type == PICK_GIZMO_Z)
+            // {
+            //     mag = -(delta.y * speed);
+            // }
+
+
+            // Project the manipulate axis into screen space to determine
+            // how mouse movement maps to world-axis movement regardless
+            // of camera angle.
             {
-                mag = delta.x * speed;
-            }
-            else if (result.type == PICK_GIZMO_Y)
-            {
-                // flip the y
-                mag = -(delta.y * speed);
-            }
-            else if (result.type == PICK_GIZMO_Z)
-            {
-                mag = -(delta.y * speed);
+                Mat4 view = getView(&sceneCam, false);
+                Mat4 vp   = mat4Mul(sceneCam.projection, view);
+
+                Vec3 entityPos = positions[inspectorEntityID];
+                // project entity position and entity position + axis into screen space
+                Vec4 clipA = mat4TransformVec4(vp, {entityPos.x, entityPos.y, entityPos.z, 1.0f});
+                Vec3 offsetPos = v3Add(entityPos, manipulateAxis);
+                Vec4 clipB = mat4TransformVec4(vp, {offsetPos.x, offsetPos.y, offsetPos.z, 1.0f});
+
+                // perspective divide to NDC
+                Vec2 ndcA = {clipA.x / clipA.w, clipA.y / clipA.w};
+                Vec2 ndcB = {clipB.x / clipB.w, clipB.y / clipB.w};
+
+                // screen-space direction of the axis (in pixels)
+                Vec2 screenAxis = {
+                    (ndcB.x - ndcA.x) * viewportWidth  * 0.5f,
+                    -(ndcB.y - ndcA.y) * viewportHeight * 0.5f   // flip Y (screen Y is down)
+                };
+
+                f32 axisLen = v2Mag(screenAxis);
+                if (axisLen > 0.001f)
+                {
+                    // normalize the screen axis direction
+                    screenAxis = v2Scale(screenAxis, 1.0f / axisLen);
+                    // dot mouse delta with screen axis to get signed magnitude
+                    mag = v2Dot(delta, screenAxis) * speed;
+                }
             }
 
             switch (manipulateState)
@@ -384,7 +419,7 @@ void update(f32 dt)
             case MANIPULATE_POSITION:
             {
                 // work out the transformation
-                Vec3 transformation = v3Scale(v3Scale(manipulateAxis, mag), dt);
+                Vec3 transformation = v3Scale(manipulateAxis, mag * 0.01f);
 
                 Vec3 *pos = &positions[inspectorEntityID];
                 // apply movement along axis
@@ -406,7 +441,7 @@ void update(f32 dt)
             case MANIPULATE_SCALE:
             {
                 // edit the scale
-                Vec3 transformation = v3Scale(v3Scale(manipulateAxis, mag), dt);
+                Vec3 transformation = v3Scale(manipulateAxis, mag * 0.01f);
                 Vec3 *scale = &scales[inspectorEntityID];
 
                 *scale = v3Add(*scale, transformation);
@@ -416,12 +451,9 @@ void update(f32 dt)
             }
         }
 
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && canMoveAxis &&
-            manipulateTransform)
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && canMoveAxis)
         {
             canMoveAxis = false;
-            manipulateTransform = false;
-            // DEBUG("Clicked off\n");
         }
     }
 }

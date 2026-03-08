@@ -214,6 +214,7 @@ extern "C"
     DAPI Vec2i v2Tov2i(Vec2 a);
     DAPI Vec2 v2iTov2(Vec2i a);
     DAPI Vec2 v2Div(Vec2 a, f32 b);
+    DAPI f32 v2Dot(Vec2 a, Vec2 b);
 
     DAPI b8 v2Equal(Vec2 a, Vec2 b);
 

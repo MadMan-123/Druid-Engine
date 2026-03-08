@@ -58,6 +58,10 @@ inline Vec2 v2Div(Vec2 a, f32 b)
 	return (Vec2){(f32)(a.x / b),(f32)(a.y / b)};
 }
 
+inline f32 v2Dot(Vec2 a, Vec2 b)
+{
+	return a.x * b.x + a.y * b.y;
+}
 
 inline b8 v2Equal(Vec2 a, Vec2 b)
 {
