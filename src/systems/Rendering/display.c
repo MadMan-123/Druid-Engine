@@ -19,7 +19,7 @@ void clearDisplay(f32 r, f32 g, f32 b, f32 a)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear colour and depth buffer - set colour to colour defined in glClearColor
 }
 
-void initDisplay(Display* display, f32 width, f32 height)
+void initDisplay(const c8* title, Display* display, f32 width, f32 height)
 {
     //create all necessary data for the display	
 	display->sdlWindow = NULL; //initialise to generate null access violation for debugging. 
@@ -36,7 +36,7 @@ void initDisplay(Display* display, f32 width, f32 height)
 
     //create the window
 	//TODO: change to upload custom title 
-	display->sdlWindow = SDL_CreateWindow("Game Window",(i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL); // create window
+	display->sdlWindow = SDL_CreateWindow(title, (i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL); // create window
 	
     //null check
 	if (display->sdlWindow == NULL)

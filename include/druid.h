@@ -669,7 +669,7 @@ extern "C"
 
     // Display functions
 
-    DAPI void initDisplay(Display *display, f32 width, f32 height);
+    DAPI void initDisplay(const c8* title, Display *display, f32 width, f32 height);
     DAPI void swapBuffer(const Display *display);
     DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
 
@@ -1154,7 +1154,7 @@ extern "C"
         void (*render)(f32);
         void (*destroy)();
         void (*inputProcess)(void *);
-        const c8 *title;
+        c8 title[MAX_PATH_LENGTH];
         // open gl context with sdl within the display
         Display *display;
         enum ApplicationState state;

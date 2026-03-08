@@ -50,7 +50,7 @@ Application* createApplication(const c8* title,FncPtr init, FncPtrFloat update, 
 	assert(destroy != NULL && "Destroy function pointer is null");
 	
 	// copy the title to the application
-	strncpy((c8 *)app->title, (const c8 *)title, MAX_PATH_LENGTH - 1);
+	strncpy(app->title, title, MAX_PATH_LENGTH - 1);
 
 	// set the null terminator for the title
 	((c8 *)app->title)[MAX_PATH_LENGTH - 1] = '\0';
@@ -119,7 +119,7 @@ void initSystems(const Application* app)
 	assert(resources != NULL && "Resource Manager not created correctly");
 	
 	//initialize the display
-	initDisplay(app->display,width, height);
+	initDisplay(app->title, app->display, width, height);
 
 
 	//try and read in the resources

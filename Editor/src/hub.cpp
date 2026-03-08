@@ -91,7 +91,7 @@ static void saveConfig()
         offset += len;
         buf[offset++] = '\n';
     }
-    writeFile(HUB_CONFIG, buf, offset);
+    writeFile(HUB_CONFIG, (const u8 *)buf , offset);
 }
 
 static void loadConfig()
