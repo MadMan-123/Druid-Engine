@@ -1,7 +1,7 @@
 #include "../../../include/druid.h"
 #include "../../stb_image.h"
 
-u32 initTexture(const char* fileName)
+u32 initTexture(const c8* fileName)
 {
 	if (!fileName) 
 	{
@@ -10,8 +10,8 @@ u32 initTexture(const char* fileName)
 	}
 
 	u32 textureHandler = 0;	
-	int width, height, numComponents; //width, height, and no of components of image
-	unsigned char* imageData = stbi_load(fileName, &width, &height, &numComponents, 4); //load the image and store the data
+	i32 width, height, numComponents; //width, height, and no of components of image
+	u8 * imageData = stbi_load(fileName, &width, &height, &numComponents, 4); //load the image and store the data
 
 	if (imageData == NULL)
 	{
@@ -47,15 +47,15 @@ u32 initTexture(const char* fileName)
 	return textureHandler; //return the texture handler
 }
 
-u32 createCubeMapTexture(const char** faces,u32 count)
+u32 createCubeMapTexture(const c8** faces,u32 count)
 {
 	u32 textureHandler;
 	glGenTextures(1, &textureHandler);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, textureHandler);
-  	int width, height, nChannels;
+  	i32 width, height, nChannels;
     for (u32 i = 0; i < count; i++) 
 	{
-        unsigned char* data = stbi_load(faces[i], &width, &height, &nChannels, 0);
+        u8 * data = stbi_load(faces[i], &width, &height, &nChannels, 0);
         if (data) 	
 		{
 			GLenum format = (nChannels == 4) ? GL_RGBA : GL_RGB;
@@ -103,7 +103,7 @@ void freeTexture(u32 texture)
 	glDeleteTextures(1, &texture); 
 }
 
-void bindTexture(u32 texture,unsigned int unit, GLenum type)
+void bindTexture(u32 texture,u32 unit, GLenum type)
 {
 	//check if the unit is valid
 	assert(unit >= 0 && unit <= 31); 

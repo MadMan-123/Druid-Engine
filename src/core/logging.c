@@ -3,7 +3,7 @@
 #include <stdarg.h>
 #include <string.h>
 
-const char* colorCodes[LOG_MAX] = {
+const c8* colorCodes[LOG_MAX] = {
 		"\x1b[31m",   //FATAL - red
 		"\x1b[1;31m", //ERROR - bright red
 		"\x1b[33m",   //WARNING - yellow
@@ -11,11 +11,11 @@ const char* colorCodes[LOG_MAX] = {
 		"\x1b[36m",   //DEBUG - cyan
 		"\x1b[37m"    //TRACE - white
 };
-const char* colorReset = "\x1b[0m";
+const c8* colorReset = "\x1b[0m";
 
 DAPI b8 useCustomOutputSrc = false;
-DAPI void (*logOutputSrc)(LogLevel level, const char* msg) = NULL;
-bool initLogging() 
+DAPI void (*logOutputSrc)(LogLevel level, const c8* msg) = NULL;
+b8 initLogging() 
 {
 	//TODO: Log file 
 	return true;
@@ -26,13 +26,13 @@ void shutdownLogging()
 	
 }
 
-void logOutput (LogLevel level, const char* message, ...)
+void logOutput (LogLevel level, const c8* message, ...)
 {
-	const char* levelStrings[LOG_MAX] = {"[FATAL]","[ERROR]","[WARNING]","[INFO]","[DEBUG]","[TRACE]" };
+	const c8* levelStrings[LOG_MAX] = {"[FATAL]","[ERROR]","[WARNING]","[INFO]","[DEBUG]","[TRACE]" };
 	
-	char outBuffer[LOG_BUFFER_SIZE];
+	c8 outBuffer[LOG_BUFFER_SIZE];
 	//buffer to hold the formatted message
-	char buffer[LOG_BUFFER_SIZE];
+	c8 buffer[LOG_BUFFER_SIZE];
 	
 	va_list bufferArgs;
 	va_start(bufferArgs, message);	

@@ -3,7 +3,7 @@
 #include "../../include/druid.h"
 
 static SDL_Event evnt;
-static const bool* state; 
+static const b8* state; 
 SDL_Gamepad* gamepads[GAMEPAD_MAX] = { NULL }; //array to hold gamepads
 u32 gamepadCount = 0; //number of gamepads connected
 
@@ -153,19 +153,19 @@ Vec2 getJoystickAxis(u32 controllerID, JoystickCode axis1, JoystickCode axis2)
 
 /// Check if a key is pressed
 
-bool isKeyDown(KeyCode key)
+b8 isKeyDown(KeyCode key)
 {
 	state = SDL_GetKeyboardState(NULL);
 	return state[key]; 
 }
 
-bool isKeyUp(KeyCode key)
+b8 isKeyUp(KeyCode key)
 {
 	state = SDL_GetKeyboardState(NULL);
 	return !state[key]; 
 }
 
-bool isButtonDown(u32 controllerID, ControllerCode button)
+b8 isButtonDown(u32 controllerID, ControllerCode button)
 {
 	SDL_Gamepad* pad = gamepads[controllerID];
 	if(pad == NULL) 
@@ -178,7 +178,7 @@ bool isButtonDown(u32 controllerID, ControllerCode button)
 
 
 /// Check if a mouse button is pressed
-bool isMouseDown(u32 button)
+b8 isMouseDown(u32 button)
 {
 	return (SDL_GetMouseState(NULL,NULL) & SDL_BUTTON_MASK(button)) != 0;
 }

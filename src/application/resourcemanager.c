@@ -9,7 +9,7 @@ ResourceManager *resources = NULL;
 
 u32 djb2Hash(const void *inStr, u32 capacity)
 {
-    const char *str = (const char *)inStr;
+    const c8 *str = (const c8 *)inStr;
     u32 hash = 5381;
     i32 c;
 
@@ -23,15 +23,15 @@ u32 djb2Hash(const void *inStr, u32 capacity)
 
 b8 equals(const void *a, const void *b)
 {
-    return strcmp((const char *)a, (const char *)b) == 0;
+    return strcmp((const c8 *)a, (const c8 *)b) == 0;
 }
 
-int compare_files_for_loading_priority(const void* a, const void* b) {
-    const char* fileA = *(const char**)a;
-    const char* fileB = *(const char**)b;
+i32 compare_files_for_loading_priority(const void* a, const void* b) {
+    const c8* fileA = *(const c8**)a;
+    const c8* fileB = *(const c8**)b;
 
-    const char* extA = strrchr(fileA, '.');
-    const char* extB = strrchr(fileB, '.');
+    const c8* extA = strrchr(fileA, '.');
+    const c8* extB = strrchr(fileB, '.');
 
     if (!extA || extA == fileA) return 1;      // No extension on A, B goes first
     if (!extB || extB == fileB) return -1;     // No extension on B, A goes first
@@ -39,8 +39,8 @@ int compare_files_for_loading_priority(const void* a, const void* b) {
     extA++;
     extB++;
 
-    bool isTexA = (strcmp(extA, "png") == 0 || strcmp(extA, "jpg") == 0 || strcmp(extA, "bmp") == 0);
-    bool isTexB = (strcmp(extB, "png") == 0 || strcmp(extB, "jpg") == 0 || strcmp(extB, "bmp") == 0);
+    b8 isTexA = (strcmp(extA, "png") == 0 || strcmp(extA, "jpg") == 0 || strcmp(extA, "bmp") == 0);
+    b8 isTexB = (strcmp(extB, "png") == 0 || strcmp(extB, "jpg") == 0 || strcmp(extB, "bmp") == 0);
 
     if (isTexA && !isTexB) {
         return -1; // A (texture) comes before B
@@ -97,27 +97,27 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
 
     // create hashmaps
     if (!createMap(&manager->textureIDs, textureCount,
-                   sizeof(char) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
+                   sizeof(c8) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
     {
             FATAL("Texture Hash map failed to create");
     }
     if (!createMap(&manager->shaderIDs, shaderCount,
-                   sizeof(char) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
+                   sizeof(c8) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
     {
             FATAL("Shader Hash map failed to create");
     }
     // create hashmaps
     if (!createMap(&manager->materialIDs, materialCount,
-                   sizeof(char) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
+                   sizeof(c8) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
     {
             FATAL("Material Hash map failed to create");
     }
-    if (!createMap(&manager->mesheIDs, meshCount, sizeof(char) * MAX_NAME_SIZE,
+    if (!createMap(&manager->mesheIDs, meshCount, sizeof(c8) * MAX_NAME_SIZE,
                    sizeof(u32), djb2Hash, equals))
     {
         FATAL("Mesh Hash map failed to create");
     }
-    if (!createMap(&manager->modelIDs, modelCount, sizeof(char) * MAX_NAME_SIZE,
+    if (!createMap(&manager->modelIDs, modelCount, sizeof(c8) * MAX_NAME_SIZE,
                    sizeof(u32), djb2Hash, equals))
     {
         FATAL("Model Hash map failed to create");
@@ -140,14 +140,14 @@ void cleanUpResourceManager(ResourceManager *manager)
     free(manager);
 }
 
-void readResources(ResourceManager *manager, const char *filename)
+void readResources(ResourceManager *manager, const c8 *filename)
 {
     u32 modelExtCount = 3;
     // vert, frag, geom, glsl, comp
     u32 shaderExtCount = 5;
     u32 textureExtCount = 3;
 
-    const char *fileExtentions[] = {"fbx",  "obj",  "blend", "vert",
+    const c8 *fileExtentions[] = {"fbx",  "obj",  "blend", "vert",
                                     "frag", "geom", "glsl", "comp",
                                     "png",  "jpg",  "bmp"}; // textures
 
@@ -155,20 +155,20 @@ void readResources(ResourceManager *manager, const char *filename)
         TRACE("Reading resources from %s\n", filename);
     // do a recursive search for all files in the RES_FOLDER directory
     u32 outCount = 0;
-    u8 **output = listFilesInDirectory((const u8 *)"../" RES_FOLDER, &outCount);
-    qsort(output, outCount, sizeof(char*), compare_files_for_loading_priority);
+    c8 **output = listFilesInDirectory("../" RES_FOLDER, &outCount);
+    qsort(output, outCount, sizeof(c8 *), compare_files_for_loading_priority);
     if(DEBUG_RESOURCES)
     INFO("Found %d files in directory %s\n", outCount, "../" RES_FOLDER);
 
     HashMap shaderNameMap;
-    if (!createMap(&shaderNameMap, outCount, sizeof(char) * MAX_NAME_SIZE,
+    if (!createMap(&shaderNameMap, outCount, sizeof(c8) * MAX_NAME_SIZE,
                    sizeof(u32), djb2Hash, equals))
     {
             FATAL("Model Hash map failed to create");
         return;
     }
     //load default shader which is called "shader.*"
-    const char *defaultShaderName = "default";
+    const c8 *defaultShaderName = "default";
     
     //add default shader to resource manager
     u32 defaultShaderHandle = createGraphicsProgram("../" RES_FOLDER "shader.vert", "../" RES_FOLDER "shader.frag");
@@ -187,17 +187,17 @@ void readResources(ResourceManager *manager, const char *filename)
         // First pass: populate shaderNameMap for vert/frag pairs
         for (u32 i = 0; i < outCount; i++)
         {
-            const char *filePath = (const char *)output[i];
-            char copyBuffer[512];
+            const c8 *filePath = (const c8 *)output[i];
+            c8 copyBuffer[512];
             strcpy(copyBuffer, filePath);
 
-            char *fileName = strrchr(copyBuffer, '/');
+            c8 *fileName = strrchr(copyBuffer, '/');
             if (fileName)
                 fileName++;
             else
                 fileName = copyBuffer;
 
-            char *ext = strrchr(fileName, '.');
+            c8 *ext = strrchr(fileName, '.');
             // include .vert, .frag, .geom and .glsl in the first-pass grouping
             if (ext && (strcmp(ext, ".vert") == 0 || strcmp(ext, ".frag") == 0 || strcmp(ext, ".geom") == 0 || strcmp(ext, ".glsl") == 0))
             {
@@ -218,17 +218,17 @@ void readResources(ResourceManager *manager, const char *filename)
         // Second pass: process all resources
         for (u32 i = 0; i < outCount; i++)
         {
-            const char *filePath = (const char *)output[i];
-            char copyBuffer[512];
+            const c8 *filePath = (const c8 *)output[i];
+            c8 copyBuffer[512];
             strcpy(copyBuffer, filePath);
 
-            char *fileName = strrchr(copyBuffer, '/');
+            c8 *fileName = strrchr(copyBuffer, '/');
             if (fileName)
                 fileName++;
             else
                 fileName = copyBuffer;
 
-            char *ext = strrchr(fileName, '.');
+            c8 *ext = strrchr(fileName, '.');
             if (!ext || ext == fileName)
                 continue;
             ext++;
@@ -244,13 +244,13 @@ void readResources(ResourceManager *manager, const char *filename)
                     }
                     else if (m < modelExtCount + shaderExtCount)
                     {
-                        char pathNoExt[MAX_NAME_SIZE];
+                        c8 pathNoExt[MAX_NAME_SIZE];
                         strncpy(pathNoExt, filePath, sizeof(pathNoExt) - 1);
                         pathNoExt[sizeof(pathNoExt) - 1] = '\0';
-                        char *dot = strrchr(pathNoExt, '.');
+                        c8 *dot = strrchr(pathNoExt, '.');
                         if(dot) *dot = '\0';
 
-                        char *shaderNameForUI = strrchr(pathNoExt, '/');
+                        c8 *shaderNameForUI = strrchr(pathNoExt, '/');
                         if (shaderNameForUI)
                             shaderNameForUI++;
                         else
@@ -266,7 +266,7 @@ void readResources(ResourceManager *manager, const char *filename)
                         
                         b8 hasGeom = false;
                         u32 shaderHandle = 0;
-                        char shaderName[MAX_NAME_SIZE];
+                        c8 shaderName[MAX_NAME_SIZE];
                         if (strcmp(ext, "comp") == 0)
                         {
                             shaderHandle = createComputeProgram(filePath);
@@ -280,9 +280,9 @@ void readResources(ResourceManager *manager, const char *filename)
                             {
                                     snprintf(shaderName, MAX_NAME_SIZE, "%s", shaderNameForUI);
 
-                                    char vertPath[MAX_NAME_SIZE];
-                                    char fragPath[MAX_NAME_SIZE];
-                                    char geomPath[MAX_NAME_SIZE];
+                                    c8 vertPath[MAX_NAME_SIZE];
+                                    c8 fragPath[MAX_NAME_SIZE];
+                                    c8 geomPath[MAX_NAME_SIZE];
 
                                     snprintf(vertPath, MAX_NAME_SIZE, "%s.vert", pathNoExt);
                                     snprintf(fragPath, MAX_NAME_SIZE, "%s.frag", pathNoExt);
@@ -337,7 +337,7 @@ void readResources(ResourceManager *manager, const char *filename)
                         }
                         manager->textureHandles[manager->textureUsed] = texture;
 
-                        char texName[MAX_NAME_SIZE];
+                        c8 texName[MAX_NAME_SIZE];
                         snprintf(texName, MAX_NAME_SIZE, "%s", fileName);
 
                         insertMap(&manager->textureIDs, texName, &manager->textureUsed);
@@ -357,7 +357,7 @@ void readResources(ResourceManager *manager, const char *filename)
 
     for (u32 i = 0; i < outCount; i++)
     {
-        free((char *)output[i]);
+        free((c8 *)output[i]);
     }
     free(output);
     destroyMap(&shaderNameMap);

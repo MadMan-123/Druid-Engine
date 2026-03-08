@@ -70,7 +70,7 @@ void drawMesh(Mesh *mesh)
     glBindVertexArray(0);
 }
 
-Mesh *loadMeshFromAssimp(const char *filename, u32 *meshCount)
+Mesh *loadMeshFromAssimp(const c8 *filename, u32 *meshCount)
 {
     // Load the scene from file using Assimp
     const struct aiScene *scene = aiImportFile(
@@ -223,7 +223,7 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
     return outputMesh;
 }
 
-bool createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
+b8 createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
                 const u32 *indices, u32 numIndices)
 {
 
@@ -363,8 +363,8 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
 }
 
 // Function to generate height data using compute shader
-HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,
-                            const char *computeShaderPath)
+HeightMap generateHeightMap(i32 sizeX, i32 sizeZ, f32 heightScale,
+                            const c8 *computeShaderPath)
 {
     // Create compute shader
     u32 computeShader = createComputeProgram(computeShaderPath);
@@ -390,8 +390,8 @@ HeightMap generateHeightMap(int sizeX, int sizeZ, f32 heightScale,
                 heightScale);
     glUniform1i(glGetUniformLocation(computeShader, "seed"), seed);
 
-    int workGroupsX = (sizeX + 15) / 16; // Ceil(sizeX / 16)
-    int workGroupsY = (sizeZ + 15) / 16; // Ceil(sizeZ / 16)
+    i32 workGroupsX = (sizeX + 15) / 16; // Ceil(sizeX / 16)
+    i32 workGroupsY = (sizeZ + 15) / 16; // Ceil(sizeZ / 16)
     glDispatchCompute(workGroupsX, workGroupsY, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -439,24 +439,24 @@ u32 *createTerrainIndices(u32 cellsX, u32 cellsZ, u32 *outIndexCount)
     return indices;
 }
 
-void calculateTerrainNormals(Vertices *vertices, int width, int height)
+void calculateTerrainNormals(Vertices *vertices, i32 width, i32 height)
 {
     // reset all normals to zero
-    for (int i = 0; i < width * height; i++)
+    for (i32 i = 0; i < width * height; i++)
     {
         vertices->normals[i] = (Vec3){0, 0, 0};
     }
 
     // calculate normals for each triangle, add to shared vertices
-    for (int z = 0; z < height - 1; z++)
+    for (i32 z = 0; z < height - 1; z++)
     {
-        for (int x = 0; x < width - 1; x++)
+        for (i32 x = 0; x < width - 1; x++)
         {
             // Get indices for the quad corners
-            int topLeft = z * width + x;
-            int topRight = topLeft + 1;
-            int bottomLeft = (z + 1) * width + x;
-            int bottomRight = bottomLeft + 1;
+            i32 topLeft = z * width + x;
+            i32 topRight = topLeft + 1;
+            i32 bottomLeft = (z + 1) * width + x;
+            i32 bottomRight = bottomLeft + 1;
 
             // Get positions
             Vec3 v1 = vertices->positions[topLeft];
@@ -504,7 +504,7 @@ void calculateTerrainNormals(Vertices *vertices, int width, int height)
     }
 
     // Normalize all normals
-    for (int i = 0; i < width * height; i++)
+    for (i32 i = 0; i < width * height; i++)
     {
         f32 length = sqrtf(vertices->normals[i].x * vertices->normals[i].x +
                            vertices->normals[i].y * vertices->normals[i].y +
@@ -525,7 +525,7 @@ void calculateTerrainNormals(Vertices *vertices, int width, int height)
 
 Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
                                   f32 heightScale,
-                                  const char *computeShaderPath,
+                                  const c8 *computeShaderPath,
                                   HeightMap *output)
 {
     // First generate height data
@@ -879,7 +879,7 @@ Mesh *createQuadMesh()
     quadVertices->texCoords[5] = (Vec2){1.0f, 1.0f};
     
     // Set dummy normals (not used for screen quad)
-    for (int i = 0; i < 6; i++)
+    for (i32 i = 0; i < 6; i++)
     {
         quadVertices->normals[i] = (Vec3){0.0f, 0.0f, 1.0f};
     }

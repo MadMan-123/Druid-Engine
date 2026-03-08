@@ -1,9 +1,9 @@
-﻿// Arena allocator for Druid engine
+// Arena allocator for Druid engine
 // Provides fast memory allocation for entities and subsystems
 
 #include "../../include/druid.h"
 
-bool arenaCreate(Arena *arena, u32 maxSize)
+b8 arenaCreate(Arena *arena, u32 maxSize)
 {
     if (!arena)
         return false;
@@ -30,7 +30,7 @@ void *aalloc(Arena *arena, u32 size)
     if (arena->used + size > arena->size)
         return NULL;
     // allocate memory
-    void *ptr = (char *)(arena->data) + arena->used;
+    void *ptr = (c8 *)(arena->data) + arena->used;
     arena->used += size;
     // return pointer to allocated memory
     return ptr;

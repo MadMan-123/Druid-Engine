@@ -3,7 +3,7 @@
 
 // Defined in hub.cpp
 extern Application *hubApplication;
-extern char hubProjectDir[512];
+extern c8 hubProjectDir[512];
 extern b8 hubProjectSelected;
 
 void hubStart();

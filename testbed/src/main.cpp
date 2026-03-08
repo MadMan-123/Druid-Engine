@@ -9,7 +9,7 @@ f32 fov = 70.0f;
 u32 defaultShader = 0;
 
 DEFINE_ARCHETYPE(StaticEntites,
-	FIELD(bool, isActive),
+	FIELD(b8, isActive),
 	FIELD(Vec3, position),
 	FIELD(Vec4, rotation),
 	FIELD(Vec3, scale),
@@ -18,7 +18,7 @@ DEFINE_ARCHETYPE(StaticEntites,
 
 
 //each field array
-bool* isActive = NULL;
+b8* isActive = NULL;
 Vec3* positions = NULL;
 Vec4* rotations = NULL;
 Vec3* scales = NULL;
@@ -40,7 +40,7 @@ void init(void)
 
 	//loop through the entities and set their model to default model 0
 	//get the field pointer for each field
-	isActive = (bool*)&StaticEntites.fields[0];
+	isActive = (b8*)&StaticEntites.fields[0];
 	positions = (Vec3*)&StaticEntites.fields[1];
 	rotations = (Vec4*)&StaticEntites.fields[2];
 	scales = (Vec3*)&StaticEntites.fields[3];
@@ -67,7 +67,7 @@ void render(f32 dt) {
 	//render model 0
 	glUseProgram(defaultShader);
 	Model* model = &resources->modelBuffer[0];
-	for(int i = 0; i < StaticEntites.count; i++) {
+	for(i32 i = 0; i < StaticEntites.count; i++) {
 		if(!isActive[i]) continue;
 		Transform t = {positions[i], rotations[i], scales[i]};
 		updateShaderModel(defaultShader, t);  // Only set model matrix
@@ -86,7 +86,7 @@ void destroy(void) {
     // intentionally empty
 }
 
-int main(int argc, char **argv) {
+int main(i32 argc, char **argv) {
     game = createApplication(init, update, render, destroy);
     assert(game != NULL && "Application could not be created");
     game->width = 1280; game->height = 720;

@@ -5,9 +5,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-bool createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
+b8 createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
                u32 (*hashFunc)(const void*, u32),
-               bool (*equalsFunc)(const void*, const void*))
+               b8 (*equalsFunc)(const void*, const void*))
 {
     if (!map) return false;
 
@@ -22,7 +22,7 @@ bool createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
 	if(!map->arena) return false;
 	
 
-    u32 arenaSize = capacity * (keySize + valueSize + sizeof(bool) + sizeof(Pair));
+    u32 arenaSize = capacity * (keySize + valueSize + sizeof(b8) + sizeof(Pair));
     if (!arenaCreate(map->arena, arenaSize)) {
         
 	return false;
@@ -59,7 +59,7 @@ void destroyMap(HashMap* map)
     }
 }
 
-bool insertMap(HashMap* map, const void* key, const void* value)
+b8 insertMap(HashMap* map, const void* key, const void* value)
 {
     if (!map || !key || !value) return false;
     if (map->count >= map->capacity) return false; // full map
@@ -88,7 +88,7 @@ bool insertMap(HashMap* map, const void* key, const void* value)
     return false; // map full
 }
 
-bool findInMap(HashMap* map, const void* key, void* outValue)
+b8 findInMap(HashMap* map, const void* key, void* outValue)
 {
     if (!map || !key || !outValue) return false;
 

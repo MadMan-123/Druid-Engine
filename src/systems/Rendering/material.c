@@ -20,8 +20,8 @@ u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type)
     }
 
     // strip to just the filename
-    const char *fileName = texture_path.data;
-    const char *lastSlash = strrchr(fileName, '/');
+    const c8 *fileName = texture_path.data;
+    const c8 *lastSlash = strrchr(fileName, '/');
     if (!lastSlash)
         lastSlash = strrchr(fileName, '\\');
     if (lastSlash)
@@ -53,17 +53,17 @@ u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type)
     }
 
     // If not found, try with different extensions
-    char baseName[256];
+    c8 baseName[256];
     strncpy(baseName, fileName, sizeof(baseName) - 1);
     baseName[sizeof(baseName) - 1] = '\0';
-    char *dot = strrchr(baseName, '.');
+    c8 *dot = strrchr(baseName, '.');
     if (dot)
         *dot = '\0';
 
-    const char *extensions[] = {".png", ".jpg", ".jpeg", ".bmp", ".tga"};
-    for (int i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++)
+    const c8 *extensions[] = {".png", ".jpg", ".jpeg", ".bmp", ".tga"};
+    for (i32 i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++)
     {
-        char tempName[256];
+        c8 tempName[256];
         snprintf(tempName, sizeof(tempName), "%s%s", baseName, extensions[i]);
         if (findInMap(&resources->textureIDs, tempName, &textureIndex))
         {
@@ -137,7 +137,7 @@ MaterialUniforms getMaterialUniforms(u32 shader)
 
 void updateMaterial(Material *material, const MaterialUniforms *uniforms)
 {
-    const bool shouldDebug = false;
+    const b8 shouldDebug = false;
 
     if (shouldDebug)
     {

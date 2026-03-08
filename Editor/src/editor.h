@@ -44,7 +44,7 @@ extern b8* isActive;
 extern Vec3* positions;
 extern Vec4* rotations;
 extern Vec3* scales;
-extern char* names;
+extern c8* names;
 extern u32 *modelIDs;
 extern u32 *shaderHandles;
 extern u32 *entityMaterialIDs;
@@ -86,7 +86,7 @@ extern InspectorState currentInspectorState;
 extern u32 inspectorEntityID; //holds the index for the inspector to load component data  
 
 extern ManipulateTransformState manipulateState;
-extern const char** consoleLines;
+extern const c8** consoleLines;
 // Application lifecycle hooks implemented for the Editor
 void processInput(void* appData);
 void init();
@@ -97,7 +97,7 @@ void destroy();
 // Editor UI drawing entry point (panels, dockspace, etc.)
 void drawDockspaceAndPanels();
 
-void editorLog(LogLevel level, const char* msg);
+void editorLog(LogLevel level, const c8* msg);
 
 // Multi-FBO system functions
 void initMultiFBOs();

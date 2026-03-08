@@ -120,12 +120,12 @@ void switchScene(SceneManager *manager, u32 sceneIndex)
     // TODO: set current scene and (optionally) apply to runtime
 }
 
-void saveScene(const char *filePath, SceneData *data)
+void saveScene(const c8 *filePath, SceneData *data)
 {
     // TODO: persist scene metadata to disk (JSON or binary)
 }
 
-SceneData loadScene(const char *filePath)
+SceneData loadScene(const c8 *filePath)
 {
     SceneData out = {0};
     // TODO: load scene metadata from disk and populate out

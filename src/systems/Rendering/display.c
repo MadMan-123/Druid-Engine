@@ -1,6 +1,6 @@
 #include "../../../include/druid.h"
 
-void returnError(const char* errorString)
+void returnError(const c8* errorString)
 {
 	printf("[DISPLAY ERROR]%s/n",errorString);
 	printf("press any key to quit...\n");
@@ -13,7 +13,7 @@ void swapBuffer(const Display* display)
 	SDL_GL_SwapWindow(display->sdlWindow); //swap buffers
 }
 
-void clearDisplay(float r, float g, float b, float a)
+void clearDisplay(f32 r, f32 g, f32 b, f32 a)
 {
 	glClearColor(r, g, b, a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear colour and depth buffer - set colour to colour defined in glClearColor
@@ -36,7 +36,7 @@ void initDisplay(Display* display, f32 width, f32 height)
 
     //create the window
 	//TODO: change to upload custom title 
-	display->sdlWindow = SDL_CreateWindow("Game Window",(int)display->screenWidth, (int)display->screenHeight, SDL_WINDOW_OPENGL); // create window
+	display->sdlWindow = SDL_CreateWindow("Game Window",(i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL); // create window
 	
     //null check
 	if (display->sdlWindow == NULL)

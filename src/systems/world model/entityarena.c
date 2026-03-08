@@ -11,7 +11,7 @@ void printEntityArena(EntityArena* arena)
 u32 getEntitySize(StructLayout* layout)
 {
 	u32 size = 0;
-	for(int i = 0; i < layout->count; i++)
+	for(i32 i = 0; i < layout->count; i++)
 	{
 		size += layout->fields[i].size;
 	}
@@ -99,7 +99,7 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 }
 
 //free the arena
-bool freeEntityArena(EntityArena* arena, u32 arenaCount)
+b8 freeEntityArena(EntityArena* arena, u32 arenaCount)
 {
 	//free each arena if there are multiple
 	for(u32 i = 0; i < arenaCount; i++)

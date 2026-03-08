@@ -4,24 +4,24 @@
 #include "../deps/imgui/imgui_impl_sdl3.h"
 
 Application *hubApplication = NULL;
-char hubProjectDir[MAX_PATH_LENGTH] = "";
+c8 hubProjectDir[MAX_PATH_LENGTH] = "";
 b8   hubProjectSelected             = false;
 
 // Config file written next to the editor binary
-static const u8 *HUB_CONFIG = (const u8 *)"../projects.conf";
+static const c8 *HUB_CONFIG = "../projects.conf";
 
 // Required subdirs for a valid Druid project
-static const char *REQUIRED_DIRS[]  = { "src", "res", "bin", "scenes" };
+static const c8 *REQUIRED_DIRS[]  = { "src", "res", "bin", "scenes" };
 static const u32   REQUIRED_DIR_COUNT = 4;
 
 // ── saved project list (fixed capacity) ──────────────────────────────────────
 #define MAX_SAVED_PROJECTS 64
-static u8  savedProjects[MAX_SAVED_PROJECTS][MAX_PATH_LENGTH];
+static c8  savedProjects[MAX_SAVED_PROJECTS][MAX_PATH_LENGTH];
 static i32 savedCount          = 0;
 static i32 selectedProjectIdx  = -1;
 
 // ── status bar ────────────────────────────────────────────────────────────────
-static char  statusMsg[MAX_PATH_LENGTH] = "";
+static c8  statusMsg[MAX_PATH_LENGTH] = "";
 static f32   statusTimer                = 0.0f;
 
 static SDL_Event hubEvnt;
@@ -30,7 +30,7 @@ static SDL_Event hubEvnt;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-static void setStatus(const char *msg)
+static void setStatus(const c8 *msg)
 {
     strncpy(statusMsg, msg, sizeof(statusMsg) - 1);
     statusMsg[sizeof(statusMsg) - 1] = '\0';
@@ -38,40 +38,40 @@ static void setStatus(const char *msg)
 }
 
 // Returns pointer to the last path component (the project folder name).
-static const char *pathBasename(const char *path)
+static const c8 *pathBasename(const c8 *path)
 {
-    const char *s = strrchr(path, '/');
-    const char *b = strrchr(path, '\\');
-    const char *sep = s > b ? s : b;
+    const c8 *s = strrchr(path, '/');
+    const c8 *b = strrchr(path, '\\');
+    const c8 *sep = s > b ? s : b;
     return sep ? sep + 1 : path;
 }
 
-static b8 isValidProject(const char *path)
+static b8 isValidProject(const c8 *path)
 {
-    if (!dirExists((const u8 *)path))
+    if (!dirExists(path))
         return false;
-    char sub[MAX_PATH_LENGTH];
+    c8 sub[MAX_PATH_LENGTH];
     for (u32 i = 0; i < REQUIRED_DIR_COUNT; i++)
     {
         snprintf(sub, sizeof(sub), "%s/%s", path, REQUIRED_DIRS[i]);
-        if (!dirExists((const u8 *)sub))
+        if (!dirExists(sub))
             return false;
     }
     return true;
 }
 
-static b8 scaffoldProject(const char *path)
+static b8 scaffoldProject(const c8 *path)
 {
-    char sub[MAX_PATH_LENGTH];
+    c8 sub[MAX_PATH_LENGTH];
     for (u32 i = 0; i < REQUIRED_DIR_COUNT; i++)
     {
         snprintf(sub, sizeof(sub), "%s/%s", path, REQUIRED_DIRS[i]);
-        if (!createDir((const u8 *)sub))
+        if (!createDir(sub))
             return false;
     }
     // also create deps
     snprintf(sub, sizeof(sub), "%s/deps", path);
-    createDir((const u8 *)sub);
+    createDir(sub);
     return true;
 }
 
@@ -80,11 +80,11 @@ static b8 scaffoldProject(const char *path)
 static void saveConfig()
 {
     // build a newline-delimited buffer
-    u8 buf[MAX_SAVED_PROJECTS * MAX_PATH_LENGTH];
+    c8 buf[MAX_SAVED_PROJECTS * MAX_PATH_LENGTH];
     u32 offset = 0;
     for (i32 i = 0; i < savedCount; i++)
     {
-        u32 len = (u32)strlen((char *)savedProjects[i]);
+        u32 len = (u32)strlen((c8 *)savedProjects[i]);
         if (offset + len + 1 >= sizeof(buf))
             break;
         memcpy(buf + offset, savedProjects[i], len);
@@ -105,12 +105,12 @@ static void loadConfig()
         return;
 
     // parse line by line
-    char *cursor = (char *)fd->data;
-    char *end    = cursor + fd->size;
+    c8 *cursor = (c8 *)fd->data;
+    c8 *end    = cursor + fd->size;
     while (cursor < end && savedCount < MAX_SAVED_PROJECTS)
     {
         // find line end
-        char *nl = cursor;
+        c8 *nl = cursor;
         while (nl < end && *nl != '\n' && *nl != '\r')
             nl++;
 
@@ -131,12 +131,12 @@ static void loadConfig()
     freeFileData(fd);
 }
 
-static void addToSaved(const char *path)
+static void addToSaved(const c8 *path)
 {
     // remove duplicate if present
     for (i32 i = 0; i < savedCount; i++)
     {
-        if (strcmp((char *)savedProjects[i], path) == 0)
+        if (strcmp((c8 *)savedProjects[i], path) == 0)
         {
             // shift left to remove
             for (i32 j = i; j < savedCount - 1; j++)
@@ -150,7 +150,7 @@ static void addToSaved(const char *path)
     {
         for (i32 i = savedCount; i > 0; i--)
             memcpy(savedProjects[i], savedProjects[i - 1], MAX_PATH_LENGTH);
-        strncpy((char *)savedProjects[0], path, MAX_PATH_LENGTH - 1);
+        strncpy((c8 *)savedProjects[0], path, MAX_PATH_LENGTH - 1);
         savedProjects[0][MAX_PATH_LENGTH - 1] = '\0';
         savedCount++;
     }
@@ -221,15 +221,15 @@ void hubRender(f32 dt)
                  ImGuiWindowFlags_NoMove      | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // ── Title ─────────────────────────────────────────────────────────────────
-    const char *title = "DRUID ENGINE";
-    float titleW = ImGui::CalcTextSize(title).x;
+    const c8 *title = "DRUID ENGINE";
+    f32 titleW = ImGui::CalcTextSize(title).x;
     ImGui::SetCursorPosX((displaySize.x - titleW) * 0.5f);
     ImGui::TextUnformatted(title);
     ImGui::Separator();
     ImGui::Spacing();
 
     // ── Left column: saved project list ──────────────────────────────────────
-    const float listW = displaySize.x * 0.6f;
+    const f32 listW = displaySize.x * 0.6f;
     ImGui::BeginChild("##projectList", ImVec2(listW, displaySize.y - 120.0f), true);
 
     ImGui::TextDisabled("Recent Projects");
@@ -237,15 +237,15 @@ void hubRender(f32 dt)
 
     for (i32 i = 0; i < savedCount; i++)
     {
-        const char *p     = (const char *)savedProjects[i];
+        const c8 *p     = (const c8 *)savedProjects[i];
         b8          valid = isValidProject(p);
-        bool        sel   = (i == selectedProjectIdx);
+        b8        sel   = (i == selectedProjectIdx);
 
         if (!valid)
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
 
         // Build selectable label from the last path component
-        char label[MAX_PATH_LENGTH + 16];
+        c8 label[MAX_PATH_LENGTH + 16];
         snprintf(label, sizeof(label), "%s##%d", pathBasename(p), i);
 
         if (ImGui::Selectable(label, sel, ImGuiSelectableFlags_AllowDoubleClick))
@@ -281,13 +281,13 @@ void hubRender(f32 dt)
     ImGui::Spacing();
     ImGui::Spacing();
 
-    const float bw = -1.0f;
-    const float bh = 28.0f;
+    const f32 bw = -1.0f;
+    const f32 bh = 28.0f;
 
     // Load existing project
     if (ImGui::Button("Load Project", ImVec2(bw, bh)))
     {
-        normalizePath((u8 *)hubProjectDir);
+        normalizePath(hubProjectDir);
         if (hubProjectDir[0] == '\0')
             setStatus("Enter a project directory first.");
         else if (!isValidProject(hubProjectDir))
@@ -304,7 +304,7 @@ void hubRender(f32 dt)
     // Create new project at typed path
     if (ImGui::Button("New Project", ImVec2(bw, bh)))
     {
-        normalizePath((u8 *)hubProjectDir);
+        normalizePath(hubProjectDir);
         if (hubProjectDir[0] == '\0')
             setStatus("Enter a project directory first.");
         else if (isValidProject(hubProjectDir))

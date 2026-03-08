@@ -1,4 +1,4 @@
-﻿#include <math.h>
+#include <math.h>
 #include <stdio.h>
 
 #include "../../include/druid.h"
@@ -21,7 +21,7 @@ inline Vec2 v2Sub(Vec2 a, Vec2 b)
 }
 
 
-inline Vec2 v2Scale(Vec2 a, float b)
+inline Vec2 v2Scale(Vec2 a, f32 b)
 {
     return (Vec2){a.x * b, a.y * b };
 }
@@ -31,35 +31,35 @@ inline Vec2 v2Mul(Vec2 a, Vec2 b)
 {
     return (Vec2){ a.x * b.x, a.y * b.y };
 }
-inline float v2Mag(Vec2 a)
+inline f32 v2Mag(Vec2 a)
 {
     return (f32)sqrt(a.x * a.x + a.y * a.y);
 }
 
-inline float v2Dis(Vec2 a, Vec2 b)
+inline f32 v2Dis(Vec2 a, Vec2 b)
 {
     return  (f32)(v2Mag(v2Sub(b, a)));
 }
 
 inline Vec2i v2Tov2i(Vec2 a)
 {
-    return (Vec2i){(int)a.x,(int)a.y};
+    return (Vec2i){(i32)a.x,(i32)a.y};
 }
 
 inline Vec2 v2iTov2(Vec2i a)
 {
-    return (Vec2){(float)a.x, (float)a.y};
+    return (Vec2){(f32)a.x, (f32)a.y};
 }
 
 
 
-inline Vec2 v2Div(Vec2 a, float b)
+inline Vec2 v2Div(Vec2 a, f32 b)
 {
-	return (Vec2){(float)(a.x / b),(float)(a.y / b)};
+	return (Vec2){(f32)(a.x / b),(f32)(a.y / b)};
 }
 
 
-inline bool v2Equal(Vec2 a, Vec2 b)
+inline b8 v2Equal(Vec2 a, Vec2 b)
 {
 	return a.x == b.x && a.y == b.y;
 }
@@ -73,7 +73,7 @@ inline Vec3 v3Sub(Vec3 a, Vec3 b)
 {
 	return (Vec3){a.x - b.x, a.y - b.y, a.z - b.z};
 }
-inline Vec3 v3Scale(Vec3 a, float b)
+inline Vec3 v3Scale(Vec3 a, f32 b)
 {
 
 	return (Vec3){a.x * b, a.y * b, a.z * b};
@@ -84,12 +84,12 @@ inline Vec3 v3Mul(Vec3 a, Vec3 b)
 	return (Vec3){a.x * b.x, a.y * b.y, a.z * b.z};
 }
 
-inline float v3Mag(Vec3 a)
+inline f32 v3Mag(Vec3 a)
 {
 	return (f32)sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 }
 
-inline float v3Dis(Vec3 a, Vec3 b)
+inline f32 v3Dis(Vec3 a, Vec3 b)
 {
 	return (f32)v3Mag(v3Sub(b,a));
 }
@@ -104,20 +104,20 @@ inline Vec3 v3iTov3(Vec3i a)
 	return (Vec3){(f32)a.x, (f32)a.y,(f32)a.z};
 }
 
-inline Vec3 v3Div(Vec3 a, float b)
+inline Vec3 v3Div(Vec3 a, f32 b)
 {
 	return (Vec3){a.x/b,a.y/b,a.z/b};
 }
 
 inline Vec3 v3Norm(Vec3 a)
 {
-    	float mag = v3Mag(a);
+    	f32 mag = v3Mag(a);
     	Vec3 output = (mag > 0.00001f) ? v3Div(a, mag) : (Vec3){0, 0, 0};
 	return output;
 }
 
 
-inline bool v3Equal(Vec3 a, Vec3 b)
+inline b8 v3Equal(Vec3 a, Vec3 b)
 {
 	return (a.x == b.x && a.y == b.y && a.z == b.z);
 }
@@ -219,7 +219,7 @@ void freeMat(f32** mat, Vec2i size)
 
 inline Mat4 mat4Identity() {
     Mat4 result = {0};
-    for (int i = 0; i < 4; i++)
+    for (i32 i = 0; i < 4; i++)
         result.m[i][i] = 1.0f;
     return result;
 }
@@ -237,7 +237,7 @@ inline Mat4 mat4Translate(Mat4 in, Vec3 t) {
     return result;
 }
 
-inline Mat4 mat4Scale(float scale) {
+inline Mat4 mat4Scale(f32 scale) {
     Mat4 result = mat4Identity();
     result.m[0][0] = scale;
     result.m[1][1] = scale;
@@ -253,10 +253,10 @@ inline Mat4 mat4ScaleVec(Vec3 s) {
     return result;
 }
 
-inline Mat4 mat4RotateX(float angleRadians) {
+inline Mat4 mat4RotateX(f32 angleRadians) {
     Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
+    f32 c = cosf(angleRadians);
+    f32 s = sinf(angleRadians);
     result.m[1][1] = c;
     result.m[2][1] = -s;
     result.m[1][2] = s;
@@ -264,10 +264,10 @@ inline Mat4 mat4RotateX(float angleRadians) {
     return result;
 }
 
-inline Mat4 mat4RotateY(float angleRadians) {
+inline Mat4 mat4RotateY(f32 angleRadians) {
     Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
+    f32 c = cosf(angleRadians);
+    f32 s = sinf(angleRadians);
     result.m[0][0] = c;
     result.m[2][0] = s;
     result.m[0][2] = -s;
@@ -275,10 +275,10 @@ inline Mat4 mat4RotateY(float angleRadians) {
     return result;
 }
 
-inline Mat4 mat4RotateZ(float angleRadians) {
+inline Mat4 mat4RotateZ(f32 angleRadians) {
     Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
+    f32 c = cosf(angleRadians);
+    f32 s = sinf(angleRadians);
     result.m[0][0] = c;
     result.m[1][0] = -s;
     result.m[0][1] = s;
@@ -286,13 +286,13 @@ inline Mat4 mat4RotateZ(float angleRadians) {
     return result;
 }
 
-inline Mat4 mat4Rotate(float angleRadians, Vec3 axis) {
+inline Mat4 mat4Rotate(f32 angleRadians, Vec3 axis) {
     Mat4 result = mat4Identity();
-    float c = cosf(angleRadians);
-    float s = sinf(angleRadians);
-    float t = 1.0f - c;
-    float x = axis.x, y = axis.y, z = axis.z;
-    float len = sqrtf(x * x + y * y + z * z);
+    f32 c = cosf(angleRadians);
+    f32 s = sinf(angleRadians);
+    f32 t = 1.0f - c;
+    f32 x = axis.x, y = axis.y, z = axis.z;
+    f32 len = sqrtf(x * x + y * y + z * z);
     if (len > 0.0001f) {
         x /= len; y /= len; z /= len;
     }
@@ -310,9 +310,9 @@ inline Mat4 mat4Rotate(float angleRadians, Vec3 axis) {
 
 inline Mat4 mat4Mul(Mat4 a, Mat4 b) {
     Mat4 result = mat4Zero();
-    for (int col = 0; col < 4; ++col) {
-        for (int row = 0; row < 4; ++row) {
-            for (int i = 0; i < 4; ++i) {
+    for (i32 col = 0; col < 4; ++col) {
+        for (i32 row = 0; row < 4; ++row) {
+            for (i32 i = 0; i < 4; ++i) {
                 result.m[col][row] += a.m[i][row] * b.m[col][i];
             }
         }
@@ -321,8 +321,8 @@ inline Mat4 mat4Mul(Mat4 a, Mat4 b) {
 }
 
 inline Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ) {
-    float f = 1.0f / tanf(fovRadians / 2.0f);
-    float nf = 1.0f / (nearZ - farZ);
+    f32 f = 1.0f / tanf(fovRadians / 2.0f);
+    f32 nf = 1.0f / (nearZ - farZ);
     Mat4 result = mat4Zero();
     result.m[0][0] = f / aspect;
     result.m[1][1] = f;
@@ -357,9 +357,9 @@ inline Mat4 mat4Add(Mat4 a, Mat4 b)
 {
     Mat4 result;
     
-    for (int i = 0; i < 4; i++)
+    for (i32 i = 0; i < 4; i++)
     {
-        for (int j = 0; j < 4; j++)
+        for (i32 j = 0; j < 4; j++)
         {
             result.m[i][j] = a.m[i][j] + b.m[i][j];
         }
@@ -373,9 +373,9 @@ inline Mat4 mat4Sub(Mat4 a, Mat4 b)
 {
     Mat4 result;
     
-    for (int i = 0; i < 4; i++)
+    for (i32 i = 0; i < 4; i++)
     {
-        for (int j = 0; j < 4; j++)
+        for (i32 j = 0; j < 4; j++)
         {
             result.m[i][j] = a.m[i][j] - b.m[i][j];
         }
@@ -385,13 +385,13 @@ inline Mat4 mat4Sub(Mat4 a, Mat4 b)
 }
 
 //Scale all elements of a matrix
-inline Mat4 mat4ScaleVal(Mat4 a, float scale)
+inline Mat4 mat4ScaleVal(Mat4 a, f32 scale)
 {
     Mat4 result;
     
-    for (int i = 0; i < 4; i++)
+    for (i32 i = 0; i < 4; i++)
     {
-        for (int j = 0; j < 4; j++)
+        for (i32 j = 0; j < 4; j++)
         {
             result.m[i][j] = a.m[i][j] * scale;
         }
@@ -404,9 +404,9 @@ inline Mat4 mat4ScaleVal(Mat4 a, float scale)
 Mat3 mat4ToMat3(const Mat4 m4) 
 {
     Mat3 m3;
-    for (int i = 0; i < 3; i++) 
+    for (i32 i = 0; i < 3; i++) 
     {
-        for (int j = 0; j < 3; j++) 
+        for (i32 j = 0; j < 3; j++) 
         {
             m3.m[i][j] = m4.m[i][j];
         }
@@ -417,9 +417,9 @@ Mat3 mat4ToMat3(const Mat4 m4)
 Mat4 mat3ToMat4(const Mat3 m3) 
 {
     Mat4 m4 = mat4Identity();
-    for (int i = 0; i < 3; i++) 
+    for (i32 i = 0; i < 3; i++) 
     {
-        for (int j = 0; j < 3; j++) 
+        for (i32 j = 0; j < 3; j++) 
         {
             m4.m[i][j] = m3.m[i][j];
         }
@@ -473,22 +473,22 @@ inline Vec3 mat4TransformDirection(Mat4 m, Vec3 d)
     return result;
 }
 
-inline float mat4Determinant(Mat4 m) 
+inline f32 mat4Determinant(Mat4 m) 
 {
     //Calculate the cofactors of the first row
-    float c00 = m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
+    f32 c00 = m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
                m.m[1][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) +
                m.m[1][3] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]);
     
-    float c01 = m.m[1][0] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
+    f32 c01 = m.m[1][0] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) -
                m.m[1][2] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) +
                m.m[1][3] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]);
     
-    float c02 = m.m[1][0] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) -
+    f32 c02 = m.m[1][0] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) -
                m.m[1][1] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) +
                m.m[1][3] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]);
     
-    float c03 = m.m[1][0] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]) -
+    f32 c03 = m.m[1][0] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]) -
                m.m[1][1] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]) +
                m.m[1][2] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]);
     
@@ -499,14 +499,14 @@ inline float mat4Determinant(Mat4 m)
 //Invert a 4x4 matrix
 inline Mat4 mat4Inverse(Mat4 m)
 {
-    float det = mat4Determinant(m);
+    f32 det = mat4Determinant(m);
     
     if (fabs(det) < 0.0001f)
     {
         return mat4Identity();
     }
     
-    float invDet = 1.0f / det;
+    f32 invDet = 1.0f / det;
     Mat4 result;
     
     //Calculate the adjugate matrix (transpose of cofactor matrix)
@@ -614,9 +614,9 @@ inline Mat4 mat4Transpose(Mat4 m)
 {
     Mat4 result;
     
-    for (int i = 0; i < 4; i++)
+    for (i32 i = 0; i < 4; i++)
     {
-        for (int j = 0; j < 4; j++) 
+        for (i32 j = 0; j < 4; j++) 
         {
             result.m[i][j] = m.m[j][i];
         }
@@ -629,9 +629,9 @@ inline Mat4 mat4Transpose(Mat4 m)
 //Copy matrix to f32** format (for compatibility with existing code)
 inline void mat4ToPointers(Mat4 mat, f32** dest) 
 {
-    for (int i = 0; i < 4; i++)
+    for (i32 i = 0; i < 4; i++)
     {
-        for (int j = 0; j < 4; j++)
+        for (i32 j = 0; j < 4; j++)
         {
             dest[i][j] = mat.m[i][j];
         }
@@ -642,9 +642,9 @@ inline void mat4ToPointers(Mat4 mat, f32** dest)
 inline Mat4 pointersToMat4(f32** src) 
 {
     Mat4 result;
-    for (int i = 0; i < 4; i++) 
+    for (i32 i = 0; i < 4; i++) 
     {
-        for (int j = 0; j < 4; j++) 
+        for (i32 j = 0; j < 4; j++) 
         {
             result.m[i][j] = src[i][j];
         }

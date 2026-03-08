@@ -12,10 +12,10 @@
 #endif
 
 
-void listFilesRecursive(const u8 *directory, u8 ***fileList, u32 *count, u32 *capacity);
+void listFilesRecursive(const c8 *directory, c8 ***fileList, u32 *count, u32 *capacity);
 
 
-FileData* loadFile(const u8 *filePath)
+FileData* loadFile(const c8 *filePath)
 {
     // open the file to read
     FILE *file = fopen(filePath, "r");
@@ -56,7 +56,7 @@ FileData* loadFile(const u8 *filePath)
     assert(fileData != NULL && "Failed to allocate FileData");
     
     // copy the path, data and size to the struct
-    strncpy((char *)fileData->path, (const char *)filePath, MAX_PATH_LENGTH - 1);
+    strncpy((c8 *)fileData->path, (const c8 *)filePath, MAX_PATH_LENGTH - 1);
     fileData->path[MAX_PATH_LENGTH - 1] = '\0';
     
     fileData->data = buffer;
@@ -78,7 +78,7 @@ void freeFileData(FileData* fileData)
 
 
 
-b8 writeFile(const u8 *filePath, const u8 *data, u32 size)
+b8 writeFile(const c8 *filePath, const u8 *data, u32 size)
 {
     FILE *file = fopen(filePath, "w");
     if (file == NULL)
@@ -99,7 +99,7 @@ b8 writeFile(const u8 *filePath, const u8 *data, u32 size)
     return true;
 }
 
-b8 fileExists(const u8 *filePath)
+b8 fileExists(const c8 *filePath)
 {
     FILE *file = fopen(filePath, "r");
     if (file == NULL)
@@ -110,26 +110,26 @@ b8 fileExists(const u8 *filePath)
     return true;
 }
 
-b8 dirExists(const u8 *path)
+b8 dirExists(const c8 *path)
 {
 #if PLATFORM_WINDOWS
     DWORD attr = GetFileAttributesA((LPCSTR)path);
     return (attr != INVALID_FILE_ATTRIBUTES) && (attr & FILE_ATTRIBUTE_DIRECTORY);
 #else
     struct stat st;
-    return (stat((const char *)path, &st) == 0) && S_ISDIR(st.st_mode);
+    return (stat((const c8 *)path, &st) == 0) && S_ISDIR(st.st_mode);
 #endif
 }
 
 // Creates a directory and all intermediate parents (mkdir -p).
-b8 createDir(const u8 *path)
+b8 createDir(const c8 *path)
 {
-    u8 tmp[MAX_PATH_LENGTH];
-    strncpy((char *)tmp, (const char *)path, MAX_PATH_LENGTH - 1);
+    c8 tmp[MAX_PATH_LENGTH];
+    strncpy((c8 *)tmp, (const c8 *)path, MAX_PATH_LENGTH - 1);
     tmp[MAX_PATH_LENGTH - 1] = '\0';
     normalizePath(tmp);
 
-    u32 len = (u32)strlen((char *)tmp);
+    u32 len = (u32)strlen((c8 *)tmp);
     // strip trailing slash
     if (len > 0 && tmp[len - 1] == '/')
         tmp[--len] = '\0';
@@ -139,7 +139,7 @@ b8 createDir(const u8 *path)
     {
         if (tmp[i] == '/' || tmp[i] == '\0')
         {
-            u8 saved = tmp[i];
+            c8 saved = tmp[i];
             tmp[i] = '\0';
 
             if (!dirExists(tmp))
@@ -155,7 +155,7 @@ b8 createDir(const u8 *path)
                     }
                 }
 #else
-                if (mkdir((const char *)tmp, 0755) != 0 && errno != EEXIST)
+                if (mkdir((const c8 *)tmp, 0755) != 0 && errno != EEXIST)
                 {
                     ERROR("createDir: failed to create '%s'\n", tmp);
                     return false;
@@ -171,10 +171,10 @@ b8 createDir(const u8 *path)
 
 
 
-u8** listFilesInDirectory(const u8 *directory, u32 *outCount)
+c8** listFilesInDirectory(const c8 *directory, u32 *outCount)
 {
     u32 capacity = 256;
-    u8 **fileList = (u8 **)malloc(sizeof(u8 *) * capacity);
+    c8 **fileList = (c8 **)malloc(sizeof(c8 *) * capacity);
     *outCount = 0;
 
     listFilesRecursive(directory, &fileList, outCount, &capacity);
@@ -182,15 +182,15 @@ u8** listFilesInDirectory(const u8 *directory, u32 *outCount)
     return fileList;
 }
 
-void normalizePath(u8 *path)
+void normalizePath(c8 *path)
 {
-    u8 *src = path;
-    u8 *dst = path;
+    c8 *src = path;
+    c8 *dst = path;
 
     while (*src)
     {
         // convert backslash to slash
-        u8 c = (*src == '\\') ? '/' : *src;
+        c8 c = (*src == '\\') ? '/' : *src;
 
         // collapse multiple '/'
         if (c == '/' && dst > path && dst[-2] == '/')
@@ -206,13 +206,13 @@ void normalizePath(u8 *path)
     *dst = '\0';
 }
 
-u8 *loadFileText(const u8 *fileName)
+c8 *loadFileText(const c8 *fileName)
 {
     FileData *fd = loadFile(fileName);
     if (!fd)
         return NULL;
     // Detach the data buffer so the caller owns it; freeFileData would double-free
-    u8 *text = fd->data;
+    c8 *text = (c8 *)fd->data;
     fd->data = NULL;
     freeFileData(fd);
     return text;
@@ -220,10 +220,10 @@ u8 *loadFileText(const u8 *fileName)
 
 
 #if PLATFORM_WINDOWS
-void listFilesRecursive(const u8 *directory, u8 ***fileList, u32 *count, u32 *capacity)
+void listFilesRecursive(const c8 *directory, c8 ***fileList, u32 *count, u32 *capacity)
 {
     WIN32_FIND_DATA findFileData;
-    u8 searchPath[MAX_PATH];
+    c8 searchPath[MAX_PATH];
     snprintf(searchPath, MAX_PATH, "%s/*", directory);
 
     HANDLE hFind = FindFirstFile(searchPath, &findFileData);
@@ -232,12 +232,12 @@ void listFilesRecursive(const u8 *directory, u8 ***fileList, u32 *count, u32 *ca
 
     do
     {
-        const char *name = findFileData.cFileName;
+        const c8 *name = findFileData.cFileName;
 
         if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
             continue;
 
-        u8 fullPath[MAX_PATH];
+        c8 fullPath[MAX_PATH];
         snprintf(fullPath, MAX_PATH, "%s/%s", directory, name);
         normalizePath(fullPath);
 

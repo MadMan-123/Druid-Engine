@@ -19,20 +19,20 @@ DEFINE_ARCHETYPE(SceneEntity,
     FIELD(Vec4, rotation), 
     FIELD(Vec3, scale),
     FIELD(b8, isActive),
-    FIELD(char[MAX_NAME_SIZE], name),
+    FIELD(c8[MAX_NAME_SIZE], name),
     FIELD(u32, modelID),
     FIELD(u32, shaderHandle),
     FIELD(u32, materialID)
 );
 
 // buffer of 2D array of strings
-const char **consoleLines = NULL;
+const c8 **consoleLines = NULL;
 
 // Allocate the storage here
 Application *editor = nullptr;
 
 // UI state for scene menu modals
-static char scenePathBuffer[512] = "";
+static c8 scenePathBuffer[512] = "";
 static b8 showSaveModal = false;
 static b8 showLoadModal = false;
 static b8 showNewSceneModal = false;
@@ -78,7 +78,7 @@ u32 fboShader = 0;  // FBO post-processing shader
 ManipulateTransformState manipulateState = MANIPULATE_POSITION;
 
 
-static void drawTextureSelector(const char *label, u32 *textureHandle, const char *comboID)
+static void drawTextureSelector(const c8 *label, u32 *textureHandle, const c8 *comboID)
 {
     if (!textureHandle || !resources) return;
     ImGui::Text("%s", label);
@@ -90,7 +90,7 @@ static void drawTextureSelector(const char *label, u32 *textureHandle, const cha
         {
             if (resources->textureIDs.pairs[texIdx].occupied)
             {
-                const char *texName = (const char *)resources->textureIDs.pairs[texIdx].key;
+                const c8 *texName = (const c8 *)resources->textureIDs.pairs[texIdx].key;
                 u32 textureIndex = *(u32 *)resources->textureIDs.pairs[texIdx].value;
                 u32 handle = resources->textureHandles[textureIndex];
 
@@ -311,9 +311,9 @@ static void drawViewportWindow()
         targetW = targetH * targetAspect;
     }
 
-    resizeViewportFramebuffers((int)targetW, (int)targetH);
+    resizeViewportFramebuffers((i32)targetW, (i32)targetH);
     // Keep the ID framebuffer sized to the viewport so picking reads use correct coords
-    resizeIDFramebuffer((int)targetW, (int)targetH);
+    resizeIDFramebuffer((i32)targetW, (i32)targetH);
 
     ImVec2 cursor = ImGui::GetCursorPos();
     ImVec2 imageOffset =
@@ -334,9 +334,9 @@ static void drawViewportWindow()
     renderGameScene();
 
     // Debug: Show what's happening with the conditions
-        bool shaderReady = (fboShader != 0);
-        bool finalFBOReady = (finalDisplayFB.fbo != 0);  
-        bool activeFBOReady = (viewportFBs[activeFBO].fbo != 0);    // Post-processing pipeline: render active FBO through shader to final display FBO
+        b8 shaderReady = (fboShader != 0);
+        b8 finalFBOReady = (finalDisplayFB.fbo != 0);  
+        b8 activeFBOReady = (viewportFBs[activeFBO].fbo != 0);    // Post-processing pipeline: render active FBO through shader to final display FBO
     if (shaderReady && finalFBOReady && activeFBOReady) {
         // Bind final display FBO as render target
         bindFramebuffer(&finalDisplayFB);
@@ -371,7 +371,7 @@ static void drawViewportWindow()
 
 static void drawDebugWindow()
 {
-    const char *inspectorStateNames[] = {"EMPTY_VIEW", "ENTITY_VIEW"};
+    const c8 *inspectorStateNames[] = {"EMPTY_VIEW", "ENTITY_VIEW"};
     ImGui::Begin("Debug");
     ImGui::Text("FPS %lf", editor->fps);
     ImGui::Text("Entity Count: %d", entityCount);
@@ -466,13 +466,13 @@ static void drawSceneListWindow()
         }
     }
 
-    char *entityName;
+    c8 *entityName;
     for (u32 i = 0; i < entityCount; i++)
     {
         entityName = &names[i * MAX_NAME_SIZE];
 
         ImGui::PushID(i);
-        const char *button_label =
+        const c8 *button_label =
             (entityName[0] == '\0') ? "[Unnamed Entity]" : entityName;
 
         // draw list of entities
@@ -610,8 +610,8 @@ static void drawInspectorWindow()
                         resources->materialBuffer[newIndex] = resources->materialBuffer[defaultMaterialIndex];
 
                         // generate a name for the material
-                        char newName[256];
-                        const char *entityName = &names[inspectorEntityID * MAX_NAME_SIZE];
+                        c8 newName[256];
+                        const c8 *entityName = &names[inspectorEntityID * MAX_NAME_SIZE];
                         if (entityName == NULL || entityName[0] == '\0')
                             entityName = model->name;
                         snprintf(newName, sizeof(newName), "%s-custom-%u", entityName, newIndex);
@@ -655,13 +655,13 @@ static void drawInspectorWindow()
                 ImGui::SliderFloat("Transparency", &mat->transparency, 0.0f, 1.0f);
 
                 // Shader selection
-                const char* currentShaderName = "None";
+                const c8* currentShaderName = "None";
                 // Find the name of the current shader
                 for (u32 shaderNameIdx = 0; shaderNameIdx < resources->shaderIDs.capacity; shaderNameIdx++) {
                     if (resources->shaderIDs.pairs[shaderNameIdx].occupied) {
                         u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderNameIdx].value;
                         if (resources->shaderHandles[shaderIndex] == shaderHandles[inspectorEntityID]) {
-                            currentShaderName = (const char*)resources->shaderIDs.pairs[shaderNameIdx].key;
+                            currentShaderName = (const c8*)resources->shaderIDs.pairs[shaderNameIdx].key;
                             break;
                         }
                     }
@@ -673,7 +673,7 @@ static void drawInspectorWindow()
                     {
                         if (resources->shaderIDs.pairs[shaderIdx].occupied)
                         {
-                            const char* shaderName = (const char*)resources->shaderIDs.pairs[shaderIdx].key;
+                            const c8* shaderName = (const c8*)resources->shaderIDs.pairs[shaderIdx].key;
                             u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderIdx].value;
                             u32 shaderHandle = resources->shaderHandles[shaderIndex];
 
@@ -819,9 +819,9 @@ void drawDockspaceAndPanels()
             //     // List existing scenes for quick switch/remove
             //     for (u32 i = 0; i < sceneManager->sceneCount; i++)
             //     {
-            //         char label[64];
+            //         c8 label[64];
             //         snprintf(label, sizeof(label), "Scene %u", i);
-            //         if (ImGui::MenuItem(label, NULL, (int)(sceneManager->currentScene == i)))
+            //         if (ImGui::MenuItem(label, NULL, (i32)(sceneManager->currentScene == i)))
             //         {
             //             // switch scene
             //             switchScene(sceneManager, i);
@@ -921,7 +921,7 @@ void drawDockspaceAndPanels()
     if (ImGui::BeginPopupModal("New Scene", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
         // For new scene we only need capacity for now
-        static int newCapacity = 128;
+        static i32 newCapacity = 128;
         ImGui::InputInt("Initial Capacity", &newCapacity);
         if (ImGui::Button("Create"))
         {
@@ -934,7 +934,7 @@ void drawDockspaceAndPanels()
     }
 }
 
-void editorLog(LogLevel level, const char *msg)
+void editorLog(LogLevel level, const c8 *msg)
 {
     // add the message to the console lines to be rendered
     for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)

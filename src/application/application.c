@@ -21,7 +21,7 @@ void inputUpdate(Application* app)
 	yInputAxis = clamp(kAxis.y + jAxis.y, -1.0f, 1.0f); //clamp to -1 to 1 range
 }
 //create the application
-Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)
+Application* createApplication(const c8* title,FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)
 {
 	//create the application
 	Application* app = (Application*)malloc(sizeof(Application));
@@ -31,6 +31,11 @@ Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat rend
 	
 	//setup app state
 	app->state = RUN;
+
+
+	//TODO: seperate the display from the application,
+	// instead there should be a GraphicsState or Renderer struct that holds the display and all graphics related data.
+	
 	//create the display (open gl context, SDl window, glew)
 	app->display = (Display*)malloc(sizeof(Display));
 	//assert that the display was created
@@ -44,7 +49,12 @@ Application* createApplication(FncPtr init, FncPtrFloat update, FncPtrFloat rend
 	assert(render != NULL && "Render function pointer is null");
 	assert(destroy != NULL && "Destroy function pointer is null");
 	
-	
+	// copy the title to the application
+	strncpy((c8 *)app->title, (const c8 *)title, MAX_PATH_LENGTH - 1);
+
+	// set the null terminator for the title
+	((c8 *)app->title)[MAX_PATH_LENGTH - 1] = '\0';
+
     //set the function pointers
 	app->init = init;
 	app->update = update;
@@ -144,7 +154,7 @@ void startApplication(Application* app)
 
 		//fps counter
 		frameCount++;
-		f64 elapsedTime = (double)(current - fpsTime) / performanceFreq;
+		f64 elapsedTime = (f64)(current - fpsTime) / performanceFreq;
 		if (elapsedTime >= 1.0)
 		{
 			FPS = frameCount / elapsedTime;
@@ -160,7 +170,7 @@ void startApplication(Application* app)
 
 
 
-void render(Application* app, float dt)
+void render(Application* app, f32 dt)
 {
 	clearDisplay(0.0f, 0.0f, 0.0f, 1.0f);
 	

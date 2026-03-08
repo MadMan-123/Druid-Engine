@@ -30,6 +30,9 @@ typedef signed short i16;
 typedef signed int i32;
 typedef signed long long i64;
 
+// Character types
+typedef char c8;
+
 // Floating point types
 typedef float f32;
 typedef double f64;
@@ -150,12 +153,12 @@ extern "C"
         LOG_MAX
     } LogLevel;
 
-    bool initLogging();
+    b8 initLogging();
     void shutdownLogging();
 
-    DAPI extern void (*logOutputSrc)(LogLevel level, const char *msg);
+    DAPI extern void (*logOutputSrc)(LogLevel level, const c8 *msg);
     DAPI extern b8 useCustomOutputSrc;
-    DAPI void logOutput(LogLevel level, const char *message, ...);
+    DAPI void logOutput(LogLevel level, const c8 *message, ...);
 
 #define FATAL(message, ...) logOutput(LOG_FATAL, message, ##__VA_ARGS__)
 #define ERROR(message, ...) logOutput(LOG_ERROR, message, ##__VA_ARGS__)
@@ -212,7 +215,7 @@ extern "C"
     DAPI Vec2 v2iTov2(Vec2i a);
     DAPI Vec2 v2Div(Vec2 a, f32 b);
 
-    DAPI bool v2Equal(Vec2 a, Vec2 b);
+    DAPI b8 v2Equal(Vec2 a, Vec2 b);
 
     // 3D vector methods
 
@@ -227,7 +230,7 @@ extern "C"
     DAPI Vec3 v3Div(Vec3 a, f32 b);
     DAPI Vec3 v3Norm(Vec3 a);
     DAPI Vec3 v3Cross(Vec3 a, Vec3 b);
-    DAPI bool v3Equal(Vec3 a, Vec3 b);
+    DAPI b8 v3Equal(Vec3 a, Vec3 b);
     DAPI f32 v3Dot(Vec3 a, Vec3 b);
 
     // Quaternions
@@ -267,7 +270,7 @@ extern "C"
     DAPI Mat4 mat4Translate(Mat4 in, Vec3 translation);
     DAPI Mat4 mat4Scale(f32 scale);
     DAPI Mat4 mat4ScaleVec(Vec3 scale);
-    DAPI Mat4 mat4ScaleVal(Mat4 a, float scale);
+    DAPI Mat4 mat4ScaleVal(Mat4 a, f32 scale);
     DAPI Mat4 mat4RotateX(f32 angleRadians);
     DAPI Mat4 mat4RotateY(f32 angleRadians);
     DAPI Mat4 mat4Rotate(f32 angleRadians, Vec3 axis);
@@ -313,23 +316,23 @@ extern "C"
     // File IO
     #define MAX_PATH_LENGTH 512
     typedef struct{
-    u8 path[MAX_PATH_LENGTH];
+    c8 path[MAX_PATH_LENGTH];
     u8 *data;
     u32 size;
     } FileData;
 
-    DAPI FileData* loadFile(const u8 *filePath);
+    DAPI FileData* loadFile(const c8 *filePath);
     DAPI void freeFileData(FileData* fileData);
-    DAPI b8 writeFile(const u8 *filePath, const u8 *data, u32 size);
-    DAPI b8 fileExists(const u8 *filePath);
-    DAPI u8** listFilesInDirectory(const u8 *directory, u32 *outCount);
-    DAPI void normalizePath(u8 *path);
+    DAPI b8 writeFile(const c8 *filePath, const u8 *data, u32 size);
+    DAPI b8 fileExists(const c8 *filePath);
+    DAPI c8** listFilesInDirectory(const c8 *directory, u32 *outCount);
+    DAPI void normalizePath(c8 *path);
 
     // Returns true if the given path is an existing directory.
-    DAPI b8 dirExists(const u8 *path);
+    DAPI b8 dirExists(const c8 *path);
     // Creates a directory and all intermediate parents (like mkdir -p).
     // Returns true on success or if the directory already exists.
-    DAPI b8 createDir(const u8 *path);
+    DAPI b8 createDir(const c8 *path);
    
     
 
@@ -345,7 +348,7 @@ extern "C"
         u32 used;
     } Arena;
 
-    DAPI bool arenaCreate(Arena *arena, u32 maxSize);
+    DAPI b8 arenaCreate(Arena *arena, u32 maxSize);
     DAPI void *aalloc(Arena *arena, u32 size);
     DAPI void arenaDestroy(Arena *arena);
 
@@ -360,7 +363,7 @@ extern "C"
     {
         void *key;     // pointer to key data
         void *value;   // pointer to value data
-        bool occupied; // whether this slot is in use
+        b8 occupied; // whether this slot is in use
     } Pair;
 
     typedef struct
@@ -373,30 +376,30 @@ extern "C"
         Arena *arena;
 
         u32 (*hashFunc)(const void *key, u32 capacity);
-        bool (*equalsFunc)(const void *keyA, const void *keyB);
+        b8 (*equalsFunc)(const void *keyA, const void *keyB);
     } HashMap;
 
-    DAPI bool createMap(HashMap *map, u32 capacity, u32 keySize, u32 valueSize,
+    DAPI b8 createMap(HashMap *map, u32 capacity, u32 keySize, u32 valueSize,
                         u32 (*hashFunc)(const void *, u32),
-                        bool (*equalsFunc)(const void *, const void *));
-    DAPI u32 hash(char *name, u32 mapSize);
+                        b8 (*equalsFunc)(const void *, const void *));
+    DAPI u32 hash(c8 *name, u32 mapSize);
     DAPI void printMap(HashMap *map);
-    DAPI bool insertMap(HashMap *map, const void *key, const void *value);
+    DAPI b8 insertMap(HashMap *map, const void *key, const void *value);
     DAPI void destroyMap(HashMap *map);
 
-    DAPI bool findInMap(HashMap *map, const void *key, void *outValue);
+    DAPI b8 findInMap(HashMap *map, const void *key, void *outValue);
 
     //=====================================================================================================================
     // SOA ECS
     typedef struct
     {
-        const char *name;
+        const c8 *name;
         u32 size;
     } FieldInfo;
 
     typedef struct
     {
-        const char *name;
+        const c8 *name;
         FieldInfo *fields;
         u32 count;
     } StructLayout;
@@ -417,7 +420,7 @@ extern "C"
     DAPI void printEntityArena(EntityArena *arena);
 
     // free the arena
-    DAPI bool freeEntityArena(EntityArena *arena, u32 arenaCount);
+    DAPI b8 freeEntityArena(EntityArena *arena, u32 arenaCount);
     DAPI u32 createEntity(EntityArena *arena);
 
     // Low-level arena API: remove entity at index from an arena. Returns true
@@ -438,16 +441,16 @@ extern "C"
     }
 
 #define VEC3_FIELDS(name)                                                      \
-    {#name "X", sizeof(float)}, {#name "Y", sizeof(float)},                    \
+    {#name "X", sizeof(f32)}, {#name "Y", sizeof(f32)},                    \
     {                                                                          \
-        #name "Z", sizeof(float)                                               \
+        #name "Z", sizeof(f32)                                               \
     }
 
 #define VEC4_FIELDS(name)                                                      \
-    {#name "X", sizeof(float)}, {#name "Y", sizeof(float)},                    \
-        {#name "Z", sizeof(float)},                                            \
+    {#name "X", sizeof(f32)}, {#name "Y", sizeof(f32)},                    \
+        {#name "Z", sizeof(f32)},                                            \
     {                                                                          \
-        #name "W", sizeof(float)                                               \
+        #name "W", sizeof(f32)                                               \
     }
 
 #ifdef DRUID_H
@@ -512,7 +515,7 @@ extern "C"
     typedef struct
     {
         u32 archetypeCount;
-        char *archetypeNames[MAX_SCENE_NAME];
+        c8 *archetypeNames[MAX_SCENE_NAME];
         Archetype *archetypes;
     } SceneData;
 
@@ -539,8 +542,8 @@ extern "C"
     DAPI void switchScene(SceneManager *manager, u32 sceneIndex);
 
     // Persist/load SceneData to disk (implementation flexible)
-    DAPI void saveScene(const char *filePath, SceneData *data);
-    DAPI SceneData loadScene(const char *filePath);
+    DAPI void saveScene(const c8 *filePath, SceneData *data);
+    DAPI SceneData loadScene(const c8 *filePath);
     DAPI SceneData bakeScene(Scene *scene);
     // ------------------------------------------------------------------
 
@@ -587,8 +590,8 @@ extern "C"
         Vec3 *vertices;
         Vec2 *uvs;
         Vec3 *normals;
-        bool hasUVs;
-        bool hasNormals;
+        b8 hasUVs;
+        b8 hasNormals;
 
         u32 objIndicesCount;
         u32 verticesCount;
@@ -602,20 +605,20 @@ extern "C"
     } OBJModel;
 
     DAPI void indexedModelCalcNormals(IndexedModel *model);
-    DAPI OBJModel *objModelCreate(const char *fileName);
+    DAPI OBJModel *objModelCreate(const c8 *fileName);
     DAPI void objModelDestroy(OBJModel *model);
     DAPI IndexedModel *objModelToIndexedModel(OBJModel *objModel);
 
     // helpers
-    DAPI void objModelCreateFace(OBJModel *model, const char *line);
-    DAPI OBJIndex objModelParseOBJIndex(const char *token, bool *hasUVs,
-                                        bool *hasNormals);
-    DAPI Vec2 objModelParseVec2(const char *line);
-    DAPI Vec3 objModelParseVec3(const char *line);
-    DAPI u32 FindNextChar(u32 start, const char *str, u32 length, char token);
-    DAPI u32 parseOBJIndexValue(const char *token, u32 start, u32 end);
-    DAPI f32 parseOBJFloatValue(const char *token, u32 start, u32 end);
-    DAPI char **SplitString(const char *s, char delim, u32 *count);
+    DAPI void objModelCreateFace(OBJModel *model, const c8 *line);
+    DAPI OBJIndex objModelParseOBJIndex(const c8 *token, b8 *hasUVs,
+                                        b8 *hasNormals);
+    DAPI Vec2 objModelParseVec2(const c8 *line);
+    DAPI Vec3 objModelParseVec3(const c8 *line);
+    DAPI u32 FindNextChar(u32 start, const c8 *str, u32 length, c8 token);
+    DAPI u32 parseOBJIndexValue(const c8 *token, u32 start, u32 end);
+    DAPI f32 parseOBJFloatValue(const c8 *token, u32 start, u32 end);
+    DAPI c8 **SplitString(const c8 *s, c8 delim, u32 *count);
     DAPI u32 CompareOBJIndexPtr(const void *a, const void *b);
     //=====================================================================================================================
     // transform
@@ -650,7 +653,7 @@ extern "C"
 
     DAPI void rotateY(Camera *camera, f32 angle);
 
-    DAPI Mat4 getView(const Camera *camera, bool removeTranslation);
+    DAPI Mat4 getView(const Camera *camera, b8 removeTranslation);
 
     // Display
     typedef struct
@@ -670,7 +673,7 @@ extern "C"
     DAPI void swapBuffer(const Display *display);
     DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
 
-    DAPI void returnError(const char *errorString);
+    DAPI void returnError(const c8 *errorString);
     DAPI void onDestroy(Display *display);
 
     // Graphics state
@@ -686,27 +689,27 @@ extern "C"
     */
 
     // Shaders
-    DAPI u32 initShader(const char *filename);
+    DAPI u32 initShader(const c8 *filename);
 
     // takes the code of a shader and creates said shader
-    DAPI u32 createShader(const char *text, u32 type);
+    DAPI u32 createShader(const c8 *text, u32 type);
     DAPI u32 createProgram(u32 shader);
 
     // creates a program with two shaders, a vertex and fragment shader used to
     // render meshes with open gl
-    DAPI u32 createGraphicsProgram(const char *vertPath, const char *fragPath);
+    DAPI u32 createGraphicsProgram(const c8 *vertPath, const c8 *fragPath);
 
     // creates a program with three shaders, a vertex , geometry and fragment
     // shader used to render meshes with open gl but with a geometry shader in
     // between to control the primitives
-    DAPI u32 createGraphicsProgramWithGeometry(const char *vertPath,
-                                               const char *geomPath,
-                                               const char *fragPath);
+    DAPI u32 createGraphicsProgramWithGeometry(const c8 *vertPath,
+                                               const c8 *geomPath,
+                                               const c8 *fragPath);
     // craetes a compute shader program
-    DAPI u32 createComputeProgram(const u8 *computePath);
+    DAPI u32 createComputeProgram(const c8 *computePath);
     // error tool
     DAPI void checkShaderError(u32 shader, u32 flag, b8 isProgram,
-                               const u8 *errorMessage);
+                               const c8 *errorMessage);
     DAPI void freeShader(u32 shader);
 
     DAPI void updateShaderMVP(const u32 shader, const Transform transform,
@@ -728,20 +731,20 @@ extern "C"
 
     // Textures
     // 32 textures MAX
-    DAPI void bindTexture(u32 texture, unsigned int unit, GLenum type);
+    DAPI void bindTexture(u32 texture, u32 unit, GLenum type);
     // return the texture handle
-    DAPI u32 initTexture(const char *fileName);
+    DAPI u32 initTexture(const c8 *fileName);
     // free texture from memory
     DAPI void freeTexture(u32 texture);
 
-    DAPI u32 createCubeMapTexture(const char **faces, u32 count);
+    DAPI u32 createCubeMapTexture(const c8 **faces, u32 count);
     // Terrain stuff
 
     typedef struct
     {
         f32 *heights;
-        int width;
-        int height;
+        i32 width;
+        i32 height;
     } HeightMap;
 
 // Materials
@@ -813,7 +816,7 @@ extern "C"
 
     DAPI void readMaterial(Material *out, struct aiMaterial *mat);
     DAPI MaterialUniforms getMaterialUniforms(u32 shader);
-    DAPI Mesh *loadMeshFromAssimp(const char *filename, u32 *meshCount);
+    DAPI Mesh *loadMeshFromAssimp(const c8 *filename, u32 *meshCount);
     DAPI Mesh *loadMeshFromAssimpScene(const struct aiScene *scene,
                                        u32 *meshCount);
     DAPI Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count);
@@ -823,7 +826,7 @@ extern "C"
     // draws a given mesh
     DAPI void drawMesh(Mesh *mesh);
     // creates a mesh from vertices and indices
-    DAPI bool createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
+    DAPI b8 createMesh(Mesh *mesh, const Vertices *vertices, u32 numVertices,
                          const u32 *indices, u32 numIndices);
     // loads a mesh from a mesh file
 
@@ -836,10 +839,10 @@ extern "C"
     // creates a plane essentially
     DAPI Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
                                            f32 heightScale,
-                                           const char *computeShaderPath,
+                                           const c8 *computeShaderPath,
                                            HeightMap *output);
-    DAPI Mesh *createTerrainMesh(unsigned int cellsX, unsigned int cellsZ,
-                                 float cellSize);
+    DAPI Mesh *createTerrainMesh(u32 cellsX, u32 cellsZ,
+                                 f32 cellSize);
     DAPI Mesh *createBoxMesh();
     DAPI Mesh *createSkyboxMesh();
     DAPI Mesh *createQuadMesh();
@@ -891,13 +894,13 @@ extern "C"
 
     typedef struct
     {
-        char *name;           // the name of the model
+        c8 *name;           // the name of the model
         u32 *meshIndices;     // buffer of indices that point to the meshes
         u32 *materialIndices; // materials to use for the mesh
         u32 meshCount;        // how many meshes are in the buffer
         u32 materialCount;    // how many materials are in the buffer
     } Model;
-    DAPI void draw(Model *model, u32 shader, bool shouldUpdateMaterials);
+    DAPI void draw(Model *model, u32 shader, b8 shouldUpdateMaterials);
 
 
     // resource manager
@@ -935,13 +938,13 @@ extern "C"
                                                 u32 modelCount,
                                                 u32 shaderCount);
     void cleanUpResourceManager(ResourceManager *manager);
-    void readResources(ResourceManager *manager, const char *filename);
+    void readResources(ResourceManager *manager, const c8 *filename);
 
     // shader
 
 
     DAPI void loadModelFromAssimp(ResourceManager *manager,
-                                  const char *filename);
+                                  const c8 *filename);
 
     // keys
     // keyboard keys enum
@@ -1151,6 +1154,7 @@ extern "C"
         void (*render)(f32);
         void (*destroy)();
         void (*inputProcess)(void *);
+        const c8 *title;
         // open gl context with sdl within the display
         Display *display;
         enum ApplicationState state;
@@ -1166,7 +1170,7 @@ extern "C"
     typedef void (*FncPtrFloat)(f32);
     typedef void (*FncPtr)();
 
-    DAPI Application *createApplication(FncPtr init, FncPtrFloat update,
+    DAPI Application *createApplication(const c8* title,FncPtr init, FncPtrFloat update,
                                         FncPtrFloat render, FncPtr destroy);
     DAPI void run(Application *app);
     DAPI void destroyApplication(Application *app);
@@ -1184,13 +1188,13 @@ extern "C"
 
     DAPI void processInput(Application *app);
 
-    DAPI bool isKeyDown(KeyCode key);
-    DAPI bool isKeyUp(KeyCode key);
+    DAPI b8 isKeyDown(KeyCode key);
+    DAPI b8 isKeyUp(KeyCode key);
 
-    DAPI bool isButtonDown(u32 controllerID, ControllerCode button);
-    DAPI bool isButtonUp(u32 controllerID, ControllerCode button);
+    DAPI b8 isButtonDown(u32 controllerID, ControllerCode button);
+    DAPI b8 isButtonUp(u32 controllerID, ControllerCode button);
 
-    DAPI bool isMouseDown(u32 button);
+    DAPI b8 isMouseDown(u32 button);
 
     DAPI void getMouseDelta(f32 *x, f32 *y);
 
@@ -1221,21 +1225,21 @@ extern "C"
     typedef struct
     {
         ColliderType type;
-        bool isColliding;
-        int layer;
+        b8 isColliding;
+        i32 layer;
         void *state;
-        void (*response)(uint32_t self, uint32_t other);
+        void (*response)(u32 self, u32 other);
     } Collider;
 
     // Functions
     DAPI Collider *createCircleCollider(f32 radius);
     DAPI Collider *createBoxCollider(Vec2 scale);
-    DAPI bool cleanCollider(Collider *col);
-    DAPI bool isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB);
-    DAPI bool isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB);
+    DAPI b8 cleanCollider(Collider *col);
+    DAPI b8 isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB);
+    DAPI b8 isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB);
     DAPI f32 getRadius(Collider *col);
     DAPI Vec2 getScale(Collider *col);
-    DAPI bool setBoxScale(Collider *col, Vec2 scale);
+    DAPI b8 setBoxScale(Collider *col, Vec2 scale);
 
     DAPI Collider *createCubeCollider(Vec3 scale);
     DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);

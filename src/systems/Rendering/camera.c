@@ -1,4 +1,4 @@
-﻿#include "../../../Include/druid.h"
+#include "../../../Include/druid.h"
 
 Mat4 getViewProjection(const Camera* camera)
 {
@@ -10,7 +10,7 @@ Mat4 getViewProjection(const Camera* camera)
     
     return mat4Mul(camera->projection, view);
 }
-Mat4 getView(const Camera* camera, bool removeTranslation) 
+Mat4 getView(const Camera* camera, b8 removeTranslation) 
 {
     // Get the forward and up vectors
     Vec3 forward = quatTransform(camera->orientation, v3Forward);

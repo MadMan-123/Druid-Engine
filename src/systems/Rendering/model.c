@@ -7,7 +7,7 @@
 #include <time.h>
 
 #define MAX_NAME_SIZE 64
-void loadModelFromAssimp(ResourceManager *manager, const char *filename)
+void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
 {
     // null check the resource
     if (manager == NULL)
@@ -16,7 +16,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         return;
     }
 
-    const char *fileName = strrchr(filename, '/');
+    const c8 *fileName = strrchr(filename, '/');
     // remove the first slash
     fileName = fileName ? fileName + 1 : filename;
 
@@ -77,7 +77,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
         readMaterial(material, aimat);
 
         // Add material to hash map with unique name
-        char matName[MAX_NAME_SIZE];
+        c8 matName[MAX_NAME_SIZE];
         snprintf(matName, MAX_NAME_SIZE, "%s-material-%d", fileName, i);
         insertMap(&manager->materialIDs, matName, &manager->materialUsed);
 
@@ -97,7 +97,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     model.materialIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
     model.meshCount = scene->mNumMeshes;
     model.materialCount = scene->mNumMaterials;
-    model.name = (char *)malloc(sizeof(char) * MAX_NAME_SIZE);
+    model.name = (c8 *)malloc(sizeof(c8) * MAX_NAME_SIZE);
     strncpy(model.name, filename, MAX_NAME_SIZE - 1);
     model.name[MAX_NAME_SIZE - 1] = '\0'; // ensure null termination
 
@@ -119,7 +119,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     for (u32 i = 0; i < scene->mNumMeshes; i++)
     {
         // format the mesh name
-        char meshName[MAX_NAME_SIZE];
+        c8 meshName[MAX_NAME_SIZE];
         snprintf(meshName, MAX_NAME_SIZE, "%s-mesh-%d", fileName, i);
 
         // store the mesh index in the model BEFORE incrementing meshUsed
@@ -155,7 +155,7 @@ void loadModelFromAssimp(ResourceManager *manager, const char *filename)
     aiReleaseImport(scene);
 }
 
-void draw(Model *model, u32 shader, bool shouldUpdateMaterials)
+void draw(Model *model, u32 shader, b8 shouldUpdateMaterials)
 {
     for (u32 i = 0; i < model->meshCount; i++)
     {

@@ -1,7 +1,7 @@
 #include "../../../include/druid.h"
 
 // Utility functions
-void checkShaderError(u32 shader, u32 flag, b8 isProgram,const u8 *errorMessage)
+void checkShaderError(u32 shader, u32 flag, b8 isProgram,const c8 *errorMessage)
 {
     GLint success = 0;
     GLchar error[1024] = {0};
@@ -22,7 +22,7 @@ void checkShaderError(u32 shader, u32 flag, b8 isProgram,const u8 *errorMessage)
     }
 }
 
-u32 createShader(const char *text, u32 type)
+u32 createShader(const c8 *text, u32 type)
 {
     u32 shader = glCreateShader(type);
 
@@ -50,7 +50,7 @@ u32 createProgram(u32 shader)
     return program;
 }
 
-u32 createComputeProgram(const u8 *computePath)
+u32 createComputeProgram(const c8 *computePath)
 {
     FileData* fileData = loadFile(computePath);
     if (!fileData)
@@ -58,13 +58,13 @@ u32 createComputeProgram(const u8 *computePath)
         ERROR("Failed to load compute shader file: %s\n", computePath);
         return 0;
     }
-    u8 *code = fileData->data;
+    c8 *code = (c8 *)fileData->data;
     if (!code)
     {
         ERROR("failed to load Compute Shader");
         return 0;
     }
-    u32 shader = createShader((const char *)code, GL_COMPUTE_SHADER);
+    u32 shader = createShader((const c8 *)code, GL_COMPUTE_SHADER);
     free(code);
     if (shader == 0)
     {
@@ -86,7 +86,7 @@ u32 createComputeProgram(const u8 *computePath)
     return program;
 }
 
-u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
+u32 createGraphicsProgram(const c8 *vertPath, const c8 *fragPath)
 {
     u32 program = glCreateProgram();
 
@@ -95,9 +95,9 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
     u8 *fragShaderText = loadFile((const u8 *)fragPath);
     */
 
-    FileData* vertexFileData = loadFile((const u8 *)vertPath);
+    FileData* vertexFileData = loadFile(vertPath);
     //copy the data to into a new buffer so we can free the file data struct and avoid double free issues
-    u8 *vertexShaderText = malloc(vertexFileData->size + 1);
+    c8 *vertexShaderText = malloc(vertexFileData->size + 1);
     if (vertexShaderText)
     {
         memcpy(vertexShaderText, vertexFileData->data, vertexFileData->size);
@@ -108,8 +108,8 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
         ERROR("Failed to allocate memory for vertex shader text");
     }
     freeFileData(vertexFileData);
-    FileData* fragFileData = loadFile((const u8 *)fragPath);
-    u8 *fragShaderText = malloc(fragFileData->size + 1);
+    FileData* fragFileData = loadFile(fragPath);
+    c8 *fragShaderText = malloc(fragFileData->size + 1);
     if (fragShaderText)
     {
         memcpy(fragShaderText, fragFileData->data, fragFileData->size);
@@ -128,8 +128,8 @@ u32 createGraphicsProgram(const char *vertPath, const char *fragPath)
         ERROR("Failed to load vertex or frag shader");
     }
 
-    u32 vertexShader = createShader((const char *)vertexShaderText, GL_VERTEX_SHADER);
-    u32 fragmentShader = createShader((const char *)fragShaderText, GL_FRAGMENT_SHADER);
+    u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);
+    u32 fragmentShader = createShader(fragShaderText, GL_FRAGMENT_SHADER);
 
     free(vertexShaderText);
     free(fragShaderText);
@@ -183,9 +183,9 @@ void freeUBO(u32 ubo)
     glDeleteBuffers(1, &b);
 }
 
-u32 createGraphicsProgramWithGeometry(const char *vertPath,
-                                      const char *geomPath,
-                                      const char *fragPath)
+u32 createGraphicsProgramWithGeometry(const c8 *vertPath,
+                                      const c8 *geomPath,
+                                      const c8 *fragPath)
 {
     u32 program = glCreateProgram();
 
@@ -197,23 +197,23 @@ u32 createGraphicsProgramWithGeometry(const char *vertPath,
     */
 
 
-    FileData* vertexFileData = loadFile((const u8 *)vertPath);
-    u8 *vertexShaderText = malloc(vertexFileData->size + 1);
+    FileData* vertexFileData = loadFile(vertPath);
+    c8 *vertexShaderText = malloc(vertexFileData->size + 1);
     if (vertexShaderText)
     {
         memcpy(vertexShaderText, vertexFileData->data, vertexFileData->size);
         vertexShaderText[vertexFileData->size] = '\0'; //
     }
 
-    FileData* geomFileData = loadFile((const u8 *)geomPath);    
-    u8 *geomShaderText = malloc(geomFileData->size + 1);
+    FileData* geomFileData = loadFile(geomPath);    
+    c8 *geomShaderText = malloc(geomFileData->size + 1);
     if (geomShaderText)
     {
         memcpy(geomShaderText, geomFileData->data, geomFileData->size);
         geomShaderText[geomFileData->size] = '\0'; // null-terminate
     }
-    FileData* fragFileData = loadFile((const u8 *)fragPath);
-    u8 *fragShaderText = malloc(fragFileData->size + 1);
+    FileData* fragFileData = loadFile(fragPath);
+    c8 *fragShaderText = malloc(fragFileData->size + 1);
     if (fragShaderText)
     {
         memcpy(fragShaderText, fragFileData->data, fragFileData->size);
@@ -231,9 +231,9 @@ u32 createGraphicsProgramWithGeometry(const char *vertPath,
         ERROR("Failed to load vertex, geometry or frag shader");
     }
 
-    u32 vertexShader = createShader((const char *)vertexShaderText, GL_VERTEX_SHADER);
-    u32 geomShader = createShader((const char *)geomShaderText, GL_GEOMETRY_SHADER);
-    u32 fragmentShader = createShader((const char *)fragShaderText, GL_FRAGMENT_SHADER);
+    u32 vertexShader = createShader(vertexShaderText, GL_VERTEX_SHADER);
+    u32 geomShader = createShader(geomShaderText, GL_GEOMETRY_SHADER);
+    u32 fragmentShader = createShader(fragShaderText, GL_FRAGMENT_SHADER);
 
     free(vertexShaderText);
     free(geomShaderText);

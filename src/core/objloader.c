@@ -75,7 +75,7 @@ typedef struct
     b8 hasNormals;
 } OBJMetadata;
 
-OBJMetadata parseOBJMetadata(const char* fileName)
+OBJMetadata parseOBJMetadata(const c8* fileName)
 {
     OBJMetadata meta = {0};
     
@@ -86,7 +86,7 @@ OBJMetadata parseOBJMetadata(const char* fileName)
         return meta;
     }
 
-    char line[1024];
+    c8 line[1024];
     while (fgets(line, sizeof(line), file))
     {
         if (line[0] == 'v')
@@ -113,7 +113,7 @@ OBJMetadata parseOBJMetadata(const char* fileName)
 }
 
 //create obj model with proper allocation
-OBJModel* objModelCreate(const char* fileName)
+OBJModel* objModelCreate(const c8* fileName)
 {
     //first pass: get file metadata
     OBJMetadata meta = parseOBJMetadata(fileName);
@@ -165,7 +165,7 @@ OBJModel* objModelCreate(const char* fileName)
         return NULL;
     }
 
-    char line[1024];
+    c8 line[1024];
     while (fgets(line, sizeof(line), file))
     {
         u32 length = strlen(line);
@@ -199,16 +199,16 @@ void objModelDestroy(OBJModel* model)
     free(model);
 }
 
-void objModelCreateFace(OBJModel* model, const char* line)
+void objModelCreateFace(OBJModel* model, const c8* line)
 {
     if (line[0] != 'f') return;
 
-    char buffer[512];
+    c8 buffer[512];
     strncpy(buffer, line, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';
 
-    char* context = NULL;
-    char* token = strtok_r(buffer, " \t\r\n", &context); //skip 'f'
+    c8 * context = NULL;
+    c8 * token = strtok_r(buffer, " \t\r\n", &context); //skip 'f'
 
     OBJIndex indices[4];
     u32 indexCount = 0;
@@ -217,27 +217,27 @@ void objModelCreateFace(OBJModel* model, const char* line)
     {
         OBJIndex idx = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
 
-        char* v = token;
-        char* vt = strchr(v, '/');
+        c8 * v = token;
+        c8 * vt = strchr(v, '/');
         if (vt)
         {
             *vt = '\0';
             vt++;
-            char* vn = strchr(vt, '/');
+            c8 * vn = strchr(vt, '/');
             if (vn)
             {
                 *vn = '\0';
                 vn++;
                 if (*vn && strcmp(vn, "") != 0)
                 {
-                    int normalIndex = atoi(vn);
+                    i32 normalIndex = atoi(vn);
                     if (normalIndex > 0 && (u32)(normalIndex - 1) < model->normalsCount)
                         idx.normalIndex = (u32)normalIndex - 1;
                 }
             }
             if (*vt && strcmp(vt, "") != 0)
             {
-                int uvIndex = atoi(vt);
+                i32 uvIndex = atoi(vt);
                 if (uvIndex > 0 && (u32)(uvIndex - 1) < model->uvsCount)
                     idx.uvIndex = (u32)uvIndex - 1;
             }
@@ -245,7 +245,7 @@ void objModelCreateFace(OBJModel* model, const char* line)
 
         if (*v && strcmp(v, "") != 0)
         {
-            int vertexIndex = atoi(v);
+            i32 vertexIndex = atoi(v);
             if (vertexIndex > 0 && (u32)(vertexIndex - 1) < model->verticesCount)
                 idx.vertexIndex = (u32)vertexIndex - 1;
             else
@@ -424,7 +424,7 @@ IndexedModel* objModelToIndexedModel(OBJModel* objModel)
 }
 
 //parses a line like "vt 0.123 0.456"
-Vec2 objModelParseVec2(const char* line)
+Vec2 objModelParseVec2(const c8* line)
 {
     Vec2 result = {0.0f, 0.0f};
     if (sscanf(line, "%*s %f %f", &result.x, &result.y) != 2)
@@ -433,7 +433,7 @@ Vec2 objModelParseVec2(const char* line)
 }
 
 //parses a line like "v 1.0 2.0 3.0" or "vn 0.0 1.0 0.0"
-Vec3 objModelParseVec3(const char* line)
+Vec3 objModelParseVec3(const c8* line)
 {
     Vec3 result = {0.0f, 0.0f, 0.0f};
     if (sscanf(line, "%*s %f %f %f", &result.x, &result.y, &result.z) != 3)

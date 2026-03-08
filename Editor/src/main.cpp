@@ -20,7 +20,7 @@ static const u32 entityDefaultCount = 128;
 MaterialUniforms materialUniforms = {0};
 
 Archetype sceneArchetype;
-char inputBoxBuffer[100]; // this will be in numbers
+c8 inputBoxBuffer[100]; // this will be in numbers
 i32 entitySize = 0;
 // helper – move camera with wasd keys
 b8 canMoveViewPort = false;
@@ -135,7 +135,7 @@ b8 *isActive = nullptr;
 Vec3 *positions = nullptr;
 Vec4 *rotations = nullptr;
 Vec3 *scales = nullptr;
-char *names = nullptr;
+c8 *names = nullptr;
 u32 *modelIDs = nullptr;
 u32 *shaderHandles = nullptr;
 u32 *entityMaterialIDs = nullptr;
@@ -143,7 +143,7 @@ Material *materials = nullptr;
 
 void init()
 {
-    // consoleLines = (const char**)malloc(sizeof(char*) * MAX_CONSOLE_LINES);
+    // consoleLines = (const c8**)malloc(sizeof(c8*) * MAX_CONSOLE_LINES);
 
     entitySize = entityDefaultCount;
     entitySizeCache = entitySize;
@@ -168,7 +168,7 @@ void init()
     rotations = (Vec4 *)fields[1];
     scales = (Vec3 *)fields[2];
     isActive = (b8 *)fields[3];
-    names = (char *)fields[4];
+    names = (c8 *)fields[4];
     modelIDs = (u32 *)fields[5];
     shaderHandles = (u32 *)fields[6];
     entityMaterialIDs = (u32 *)fields[7];
@@ -212,7 +212,7 @@ void init()
                0.1f, 100.0f); // near/far clip planes
 
     // load skybox resources --------------------------------------------------
-    const char *faces[6] = {
+    const c8 *faces[6] = {
         "../res/Textures/Skybox/right.jpg", "../res/Textures/Skybox/left.jpg",
         "../res/Textures/Skybox/top.jpg",   "../res/Textures/Skybox/bottom.jpg",
         "../res/Textures/Skybox/front.jpg", "../res/Textures/Skybox/back.jpg"};
@@ -476,10 +476,10 @@ void destroy()
     ImGui::DestroyContext();   // destroy imgui core
 }
 
-int main(int argc, char **argv)
+i32 main(i32 argc, char **argv)
 {
     // Run the hub first so the user can select a project
-    hubApplication = createApplication(hubStart, hubUpdate, hubRender, hubDestroy);
+    hubApplication = createApplication("Druid Hub", hubStart, hubUpdate, hubRender, hubDestroy);
     hubApplication->width = 720.0f;
     hubApplication->height = 480.0f;
     hubApplication->inputProcess = hubProcessInput;
@@ -490,7 +490,7 @@ int main(int argc, char **argv)
         return 0;
 
     logOutputSrc = &editorLog;
-    editor = createApplication(init, update, render, destroy);
+    editor = createApplication("Druid Editor",init, update, render, destroy);
     editor->width = (f32)(1920 * 1.25f);
     editor->height = (f32)(1080 * 1.25f);
     viewportWidth = editor->width;
