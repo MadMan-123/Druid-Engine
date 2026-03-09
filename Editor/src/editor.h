@@ -70,6 +70,9 @@ extern u32 fboShader;
 extern b8 canMoveAxis;
 extern Vec3 manipulateAxis;
 
+extern c8 scenePathBuffer[512];
+
+
 extern MaterialUniforms materialUniforms;
 typedef enum{
     MANIPULATE_POSITION = 0,

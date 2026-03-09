@@ -283,6 +283,10 @@ void init()
         {
             INFO("Auto-loading scene: %s", firstScene);
             SceneData sd = loadScene(firstScene);
+            //copy the first scene's archetype data into our scene path buffer
+            strncpy(scenePathBuffer, firstScene, sizeof(scenePathBuffer));
+            scenePathBuffer[sizeof(scenePathBuffer) - 1] = '\0';
+
             if (sd.archetypeCount > 0 && sd.archetypes)
             {
                 destroyArchetype(&sceneArchetype);
@@ -322,6 +326,8 @@ void init()
 
 Vec2 cacheMouse = {0, 0};
 PickResult result;
+
+b8 canSave = true;
 void update(f32 dt)
 {
     if (entitySize != entitySizeCache)
@@ -522,6 +528,38 @@ void update(f32 dt)
             canMoveAxis = false;
         }
     }
+
+    //if cntrl + s is pressed then save the scene
+    // add a canSave flag to prevent multiple saves on key hold
+    const b8 ctrlSaveDown = isKeyDown(KEY_LCTRL) && isKeyDown(KEY_S);
+    if (canSave && ctrlSaveDown)
+    {
+        canSave = false; // prevent multiple saves on key hold
+        SceneData sd = {0};
+        sd.archetypeCount = 1;
+        sd.archetypes = &sceneArchetype;
+        sd.materialCount = resources->materialUsed;
+        sd.materials = resources->materialBuffer;
+
+        //copy the archetype name into the scene data 
+        strncpy(sd.archetypeNames[0], "SceneEntity", MAX_NAME_SIZE - 1);
+        DEBUG("Saving to path: %s", scenePathBuffer);
+        if (saveScene(scenePathBuffer, &sd))
+        {
+            INFO("Scene saved successfully to %s", scenePathBuffer);
+        }
+        else
+        {
+            ERROR("Failed to save scene to %s", scenePathBuffer);
+        }
+         
+    }
+    else if (!canSave && !ctrlSaveDown)
+    {
+        canSave = true; // reset flag when keys are released
+    }
+
+
 }
 
 void render(f32 dt)

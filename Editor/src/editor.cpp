@@ -33,7 +33,7 @@ const c8 **consoleLines = NULL;
 Application *editor = nullptr;
 
 // UI state for scene menu modals
-static c8 scenePathBuffer[512] = "";
+c8 scenePathBuffer[512] = "";
 static b8 showSaveModal = false;
 static b8 showLoadModal = false;
 static b8 showNewSceneModal = false;
@@ -500,7 +500,7 @@ static void drawInspectorWindow()
     {
     default:
     case InspectorState::EMPTY_VIEW:
-        ImGui::Text("Nout to see here");
+        ImGui::Text("Nowt to see here");
         break;
     case InspectorState::ENTITY_VIEW:
         // Add bounds checking for inspector entity access
@@ -531,7 +531,7 @@ static void drawInspectorWindow()
         // Show warning if entity has no model assigned
         if (currentModelID == (u32)-1)
         {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "⚠ No model assigned to this entity");
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No model assigned to this entity");
         }
         
         if (ImGui::BeginListBox("Models"))
@@ -926,6 +926,8 @@ void drawDockspaceAndPanels()
             {
                 ERROR("Failed to save scene to %s", fullPath);
             }
+
+
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
