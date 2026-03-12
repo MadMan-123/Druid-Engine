@@ -31,6 +31,64 @@ static b8 copyFileSingle(const c8 *src, const c8 *dst)
     return platformFileCopy(src, dst);
 }
 
+static void getProjectBaseName(const c8 *projectDir, c8 *out, u32 size)
+{
+    if (!out || size == 0)
+        return;
+
+    out[0] = '\0';
+    if (!projectDir || !projectDir[0])
+        return;
+
+    const c8 *name = projectDir;
+    for (const c8 *p = projectDir; *p; p++)
+    {
+        if (*p == '/' || *p == '\\')
+            name = p + 1;
+    }
+
+    strncpy(out, name, size - 1);
+    out[size - 1] = '\0';
+}
+
+static void getFileNameOnly(const c8 *path, c8 *out, u32 size)
+{
+    if (!out || size == 0)
+        return;
+
+    out[0] = '\0';
+    if (!path || !path[0])
+        return;
+
+    const c8 *name = path;
+    for (const c8 *p = path; *p; p++)
+    {
+        if (*p == '/' || *p == '\\')
+            name = p + 1;
+    }
+
+    strncpy(out, name, size - 1);
+    out[size - 1] = '\0';
+}
+
+static void writeStartupSceneConfig(const c8 *dir, const c8 *scenePath)
+{
+    if (!dir || !dir[0])
+        return;
+
+    c8 sceneFile[256] = "scene.drsc";
+    if (scenePath && scenePath[0])
+    {
+        getFileNameOnly(scenePath, sceneFile, sizeof(sceneFile));
+        if (sceneFile[0] == '\0')
+            strncpy(sceneFile, "scene.drsc", sizeof(sceneFile) - 1);
+    }
+
+    c8 cfgPath[MAX_PATH_LENGTH];
+    snprintf(cfgPath, sizeof(cfgPath), "%s/startup_scene.txt", dir);
+    writeFile(cfgPath, (const u8 *)sceneFile, (u32)strlen(sceneFile));
+}
+
 // ---- template: src/game.h ----
 static const c8 *TPL_GAME_H =
     "#pragma once\n"
@@ -76,20 +134,20 @@ static const c8 *TPL_GAME_H =
 // ---- template: src/game.cpp ----
 // demonstrates loading scenes made in the editor and rendering entities
 static const c8 *TPL_GAME_CPP =
-    "#define GAME_EXPORT\n"
     "#include \"game.h\"\n"
     "#include <stdio.h>\n"
     "#include <string.h>\n"
     "\n"
     "// ---- game state ----\n"
     "static c8       g_projectDir[512] = {0};\n"
-    "static Camera   g_cam = {0};\n"
+    "static Camera  *g_cam = NULL;  // pointer to renderer's active camera\n"
     "static u32      g_defaultShader = 0;\n"
     "static f32      g_time = 0.0f;\n"
     "\n"
     "// scene data loaded from .drsc files\n"
     "static SceneData g_scene = {0};\n"
     "static b8        g_sceneLoaded = false;\n"
+    "static b8        g_standaloneMode = false;\n"
     "\n"
     "// entity field pointers (extracted from the loaded scene archetype)\n"
     "static Vec3 *g_positions  = NULL;\n"
@@ -99,7 +157,19 @@ static const c8 *TPL_GAME_CPP =
     "static u32  *g_modelIDs   = NULL;\n"
     "static u32  *g_shaderH    = NULL;\n"
     "static u32  *g_matIDs     = NULL;\n"
+    "static b8   *g_sceneCameraFlags = NULL;\n"
     "static u32   g_entityCount = 0;\n"
+    "\n"
+    "static i32 findFieldIndex(const StructLayout *layout, const c8 *name)\n"
+    "{\n"
+    "    if (!layout || !layout->fields || !name) return -1;\n"
+    "    for (u32 i = 0; i < layout->count; i++)\n"
+    "    {\n"
+    "        if (strcmp(layout->fields[i].name, name) == 0)\n"
+    "            return (i32)i;\n"
+    "    }\n"
+    "    return -1;\n"
+    "}\n"
     "\n"
     "// helper: build a full path from the project dir\n"
     "static void scenePath(c8 *out, u32 sz, const c8 *name)\n"
@@ -126,14 +196,42 @@ static const c8 *TPL_GAME_CPP =
     "\n"
     "    // grab SOA field pointers from the first archetype\n"
     "    void **fields = getArchetypeFields(&g_scene.archetypes[0], 0);\n"
-    "    g_positions  = (Vec3 *)fields[0];\n"
-    "    g_rotations  = (Vec4 *)fields[1];\n"
-    "    g_scales     = (Vec3 *)fields[2];\n"
-    "    g_isActive   = (b8 *)  fields[3];\n"
-    "    g_modelIDs   = (u32 *) fields[5];\n"
-    "    g_shaderH    = (u32 *) fields[6];\n"
-    "    g_matIDs     = (u32 *) fields[7];\n"
+    "    StructLayout *layout = g_scene.archetypes[0].layout;\n"
+    "    i32 posIdx = findFieldIndex(layout, \"position\");\n"
+    "    i32 rotIdx = findFieldIndex(layout, \"rotation\");\n"
+    "    i32 scaleIdx = findFieldIndex(layout, \"scale\");\n"
+    "    i32 activeIdx = findFieldIndex(layout, \"isActive\");\n"
+    "    i32 modelIdx = findFieldIndex(layout, \"modelID\");\n"
+    "    i32 shaderIdx = findFieldIndex(layout, \"shaderHandle\");\n"
+    "    i32 matIdx = findFieldIndex(layout, \"materialID\");\n"
+    "    i32 camIdx = findFieldIndex(layout, \"isSceneCamera\");\n"
+    "    if (posIdx < 0 || rotIdx < 0 || scaleIdx < 0 || activeIdx < 0 || modelIdx < 0)\n"
+    "    {\n"
+    "        ERROR(\"Scene is missing required fields\");\n"
+    "        return false;\n"
+    "    }\n"
+    "    g_positions  = (Vec3 *)fields[posIdx];\n"
+    "    g_rotations  = (Vec4 *)fields[rotIdx];\n"
+    "    g_scales     = (Vec3 *)fields[scaleIdx];\n"
+    "    g_isActive   = (b8 *)  fields[activeIdx];\n"
+    "    g_modelIDs   = (u32 *) fields[modelIdx];\n"
+    "    g_shaderH    = (shaderIdx >= 0) ? (u32 *)fields[shaderIdx] : NULL;\n"
+    "    g_matIDs     = (matIdx >= 0) ? (u32 *)fields[matIdx] : NULL;\n"
+    "    g_sceneCameraFlags = (camIdx >= 0) ? (b8 *)fields[camIdx] : NULL;\n"
     "    g_entityCount = g_scene.archetypes[0].arena[0].count;\n"
+    "\n"
+    "    if (g_cam && g_sceneCameraFlags)\n"
+    "    {\n"
+    "        for (u32 i = 0; i < g_entityCount; i++)\n"
+    "        {\n"
+    "            if (g_isActive[i] && g_sceneCameraFlags[i])\n"
+    "            {\n"
+    "                g_cam->pos = g_positions[i];\n"
+    "                g_cam->orientation = g_rotations[i];\n"
+    "                break;\n"
+    "            }\n"
+    "        }\n"
+    "    }\n"
     "\n"
     "    // apply loaded materials to the resource manager\n"
     "    if (sd.materialCount > 0 && sd.materials)\n"
@@ -150,22 +248,76 @@ static const c8 *TPL_GAME_CPP =
     "    return true;\n"
     "}\n"
     "\n"
+    "static b8 loadStartupScene(void)\n"
+    "{\n"
+    "    c8 cfgPath[512];\n"
+    "    snprintf(cfgPath, sizeof(cfgPath), \"%s/startup_scene.txt\", g_projectDir);\n"
+    "\n"
+    "    FILE *cfg = fopen(cfgPath, \"rb\");\n"
+    "    if (cfg)\n"
+    "    {\n"
+    "        c8 sceneName[256] = {0};\n"
+    "        size_t read = fread(sceneName, 1, sizeof(sceneName) - 1, cfg);\n"
+    "        fclose(cfg);\n"
+    "        sceneName[read] = '\\0';\n"
+    "        for (size_t i = 0; sceneName[i]; i++)\n"
+    "        {\n"
+    "            if (sceneName[i] == '\\r' || sceneName[i] == '\\n')\n"
+    "            {\n"
+    "                sceneName[i] = '\\0';\n"
+    "                break;\n"
+    "            }\n"
+    "        }\n"
+    "        if (sceneName[0])\n"
+    "            return loadGameScene(sceneName);\n"
+    "    }\n"
+    "\n"
+    "    c8 scenesDir[512];\n"
+    "    snprintf(scenesDir, sizeof(scenesDir), \"%s/scenes\", g_projectDir);\n"
+    "    u32 fileCount = 0;\n"
+    "    c8 **files = listFilesInDirectory(scenesDir, &fileCount);\n"
+    "    if (files)\n"
+    "    {\n"
+    "        for (u32 i = 0; i < fileCount; i++)\n"
+    "        {\n"
+    "            u32 len = (u32)strlen(files[i]);\n"
+    "            if (len > 5 && strcmp(files[i] + len - 5, \".drsc\") == 0)\n"
+    "            {\n"
+    "                const c8 *name = files[i];\n"
+    "                const c8 *slash = strrchr(name, '/');\n"
+    "                if (!slash) slash = strrchr(name, '\\\\');\n"
+    "                b8 ok = loadGameScene(slash ? slash + 1 : name);\n"
+    "                for (u32 j = 0; j < fileCount; j++) free(files[j]);\n"
+    "                free(files);\n"
+    "                return ok;\n"
+    "            }\n"
+    "        }\n"
+    "\n"
+    "        for (u32 i = 0; i < fileCount; i++) free(files[i]);\n"
+    "        free(files);\n"
+    "    }\n"
+    "\n"
+    "    return loadGameScene(\"scene.drsc\");\n"
+    "}\n"
+    "\n"
     "// ---- plugin callbacks ----\n"
     "\n"
     "static void gameInit(const c8 *projectDir)\n"
     "{\n"
     "    strncpy(g_projectDir, projectDir, sizeof(g_projectDir) - 1);\n"
+    "    g_standaloneMode = (strcmp(projectDir, \".\") == 0);\n"
     "\n"
-    "    initCamera(&g_cam, (Vec3){0.0f, 2.0f, 8.0f},\n"
-    "               70.0f, 16.0f / 9.0f, 0.1f, 100.0f);\n"
-    "    createCoreShaderUBO();\n"
+    "    // Get the renderer's active camera.\n"
+    "    // In the editor, this is the scene camera at play start.\n"
+    "    // In standalone, the main.cpp creates the renderer + camera first.\n"
+    "    if (renderer)\n"
+    "        g_cam = (Camera *)bufferGet(&renderer->cameras, renderer->activeCamera);\n"
     "\n"
     "    u32 idx = 0;\n"
     "    findInMap(&resources->shaderIDs, \"default\", &idx);\n"
     "    g_defaultShader = resources->shaderHandles[idx];\n"
     "\n"
-    "    // Load the starting scene (change the filename to your scene)\n"
-    "    loadGameScene(\"scene.drsc\");\n"
+    "    loadStartupScene();\n"
     "}\n"
     "\n"
     "static void gameUpdate(f32 dt)\n"
@@ -184,9 +336,13 @@ static const c8 *TPL_GAME_CPP =
     "static void gameRender(f32 dt)\n"
     "{\n"
     "    if (!g_sceneLoaded) return;\n"
+    "    if (!g_standaloneMode) return;\n"
     "\n"
-    "    Mat4 view = getView(&g_cam, false);\n"
-    "    updateCoreShaderUBO(g_time, &g_cam.pos, &view, &g_cam.projection);\n"
+    "    // Camera is managed via the renderer (rendererBeginFrame pushes it to UBO).\n"
+    "    // To move the camera in your game, use:\n"
+    "    //   moveForward(g_cam, speed * dt);\n"
+    "    //   rotateY(g_cam, angle);\n"
+    "    // The editor calls rendererBeginFrame() each frame to upload it.\n"
     "\n"
     "    glUseProgram(g_defaultShader);\n"
     "\n"
@@ -198,7 +354,9 @@ static const c8 *TPL_GAME_CPP =
     "\n"
     "        Model *model = &resources->modelBuffer[modelID];\n"
     "        Transform t = {g_positions[id], g_rotations[id], g_scales[id]};\n"
-    "        updateShaderModel(g_defaultShader, t);\n"
+    "        u32 shaderToUse = (g_shaderH && g_shaderH[id] != 0) ? g_shaderH[id] : g_defaultShader;\n"
+    "        glUseProgram(shaderToUse);\n"
+    "        updateShaderModel(shaderToUse, t);\n"
     "\n"
     "        for (u32 m = 0; m < model->meshCount; m++)\n"
     "        {\n"
@@ -210,7 +368,7 @@ static const c8 *TPL_GAME_CPP =
     "                matIdx = g_matIDs[id];\n"
     "            if (matIdx < resources->materialUsed)\n"
     "            {\n"
-    "                MaterialUniforms unis = getMaterialUniforms(g_defaultShader);\n"
+    "                MaterialUniforms unis = getMaterialUniforms(shaderToUse);\n"
     "                updateMaterial(&resources->materialBuffer[matIdx], &unis);\n"
     "            }\n"
     "            drawMesh(&resources->meshBuffer[mi]);\n"
@@ -248,21 +406,92 @@ static const c8 *TPL_GAME_CPP =
 // standalone launcher for running the game without the editor
 static const c8 *TPL_MAIN_CPP =
     "#include \"game.h\"\n"
+    "#include <stdio.h>\n"
+    "\n"
+    "#ifndef DRUID_APP_TITLE\n"
+    "#define DRUID_APP_TITLE \"Game\"\n"
+    "#endif\n"
     "\n"
     "static GamePlugin plugin = {0};\n"
+    "static Application *g_app = NULL;\n"
+    "static Mesh *g_skyboxMesh = NULL;\n"
+    "static u32   g_skyboxTex = 0;\n"
+    "static u32   g_skyboxShader = 0;\n"
     "\n"
-    "static void _init(void)    { plugin.init(\".\"); }\n"
-    "static void _update(f32 dt){ plugin.update(dt);  }\n"
-    "static void _render(f32 dt){ plugin.render(dt);  }\n"
-    "static void _destroy(void) { plugin.destroy();   }\n"
+    "static void loadStandaloneSkybox(void)\n"
+    "{\n"
+    "    const c8 *suffixes[6] = {\"right.jpg\", \"left.jpg\", \"top.jpg\", \"bottom.jpg\", \"front.jpg\", \"back.jpg\"};\n"
+    "    c8 paths[6][512];\n"
+    "    const c8 *faces[6];\n"
+    "    for (u32 i = 0; i < 6; i++)\n"
+    "    {\n"
+    "        snprintf(paths[i], sizeof(paths[i]), \"./res/Textures/Skybox/%s\", suffixes[i]);\n"
+    "        if (!fileExists(paths[i]))\n"
+    "            return;\n"
+    "        faces[i] = paths[i];\n"
+    "    }\n"
+    "\n"
+    "    g_skyboxTex = createCubeMapTexture(faces, 6);\n"
+    "    g_skyboxMesh = createSkyboxMesh();\n"
+    "    g_skyboxShader = createGraphicsProgram(\"./res/Skybox.vert\", \"./res/Skybox.frag\");\n"
+    "}\n"
+    "\n"
+    "static void _init(void)\n"
+    "{\n"
+    "    // Create the renderer (editor normally does this)\n"
+    "    if (!renderer && g_app && g_app->display)\n"
+    "    {\n"
+    "        Renderer *r = createRenderer(g_app->display, 70.0f, 0.1f, 100.0f, 8, 16, 8);\n"
+    "        if (r)\n"
+    "        {\n"
+    "            u32 idx = 0;\n"
+    "            findInMap(&resources->shaderIDs, \"default\", &idx);\n"
+    "            r->defaultShader = resources->shaderHandles[idx];\n"
+    "            // Acquire a camera for the game\n"
+    "            u32 camSlot = rendererAcquireCamera(r, (Vec3){0.0f, 2.0f, 8.0f}, 70.0f,\n"
+    "                                                16.0f / 9.0f, 0.1f, 100.0f);\n"
+    "            rendererSetActiveCamera(r, camSlot);\n"
+    "        }\n"
+    "    }\n"
+    "    loadStandaloneSkybox();\n"
+    "    plugin.init(\".\");\n"
+    "}\n"
+    "static void _update(f32 dt)\n"
+    "{\n"
+    "    plugin.update(dt);\n"
+    "    if (renderer) rendererBeginFrame(renderer, dt);\n"
+    "}\n"
+    "static void _render(f32 dt)\n"
+    "{\n"
+    "    if (g_skyboxMesh && g_skyboxTex && g_skyboxShader)\n"
+    "    {\n"
+    "        glDepthFunc(GL_LEQUAL);\n"
+    "        glDepthMask(GL_FALSE);\n"
+    "        glUseProgram(g_skyboxShader);\n"
+    "        glBindVertexArray(g_skyboxMesh->vao);\n"
+    "        glBindTexture(GL_TEXTURE_CUBE_MAP, g_skyboxTex);\n"
+    "        glDrawArrays(GL_TRIANGLES, 0, 36);\n"
+    "        glBindVertexArray(0);\n"
+    "        glDepthMask(GL_TRUE);\n"
+    "        glDepthFunc(GL_LESS);\n"
+    "    }\n"
+    "    plugin.render(dt);\n"
+    "}\n"
+    "static void _destroy(void)\n"
+    "{\n"
+    "    plugin.destroy();\n"
+    "    if (g_skyboxMesh) freeMesh(g_skyboxMesh);\n"
+    "    if (g_skyboxTex) freeTexture(g_skyboxTex);\n"
+    "    if (g_skyboxShader) freeShader(g_skyboxShader);\n"
+    "}\n"
     "\n"
     "int main(int argc, char **argv)\n"
     "{\n"
     "    druidGetPlugin(&plugin);\n"
-    "    Application *app = createApplication(\"My Game\", _init, _update, _render, _destroy);\n"
-    "    app->width  = 1280;\n"
-    "    app->height = 720;\n"
-    "    run(app);\n"
+    "    g_app = createApplication(DRUID_APP_TITLE, _init, _update, _render, _destroy);\n"
+    "    g_app->width  = 1280;\n"
+    "    g_app->height = 720;\n"
+    "    run(g_app);\n"
     "    return 0;\n"
     "}\n";
 
@@ -332,6 +561,7 @@ static const c8 *TPL_SHADER_FRAG =
 static const c8 *TPL_CMAKELISTS =
     "cmake_minimum_required(VERSION 3.15)\n"
     "project(Game C CXX)\n"
+    "get_filename_component(DRUID_PROJECT_NAME \"${CMAKE_SOURCE_DIR}\" NAME)\n"
     "\n"
     "set(CMAKE_C_STANDARD 11)\n"
     "set(CMAKE_CXX_STANDARD 17)\n"
@@ -375,7 +605,15 @@ static const c8 *TPL_CMAKELISTS =
     "endif()\n"
     "\n"
     "add_executable(game_standalone ${CMAKE_SOURCE_DIR}/src/main.cpp)\n"
-    "target_link_libraries(game_standalone PRIVATE game ${DEPS_DIR}/lib/libdruid.dll.a)\n"
+    "target_link_libraries(game_standalone PRIVATE\n"
+    "    game\n"
+    "    ${DEPS_DIR}/lib/libdruid.dll.a\n"
+    "    ${DEPS_DIR}/lib/libglew.dll.a\n"
+    "    ${DEPS_DIR}/lib/libSDL3.dll.a\n"
+    "    opengl32 gdi32 user32 winmm\n"
+    ")\n"
+    "target_compile_definitions(game_standalone PRIVATE DRUID_APP_TITLE=\\\"${DRUID_PROJECT_NAME}\\\")\n"
+    "set_target_properties(game_standalone PROPERTIES OUTPUT_NAME \"${DRUID_PROJECT_NAME}\")\n"
     "\n"
     "add_custom_command(TARGET game POST_BUILD\n"
     "    COMMAND ${CMAKE_COMMAND} -E copy_if_different\n"
@@ -476,6 +714,160 @@ b8 buildProject(const c8 *projectDir, c8 *outLog, u32 logSize)
 
     g_buildInProgress = false;
     return (ret == 0);
+}
+
+// ============================================================================
+
+b8 buildStandalone(const c8 *projectDir, const c8 *scenePath, c8 *outLog, u32 logSize)
+{
+    if (!projectDir || projectDir[0] == '\0')
+        return false;
+
+    g_buildInProgress = true;
+    outLog[0] = '\0';
+
+    c8 buildDir[MAX_PATH_LENGTH];
+    snprintf(buildDir, sizeof(buildDir), "%s/build", projectDir);
+    createDir(buildDir);
+
+    // configure (same as normal build)
+    c8 cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "cd /d \"%s/build\" && cmake .. -G \"MinGW Makefiles\" 2>&1",
+             projectDir);
+
+    FILE *pipe = (FILE *)platformPipeOpen(cmd);
+    if (!pipe)
+    {
+        snprintf(outLog, logSize, "Failed to run cmake configure\n");
+        g_buildInProgress = false;
+        return false;
+    }
+
+    u32 off = 0;
+    c8 line[512];
+    while (fgets(line, sizeof(line), pipe))
+    {
+        u32 len = (u32)strlen(line);
+        if (off + len < logSize - 1) { memcpy(outLog + off, line, len); off += len; }
+    }
+    outLog[off] = '\0';
+    i32 ret = platformPipeClose(pipe);
+    if (ret != 0) { g_buildInProgress = false; return false; }
+
+    // build the standalone target
+    snprintf(cmd, sizeof(cmd),
+             "cd /d \"%s/build\" && cmake --build . --target game_standalone 2>&1",
+             projectDir);
+
+    pipe = (FILE *)platformPipeOpen(cmd);
+    if (!pipe)
+    {
+        const c8 *msg = "Failed to run cmake build\n";
+        u32 len = (u32)strlen(msg);
+        if (off + len < logSize - 1) { memcpy(outLog + off, msg, len); off += len; }
+        outLog[off] = '\0';
+        g_buildInProgress = false;
+        return false;
+    }
+
+    while (fgets(line, sizeof(line), pipe))
+    {
+        u32 len = (u32)strlen(line);
+        if (off + len < logSize - 1) { memcpy(outLog + off, line, len); off += len; }
+    }
+    outLog[off] = '\0';
+    ret = platformPipeClose(pipe);
+    if (ret != 0) { g_buildInProgress = false; return false; }
+
+    // also build the shared lib (game_standalone links against it)
+    snprintf(cmd, sizeof(cmd),
+             "cd /d \"%s/build\" && cmake --build . --target game 2>&1",
+             projectDir);
+    pipe = (FILE *)platformPipeOpen(cmd);
+    if (pipe)
+    {
+        while (fgets(line, sizeof(line), pipe))
+        {
+            u32 len = (u32)strlen(line);
+            if (off + len < logSize - 1) { memcpy(outLog + off, line, len); off += len; }
+        }
+        outLog[off] = '\0';
+        platformPipeClose(pipe);
+    }
+
+    // ── Package into projectDir/export/ ──
+    c8 exportDir[MAX_PATH_LENGTH];
+    snprintf(exportDir, sizeof(exportDir), "%s/export", projectDir);
+    createDir(exportDir);
+
+    writeStartupSceneConfig(projectDir, scenePath);
+    writeStartupSceneConfig(exportDir, scenePath);
+
+    c8 projectName[256];
+    getProjectBaseName(projectDir, projectName, sizeof(projectName));
+
+    // copy the standalone exe
+    struct { const c8 *src; const c8 *dst; } exeFiles[] = {
+#ifdef _WIN32
+        {"bin/libgame.dll",         "export/libgame.dll"},
+        {"deps/bin/libdruid.dll",   "export/libdruid.dll"},
+        {"deps/bin/glew32.dll",     "export/glew32.dll"},
+        {"deps/bin/SDL3.dll",       "export/SDL3.dll"},
+        {"deps/bin/libassimp-6.dll","export/libassimp-6.dll"},
+#else
+        {"bin/game_standalone",     "export/game_standalone"},
+        {"bin/libgame.so",          "export/libgame.so"},
+        {"deps/bin/libdruid.so",    "export/libdruid.so"},
+#endif
+    };
+
+    u32 fileCount = sizeof(exeFiles) / sizeof(exeFiles[0]);
+    u32 copied = 0;
+
+    {
+        c8 srcPath[MAX_PATH_LENGTH], dstPath[MAX_PATH_LENGTH];
+#ifdef _WIN32
+        snprintf(srcPath, sizeof(srcPath), "%s/bin/%s.exe", projectDir, projectName);
+        if (!fileExists(srcPath))
+            snprintf(srcPath, sizeof(srcPath), "%s/bin/game_standalone.exe", projectDir);
+        snprintf(dstPath, sizeof(dstPath), "%s/export/%s.exe", projectDir, projectName);
+#else
+        snprintf(srcPath, sizeof(srcPath), "%s/bin/%s", projectDir, projectName);
+        if (!fileExists(srcPath))
+            snprintf(srcPath, sizeof(srcPath), "%s/bin/game_standalone", projectDir);
+        snprintf(dstPath, sizeof(dstPath), "%s/export/%s", projectDir, projectName);
+#endif
+        if (copyFileSingle(srcPath, dstPath))
+            copied++;
+    }
+
+    for (u32 i = 0; i < fileCount; i++)
+    {
+        c8 srcPath[MAX_PATH_LENGTH], dstPath[MAX_PATH_LENGTH];
+        snprintf(srcPath, sizeof(srcPath), "%s/%s", projectDir, exeFiles[i].src);
+        snprintf(dstPath, sizeof(dstPath), "%s/%s", projectDir, exeFiles[i].dst);
+        if (copyFileSingle(srcPath, dstPath))
+            copied++;
+    }
+
+    // copy res/ and scenes/ directories
+    {
+        c8 src[MAX_PATH_LENGTH], dst[MAX_PATH_LENGTH];
+        snprintf(src, sizeof(src), "%s/res", projectDir);
+        snprintf(dst, sizeof(dst), "%s/export/res", projectDir);
+        createDir(dst);
+        platformDirCopyRecursive(src, dst);
+
+        snprintf(src, sizeof(src), "%s/scenes", projectDir);
+        snprintf(dst, sizeof(dst), "%s/export/scenes", projectDir);
+        createDir(dst);
+        platformDirCopyRecursive(src, dst);
+    }
+
+    INFO("Standalone build packaged to %s/export/ (%u files copied)", projectDir, copied);
+    g_buildInProgress = false;
+    return true;
 }
 
 // ============================================================================

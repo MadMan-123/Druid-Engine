@@ -126,6 +126,17 @@ void processInput(void *appData)
         default:;
         }
     }
+
+    ImGuiIO &io = ImGui::GetIO();
+    b8 capture = (b8)(io.WantCaptureMouse || io.WantCaptureKeyboard);
+
+    // During play mode, let gameplay input through when the viewport is hovered.
+    // This prevents UI panels from triggering gameplay actions, while allowing
+    // controller/mouse input to drive the game in the viewport.
+    if (g_gameRunning && canMoveViewPort)
+        capture = false;
+
+    setInputCaptureState(capture);
 }
 
 void reallocateSceneArena()
@@ -151,6 +162,7 @@ void rebindArchetypeFields()
     shaderHandles     = (u32 *)fields[6];
     entityMaterialIDs = (u32 *)fields[7];
     archetypeIDs      = (fieldCount > 8) ? (u32 *)fields[8] : nullptr;
+    sceneCameraFlags  = (fieldCount > 9) ? (b8 *)fields[9] : nullptr;
 }
 
 // After loading an old scene whose layout has fewer fields than the current
@@ -239,6 +251,10 @@ void migrateSceneArchetypeIfNeeded()
             for (u32 e = 0; e < liveCount; e++)
                 ids[e] = (u32)-1;
         }
+        else if (i == 9 && SceneEntity.fields[i].size == sizeof(b8))
+        {
+            memset(newFields[i], 0, SceneEntity.fields[i].size * capacity);
+        }
     }
 
     // Restore live count
@@ -321,15 +337,11 @@ void init()
                0.1f, 100.0f); // near/far clip planes
 
     // load skybox resources --------------------------------------------------
-    const c8 *faces[6] = {
-        "../res/Textures/Skybox/right.jpg", "../res/Textures/Skybox/left.jpg",
-        "../res/Textures/Skybox/top.jpg",   "../res/Textures/Skybox/bottom.jpg",
-        "../res/Textures/Skybox/front.jpg", "../res/Textures/Skybox/back.jpg"};
-
-    cubeMapTexture = createCubeMapTexture(faces, 6); // load cubemap from disk
+    cubeMapTexture = 0;
     skyboxMesh = createSkyboxMesh(); // generate cube mesh (36 verts)
     skyboxShader =
         createGraphicsProgram("../res/Skybox.vert", "../res/Skybox.frag");
+    loadPreferredSkybox();
 
     // Enable seamless cubemap sampling to reduce visible seams when sampling
     // across cube faces (requires OpenGL 3.2+). This tells the GL to sample
@@ -361,7 +373,11 @@ void init()
         if (r)
         {
             r->defaultShader = shader;
-            INFO("Editor: created Renderer (defaultShader=%u)", shader);
+
+            // Acquire a camera in the renderer and sync it with sceneCam
+            g_editorCamSlot = rendererAcquireCamera(r, sceneCam.pos, 70.0f, 1.0f, 0.1f, 100.0f);
+            rendererSetActiveCamera(r, g_editorCamSlot);
+            INFO("Editor: created Renderer (defaultShader=%u, cam=%u)", shader, g_editorCamSlot);
         }
         else
         {
@@ -423,6 +439,7 @@ void init()
                 // Migrate old scenes that lack newer fields (e.g. archetypeID)
                 migrateSceneArchetypeIfNeeded();
                 rebindArchetypeFields();
+                applySceneCameraEntityToSceneCam();
 
                 if (sd.materialCount > 0 && sd.materials)
                 {
@@ -474,7 +491,7 @@ void update(f32 dt)
         entitySizeCache = entitySize;
     }
 
-    if (canMoveViewPort)
+    if (canMoveViewPort && !g_gameRunning)
     {
         moveViewPortCamera(dt);
 

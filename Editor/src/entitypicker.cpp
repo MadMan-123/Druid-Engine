@@ -60,7 +60,12 @@ void renderIDPass()
 
         if (index == (u32)-1)
         {
-            // Entity has no model assigned, skip rendering
+            if (sceneCameraFlags && sceneCameraFlags[i])
+            {
+                Transform marker = {positions[i], rotations[i], {0.2f, 0.2f, 0.35f}};
+                updateShaderModel(idShader, marker);
+                drawMeshIDPass(cubeMesh);
+            }
             continue;
         }
         if (index < resources->modelUsed)

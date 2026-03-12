@@ -68,6 +68,22 @@ build CMakeFiles/druid.dir/src/core/arena.c.obj: C_COMPILER__druid_unscanned_ C$
   OBJECT_DIR = CMakeFiles\druid.dir
   OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\core
 
+build CMakeFiles/druid.dir/src/core/buffer.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/core/buffer.c || cmake_object_order_depends_target_druid
+  DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
+  DEP_FILE = CMakeFiles\druid.dir\src\core\buffer.c.obj.d
+  FLAGS = -std=gnu11 -Wall -O3 -std=c11 -fPIC -g
+  INCLUDES = -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
+  OBJECT_DIR = CMakeFiles\druid.dir
+  OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\core
+
+build CMakeFiles/druid.dir/src/core/dllloader.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/core/dllloader.c || cmake_object_order_depends_target_druid
+  DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
+  DEP_FILE = CMakeFiles\druid.dir\src\core\dllloader.c.obj.d
+  FLAGS = -std=gnu11 -Wall -O3 -std=c11 -fPIC -g
+  INCLUDES = -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
+  OBJECT_DIR = CMakeFiles\druid.dir
+  OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\core
+
 build CMakeFiles/druid.dir/src/core/file.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/core/file.c || cmake_object_order_depends_target_druid
   DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
   DEP_FILE = CMakeFiles\druid.dir\src\core\file.c.obj.d
@@ -111,6 +127,14 @@ build CMakeFiles/druid.dir/src/core/math.c.obj: C_COMPILER__druid_unscanned_ C$:
 build CMakeFiles/druid.dir/src/core/objloader.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/core/objloader.c || cmake_object_order_depends_target_druid
   DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
   DEP_FILE = CMakeFiles\druid.dir\src\core\objloader.c.obj.d
+  FLAGS = -std=gnu11 -Wall -O3 -std=c11 -fPIC -g
+  INCLUDES = -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
+  OBJECT_DIR = CMakeFiles\druid.dir
+  OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\core
+
+build CMakeFiles/druid.dir/src/core/platform.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/core/platform.c || cmake_object_order_depends_target_druid
+  DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
+  DEP_FILE = CMakeFiles\druid.dir\src\core\platform.c.obj.d
   FLAGS = -std=gnu11 -Wall -O3 -std=c11 -fPIC -g
   INCLUDES = -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
   OBJECT_DIR = CMakeFiles\druid.dir
@@ -204,6 +228,14 @@ build CMakeFiles/druid.dir/src/systems/rendering/model.c.obj: C_COMPILER__druid_
   OBJECT_DIR = CMakeFiles\druid.dir
   OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\systems\rendering
 
+build CMakeFiles/druid.dir/src/systems/rendering/renderer.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/systems/rendering/renderer.c || cmake_object_order_depends_target_druid
+  DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
+  DEP_FILE = CMakeFiles\druid.dir\src\systems\rendering\renderer.c.obj.d
+  FLAGS = -std=gnu11 -Wall -O3 -std=c11 -fPIC -g
+  INCLUDES = -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
+  OBJECT_DIR = CMakeFiles\druid.dir
+  OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\systems\rendering
+
 build CMakeFiles/druid.dir/src/systems/rendering/shader.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/systems/rendering/shader.c || cmake_object_order_depends_target_druid
   DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
   DEP_FILE = CMakeFiles\druid.dir\src\systems\rendering\shader.c.obj.d
@@ -236,6 +268,14 @@ build CMakeFiles/druid.dir/src/systems/world_model/archetype.c.obj: C_COMPILER__
   OBJECT_DIR = CMakeFiles\druid.dir
   OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\systems\world_model
 
+build CMakeFiles/druid.dir/src/systems/world_model/ecssystem.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/systems/world$ model/ecssystem.c || cmake_object_order_depends_target_druid
+  DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
+  DEP_FILE = CMakeFiles\druid.dir\src\systems\world_model\ecssystem.c.obj.d
+  FLAGS = -std=gnu11 -Wall -O3 -std=c11 -fPIC -g
+  INCLUDES = -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
+  OBJECT_DIR = CMakeFiles\druid.dir
+  OBJECT_FILE_DIR = CMakeFiles\druid.dir\src\systems\world_model
+
 build CMakeFiles/druid.dir/src/systems/world_model/entityarena.c.obj: C_COMPILER__druid_unscanned_ C$:/Dev/Druid-Engine/src/systems/world$ model/entityarena.c || cmake_object_order_depends_target_druid
   DEFINES = -DDRUID_EXPORT -DDRUID_PROFILE -DWIN32 -Ddruid_EXPORTS
   DEP_FILE = CMakeFiles\druid.dir\src\systems\world_model\entityarena.c.obj.d
@@ -260,7 +300,7 @@ build CMakeFiles/druid.dir/src/systems/world_model/scene.c.obj: C_COMPILER__drui
 #############################################
 # Link the shared library bin\libdruid.dll
 
-build bin/libdruid.dll bin/libdruid.dll.a: C_SHARED_LIBRARY_LINKER__druid_ CMakeFiles/druid.dir/src/application/application.c.obj CMakeFiles/druid.dir/src/application/resourcemanager.c.obj CMakeFiles/druid.dir/src/core/arena.c.obj CMakeFiles/druid.dir/src/core/file.c.obj CMakeFiles/druid.dir/src/core/hashmap.c.obj CMakeFiles/druid.dir/src/core/input.c.obj CMakeFiles/druid.dir/src/core/logging.c.obj CMakeFiles/druid.dir/src/core/math.c.obj CMakeFiles/druid.dir/src/core/objloader.c.obj CMakeFiles/druid.dir/src/core/transform.c.obj CMakeFiles/druid.dir/src/stb_image.c.obj CMakeFiles/druid.dir/src/systems/physics/collider.c.obj CMakeFiles/druid.dir/src/systems/rendering/camera.c.obj CMakeFiles/druid.dir/src/systems/rendering/display.c.obj CMakeFiles/druid.dir/src/systems/rendering/framebuffer.c.obj CMakeFiles/druid.dir/src/systems/rendering/gbuffer.c.obj CMakeFiles/druid.dir/src/systems/rendering/instancebuffer.c.obj CMakeFiles/druid.dir/src/systems/rendering/material.c.obj CMakeFiles/druid.dir/src/systems/rendering/mesh.c.obj CMakeFiles/druid.dir/src/systems/rendering/model.c.obj CMakeFiles/druid.dir/src/systems/rendering/shader.c.obj CMakeFiles/druid.dir/src/systems/rendering/texture.c.obj CMakeFiles/druid.dir/src/systems/rendering/ubo.c.obj CMakeFiles/druid.dir/src/systems/world_model/archetype.c.obj CMakeFiles/druid.dir/src/systems/world_model/entityarena.c.obj CMakeFiles/druid.dir/src/systems/world_model/scene.c.obj | deps/libglew.dll.a deps/libSDL3.dll.a deps/libassimp.dll.a
+build bin/libdruid.dll bin/libdruid.dll.a: C_SHARED_LIBRARY_LINKER__druid_ CMakeFiles/druid.dir/src/application/application.c.obj CMakeFiles/druid.dir/src/application/resourcemanager.c.obj CMakeFiles/druid.dir/src/core/arena.c.obj CMakeFiles/druid.dir/src/core/buffer.c.obj CMakeFiles/druid.dir/src/core/dllloader.c.obj CMakeFiles/druid.dir/src/core/file.c.obj CMakeFiles/druid.dir/src/core/hashmap.c.obj CMakeFiles/druid.dir/src/core/input.c.obj CMakeFiles/druid.dir/src/core/logging.c.obj CMakeFiles/druid.dir/src/core/math.c.obj CMakeFiles/druid.dir/src/core/objloader.c.obj CMakeFiles/druid.dir/src/core/platform.c.obj CMakeFiles/druid.dir/src/core/transform.c.obj CMakeFiles/druid.dir/src/stb_image.c.obj CMakeFiles/druid.dir/src/systems/physics/collider.c.obj CMakeFiles/druid.dir/src/systems/rendering/camera.c.obj CMakeFiles/druid.dir/src/systems/rendering/display.c.obj CMakeFiles/druid.dir/src/systems/rendering/framebuffer.c.obj CMakeFiles/druid.dir/src/systems/rendering/gbuffer.c.obj CMakeFiles/druid.dir/src/systems/rendering/instancebuffer.c.obj CMakeFiles/druid.dir/src/systems/rendering/material.c.obj CMakeFiles/druid.dir/src/systems/rendering/mesh.c.obj CMakeFiles/druid.dir/src/systems/rendering/model.c.obj CMakeFiles/druid.dir/src/systems/rendering/renderer.c.obj CMakeFiles/druid.dir/src/systems/rendering/shader.c.obj CMakeFiles/druid.dir/src/systems/rendering/texture.c.obj CMakeFiles/druid.dir/src/systems/rendering/ubo.c.obj CMakeFiles/druid.dir/src/systems/world_model/archetype.c.obj CMakeFiles/druid.dir/src/systems/world_model/ecssystem.c.obj CMakeFiles/druid.dir/src/systems/world_model/entityarena.c.obj CMakeFiles/druid.dir/src/systems/world_model/scene.c.obj | deps/libglew.dll.a deps/libSDL3.dll.a deps/libassimp.dll.a
   LINK_FLAGS = -shared
   LINK_LIBRARIES = deps/libglew.dll.a  deps/libSDL3.dll.a  deps/libassimp.dll.a  -lopengl32  -lgdi32  -luser32  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\druid.dir
@@ -354,6 +394,14 @@ build Editor/CMakeFiles/editor.dir/src/main.cpp.obj: CXX_COMPILER__editor_unscan
   OBJECT_DIR = Editor\CMakeFiles\editor.dir
   OBJECT_FILE_DIR = Editor\CMakeFiles\editor.dir\src
 
+build Editor/CMakeFiles/editor.dir/src/project_builder.cpp.obj: CXX_COMPILER__editor_unscanned_ C$:/Dev/Druid-Engine/Editor/src/project_builder.cpp || cmake_object_order_depends_target_editor
+  DEFINES = -DDRUID_PROFILE
+  DEP_FILE = Editor\CMakeFiles\editor.dir\src\project_builder.cpp.obj.d
+  FLAGS = -std=gnu++17
+  INCLUDES = -IC:/Dev/Druid-Engine/Editor/deps/imgui -IC:/Dev/Druid-Engine/include -IC:/Dev/Druid-Engine/include/GL -IC:/Dev/Druid-Engine/Editor/deps
+  OBJECT_DIR = Editor\CMakeFiles\editor.dir
+  OBJECT_FILE_DIR = Editor\CMakeFiles\editor.dir\src
+
 build Editor/CMakeFiles/editor.dir/deps/imgui/imgui.cpp.obj: CXX_COMPILER__editor_unscanned_ C$:/Dev/Druid-Engine/Editor/deps/imgui/imgui.cpp || cmake_object_order_depends_target_editor
   DEFINES = -DDRUID_PROFILE
   DEP_FILE = Editor\CMakeFiles\editor.dir\deps\imgui\imgui.cpp.obj.d
@@ -418,7 +466,7 @@ build Editor/CMakeFiles/editor.dir/deps/imgui/imgui_widgets.cpp.obj: CXX_COMPILE
 #############################################
 # Link the executable Editor\bin\editor.exe
 
-build Editor/bin/editor.exe: CXX_EXECUTABLE_LINKER__editor_ Editor/CMakeFiles/editor.dir/src/editor.cpp.obj Editor/CMakeFiles/editor.dir/src/entitypicker.cpp.obj Editor/CMakeFiles/editor.dir/src/hub.cpp.obj Editor/CMakeFiles/editor.dir/src/main.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_demo.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_draw.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_impl_opengl3.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_impl_sdl3.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_tables.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_widgets.cpp.obj | bin/libdruid.dll.a deps/libglew.dll.a deps/libSDL3.dll.a deps/libassimp.dll.a || bin/libdruid.dll
+build Editor/bin/editor.exe: CXX_EXECUTABLE_LINKER__editor_ Editor/CMakeFiles/editor.dir/src/editor.cpp.obj Editor/CMakeFiles/editor.dir/src/entitypicker.cpp.obj Editor/CMakeFiles/editor.dir/src/hub.cpp.obj Editor/CMakeFiles/editor.dir/src/main.cpp.obj Editor/CMakeFiles/editor.dir/src/project_builder.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_demo.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_draw.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_impl_opengl3.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_impl_sdl3.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_tables.cpp.obj Editor/CMakeFiles/editor.dir/deps/imgui/imgui_widgets.cpp.obj | bin/libdruid.dll.a deps/libglew.dll.a deps/libSDL3.dll.a deps/libassimp.dll.a || bin/libdruid.dll
   LINK_LIBRARIES = bin/libdruid.dll.a  deps/libglew.dll.a  deps/libSDL3.dll.a  deps/libassimp.dll.a  -lopengl32  -lgdi32  -luser32  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = Editor\CMakeFiles\editor.dir
   POST_BUILD = C:\Windows\system32\cmd.exe /C "cd /D C:\Dev\Druid-Engine\Editor && C:\msys64\mingw64\bin\cmake.exe -E copy_if_different C:/Dev/Druid-Engine/bin/libdruid.dll C:/Dev/Druid-Engine/Editor/bin && C:\msys64\mingw64\bin\cmake.exe -E copy_if_different C:/Dev/Druid-Engine/deps/glew32.dll C:/Dev/Druid-Engine/Editor/bin && C:\msys64\mingw64\bin\cmake.exe -E copy_if_different C:/Dev/Druid-Engine/deps/SDL3.dll C:/Dev/Druid-Engine/Editor/bin"

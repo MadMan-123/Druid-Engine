@@ -37,6 +37,8 @@ extern u32 skyboxProjLoc;
 
 // Scene camera accessible from multiple files
 extern Camera sceneCam;
+extern u32 g_editorCamSlot; // renderer camera slot
+extern b8 *sceneCameraFlags;
 extern i32 entitySize;
 extern u32 entitySizeCache;
 extern u32 entityCount;
@@ -118,6 +120,12 @@ void migrateSceneArchetypeIfNeeded();
 // Scan the project src/ for archetype system files and populate the editor
 // registry. Should be called once after a project is opened.
 void scanProjectArchetypes(const c8 *projectDir);
+
+// Sync the editor camera from the designated scene-camera entity, if present.
+void applySceneCameraEntityToSceneCam();
+
+// Load the project skybox if present, otherwise fall back to defaults.
+void loadPreferredSkybox();
 
 void editorLog(LogLevel level, const c8* msg);
 

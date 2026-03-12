@@ -13,12 +13,7 @@ void inputUpdate(Application* app)
 		if (app->inputProcess)
 			app->inputProcess(app);
 
-	Vec2 jAxis = getJoystickAxis(1,JOYSTICK_LEFT_X, JOYSTICK_LEFT_Y); //get the left joystick axi
-	Vec2 kAxis = getKeyboardAxis(); //get the keyboard axis
-
-	//set input axis
-	xInputAxis = clamp(kAxis.x + jAxis.x,-1.0f,1.0f);
-	yInputAxis = clamp(kAxis.y + jAxis.y, -1.0f, 1.0f); //clamp to -1 to 1 range
+	updateInputAxes();
 }
 //create the application
 Application* createApplication(const c8* title,FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)

@@ -1467,7 +1467,7 @@ extern "C"
     DAPI void getMouseDelta(f32 *x, f32 *y);
 
 #define GAMEPAD_MAX 4
-    extern SDL_Gamepad *gamepads[GAMEPAD_MAX];
+    DAPI extern SDL_Gamepad *gamepads[GAMEPAD_MAX];
 
     DAPI void checkForGamepadConnection(SDL_Event *event);
     DAPI void checkForGamepadRemoved(SDL_Event *event);
@@ -1475,9 +1475,19 @@ extern "C"
     DAPI Vec2 getKeyboardAxis();
     DAPI Vec2 getJoystickAxis(u32 controllerID, JoystickCode axis1,
                               JoystickCode axis2);
+        DAPI void updateInputAxes(void);
+        DAPI Vec2 getInputAxis(void);
+        DAPI Vec2 getLookAxis(void);
+        DAPI f32  getInputAxisX(void);
+        DAPI f32  getInputAxisY(void);
+        DAPI f32  getLookAxisX(void);
+        DAPI f32  getLookAxisY(void);
+        DAPI void setInputCaptureState(b8 captured);
 
     DAPI extern f32 xInputAxis;
     DAPI extern f32 yInputAxis;
+        DAPI extern f32 xLookAxis;
+        DAPI extern f32 yLookAxis;
 
     //=====================================================================================================================
 

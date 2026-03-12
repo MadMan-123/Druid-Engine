@@ -51,6 +51,9 @@ b8 updateProject(const c8 *projectDir, c8 *outLog, u32 logSize);
 // cmake configure + build. log goes into outLog.
 b8 buildProject(const c8 *projectDir, c8 *outLog, u32 logSize);
 
+// build the standalone executable and package it into projectDir/export/
+b8 buildStandalone(const c8 *projectDir, const c8 *scenePath, c8 *outLog, u32 logSize);
+
 // load/unload game DLL
 b8   loadGameDLL(const c8 *dllPath, GameDLL *out);
 void unloadGameDLL(GameDLL *dll);

@@ -25,7 +25,8 @@ DEFINE_ARCHETYPE(SceneEntity,
     FIELD(u32, modelID),
     FIELD(u32, shaderHandle),
     FIELD(u32, materialID),
-    FIELD(u32, archetypeID)
+    FIELD(u32, archetypeID),
+    FIELD(b8, isSceneCamera)
 );
 
 // Editor-side registry of user-created archetypes
@@ -43,6 +44,22 @@ static b8 showSaveModal = false;
 static b8 showLoadModal = false;
 static b8 showNewSceneModal = false;
 static b8 showProfiler = false;
+static b8 showSkyboxSettings = false;
+
+// Skybox face paths (6 faces: right, left, top, bottom, front, back)
+static c8 g_skyboxFaces[6][512] = {
+    "../res/Textures/Skybox/right.jpg",
+    "../res/Textures/Skybox/left.jpg",
+    "../res/Textures/Skybox/top.jpg",
+    "../res/Textures/Skybox/bottom.jpg",
+    "../res/Textures/Skybox/front.jpg",
+    "../res/Textures/Skybox/back.jpg"
+};
+
+static const c8 *g_skyboxFaceSuffixes[6] = {
+    "right.jpg", "left.jpg", "top.jpg",
+    "bottom.jpg", "front.jpg", "back.jpg"
+};
 
 // Multi-FBO system
 Framebuffer viewportFBs[MAX_FBOS] = {0};
@@ -59,12 +76,55 @@ u32 skyboxShader = 0;
 u32 skyboxViewLoc = 0;
 u32 skyboxProjLoc = 0;
 
+// Reload cubemap from 6 individual face texture paths
+static void reloadSkyboxFromFaces(const c8 *facePaths[6])
+{
+    const c8 *faces[6];
+    for (u32 i = 0; i < 6; i++)
+        faces[i] = facePaths[i];
+
+    u32 newTex = createCubeMapTexture(faces, 6);
+    if (newTex == 0)
+    {
+        ERROR("Failed to load skybox cubemap");
+        return;
+    }
+
+    if (cubeMapTexture != 0)
+        freeTexture(cubeMapTexture);
+    cubeMapTexture = newTex;
+
+    // store the new paths
+    for (u32 i = 0; i < 6; i++)
+    {
+        strncpy(g_skyboxFaces[i], facePaths[i], sizeof(g_skyboxFaces[i]) - 1);
+        g_skyboxFaces[i][sizeof(g_skyboxFaces[i]) - 1] = '\0';
+    }
+    INFO("Skybox reloaded");
+}
+
+// Convenience: load skybox from a folder using standard naming
+static void reloadSkyboxFromFolder(const c8 *folderPath)
+{
+    const c8 *suffixes[6] = {"right.jpg","left.jpg","top.jpg","bottom.jpg","front.jpg","back.jpg"};
+    c8 paths[6][512];
+    const c8 *ptrs[6];
+    for (u32 i = 0; i < 6; i++)
+    {
+        snprintf(paths[i], sizeof(paths[i]), "%s/%s", folderPath, suffixes[i]);
+        ptrs[i] = paths[i];
+    }
+    reloadSkyboxFromFaces(ptrs);
+}
+
 f32 viewportWidthPixels = 0.0f;
 f32 viewportHeightPixels = 0.0f;
 f32 viewportOffsetX = 0.0f;
 f32 viewportOffsetY = 0.0f;
 
 Camera sceneCam = {0};
+u32 g_editorCamSlot = (u32)-1; // renderer camera slot
+b8 *sceneCameraFlags = NULL;
 u32 entitySizeCache = 0;
 Vec3 EulerAngles = v3Zero;
 
@@ -133,6 +193,122 @@ static u32 knownTypeSize(const char *typeName)
 }
 
 // Populate per-system Archetype instances from the scene archetype.
+
+static i32 findSceneCameraEntity()
+{
+    if (!sceneCameraFlags)
+        return -1;
+
+    for (u32 i = 0; i < entityCount; i++)
+    {
+        if (isActive && isActive[i] && sceneCameraFlags[i])
+            return (i32)i;
+    }
+    return -1;
+}
+
+static void setSceneCameraEntity(u32 entityID)
+{
+    if (!sceneCameraFlags)
+        return;
+
+    for (u32 i = 0; i < entityCount; i++)
+        sceneCameraFlags[i] = (i == entityID);
+}
+
+void applySceneCameraEntityToSceneCam()
+{
+    i32 camEntity = findSceneCameraEntity();
+    if (camEntity < 0)
+        return;
+
+    sceneCam.pos = positions[camEntity];
+    sceneCam.orientation = rotations[camEntity];
+}
+
+static b8 projectSkyboxExists(c8 *outFolder, u32 folderSize)
+{
+    if (!hubProjectDir[0])
+        return false;
+
+    c8 folder[512];
+    snprintf(folder, sizeof(folder), "%s/res/Textures/Skybox", hubProjectDir);
+
+    for (u32 i = 0; i < 6; i++)
+    {
+        c8 facePath[512];
+        snprintf(facePath, sizeof(facePath), "%s/%s", folder, g_skyboxFaceSuffixes[i]);
+        if (!fileExists(facePath))
+            return false;
+    }
+
+    if (outFolder && folderSize > 0)
+    {
+        strncpy(outFolder, folder, folderSize - 1);
+        outFolder[folderSize - 1] = '\0';
+    }
+    return true;
+}
+
+static void saveSkyboxFacesToProject(const c8 *facePaths[6])
+{
+    if (!hubProjectDir[0])
+    {
+        WARN("No project open - cannot persist skybox");
+        return;
+    }
+
+    c8 folder[512];
+    snprintf(folder, sizeof(folder), "%s/res/Textures/Skybox", hubProjectDir);
+    createDir(folder);
+
+    u32 copied = 0;
+    for (u32 i = 0; i < 6; i++)
+    {
+        if (!facePaths[i] || facePaths[i][0] == '\0')
+            continue;
+
+        c8 dst[512];
+        snprintf(dst, sizeof(dst), "%s/%s", folder, g_skyboxFaceSuffixes[i]);
+        if (platformFileCopy(facePaths[i], dst))
+            copied++;
+        else
+            WARN("Failed to copy skybox face %u to %s", i, dst);
+    }
+
+    if (copied == 6)
+    {
+        reloadSkyboxFromFolder(folder);
+        INFO("Skybox saved to project resources");
+    }
+    else
+    {
+        WARN("Skybox saved partially (%u/6 faces)", copied);
+    }
+}
+
+void loadPreferredSkybox()
+{
+    c8 folder[512];
+    if (projectSkyboxExists(folder, sizeof(folder)))
+    {
+        reloadSkyboxFromFolder(folder);
+        return;
+    }
+
+    const c8 *faces[6];
+    for (u32 i = 0; i < 6; i++)
+        faces[i] = g_skyboxFaces[i];
+    reloadSkyboxFromFaces(faces);
+}
+
+static void drawSceneCameraMarker(const Transform &t)
+{
+    glUseProgram(arrowShader);
+    updateShaderModel(arrowShader, t);
+    glUniform3f(colourLocation, 1.0f, 0.85f, 0.2f);
+    drawMesh(cubeMesh);
+}
 // Call after ECS system discovery in doBuildAndRun().
 static void populateEcsArchetypes()
 {
@@ -381,11 +557,30 @@ static void renderGameScene()
         return;
     }
 
-    // Update core shader UBO (time + viewProj) once per frame
+    f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
+
+    // ── Sync the editor camera into the renderer's active camera slot ──
+    // In edit mode: always sync sceneCam so the editor free-cam works.
+    // In play mode: the game plugin is allowed to modify the renderer camera
+    //               directly (it gets a pointer from bufferGet).
+    if (!g_gameRunning && renderer && g_editorCamSlot != (u32)-1)
     {
-        f32 t = (f32)ImGui::GetTime();
-        Mat4 view = getView(&sceneCam, false);  
-        updateCoreShaderUBO(t, &sceneCam.pos, &view, &sceneCam.projection);
+        Camera *rCam = (Camera *)bufferGet(&renderer->cameras, g_editorCamSlot);
+        if (rCam) *rCam = sceneCam;
+    }
+
+    // Push the renderer's active camera + timing into the core UBO
+    // In play mode, the game plugin may have updated the camera pointer,
+    // so call rendererBeginFrame AFTER game plugin gets a chance to move
+    // the camera.
+    if (renderer)
+    {
+        // In play mode, let the game plugin update camera before UBO push.
+        // The game has a Camera* into the renderer buffer and can modify it.
+        if (g_gameRunning && g_gameDLL.loaded)
+            g_gameDLL.plugin.render(dt);
+
+        rendererBeginFrame(renderer, dt);
     }
 
     bindFramebuffer(&viewportFBs[activeFBO]);
@@ -396,8 +591,6 @@ static void renderGameScene()
     // ── Play mode: render scene, then hand off to game plugin + ECS ──
     if (g_gameRunning && g_gameDLL.loaded)
     {
-        f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
-
         // Draw skybox
         glDepthFunc(GL_LEQUAL);
         glDepthMask(GL_FALSE);
@@ -417,7 +610,15 @@ static void renderGameScene()
             newTransform = {positions[id], rotations[id], scales[id]};
 
             u32 modelID = modelIDs[id];
-            if (modelID == (u32)-1 || modelID >= resources->modelUsed) continue;
+            if (modelID == (u32)-1 || modelID >= resources->modelUsed)
+            {
+                if (sceneCameraFlags && sceneCameraFlags[id])
+                {
+                    Transform marker = {positions[id], rotations[id], {0.2f, 0.2f, 0.35f}};
+                    drawSceneCameraMarker(marker);
+                }
+                continue;
+            }
 
             Model *model = &resources->modelBuffer[modelID];
             if (!model) continue;
@@ -445,9 +646,6 @@ static void renderGameScene()
                 drawMesh(mesh);
             }
         }
-
-        // Game plugin render callback
-        g_gameDLL.plugin.render(dt);
 
         // Run ECS system render callbacks (custom rendering per archetype)
         for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
@@ -494,7 +692,11 @@ static void renderGameScene()
         u32 modelID = modelIDs[id];
         if (modelID == (u32)-1)
         {
-            // Entity has no model assigned, skip rendering
+            if (sceneCameraFlags && sceneCameraFlags[id])
+            {
+                Transform marker = {positions[id], rotations[id], {0.2f, 0.2f, 0.35f}};
+                drawSceneCameraMarker(marker);
+            }
             continue;
         }
         if (modelID < resources->modelUsed)
@@ -1445,6 +1647,8 @@ static void drawSceneListWindow()
             entityMaterialIDs[entityCount] = (u32)-1; // no custom material
             shaderHandles[entityCount] = 0; // no custom shader
             archetypeIDs[entityCount] = (u32)-1; // no archetype assigned
+            if (sceneCameraFlags)
+                sceneCameraFlags[entityCount] = false;
 
             // make the inital name this
             sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d", entityCount);
@@ -1460,11 +1664,15 @@ static void drawSceneListWindow()
         entityName = &names[i * MAX_NAME_SIZE];
 
         ImGui::PushID(i);
-        const c8 *button_label =
-            (entityName[0] == '\0') ? "[Unnamed Entity]" : entityName;
+        static c8 buttonLabel[320];
+        const c8 *baseLabel = (entityName[0] == '\0') ? "[Unnamed Entity]" : entityName;
+        if (sceneCameraFlags && sceneCameraFlags[i])
+            snprintf(buttonLabel, sizeof(buttonLabel), "[Camera] %s", baseLabel);
+        else
+            snprintf(buttonLabel, sizeof(buttonLabel), "%s", baseLabel);
 
         // draw list of entities
-        if (ImGui::Button(button_label))
+        if (ImGui::Button(buttonLabel))
         {
             // tell the inspector what to read
             currentInspectorState = ENTITY_VIEW;
@@ -1499,8 +1707,9 @@ static void drawInspectorWindow()
         ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE],
                          MAX_NAME_SIZE);
         // draw the scene entity basic data
-        ImGui::InputFloat3("position", (f32 *)&positions[inspectorEntityID]);
+        b8 positionChanged = ImGui::InputFloat3("position", (f32 *)&positions[inspectorEntityID]);
 
+        b8 rotationChanged = false;
         if (ImGui::InputFloat3("rotation", (f32 *)&EulerAnglesDegrees))
         {
             Vec3 eulerRadians;
@@ -1509,8 +1718,41 @@ static void drawInspectorWindow()
             eulerRadians.z = radians(EulerAnglesDegrees.z);
             // set the rotation element
             rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
+            rotationChanged = true;
         }
         ImGui::InputFloat3("scale", (f32 *)&scales[inspectorEntityID]);
+
+        if (sceneCameraFlags)
+        {
+            b8 isSceneCamera = sceneCameraFlags[inspectorEntityID];
+            if (ImGui::Checkbox("Scene Camera", (bool *)&isSceneCamera))
+            {
+                if (isSceneCamera)
+                {
+                    setSceneCameraEntity(inspectorEntityID);
+                    applySceneCameraEntityToSceneCam();
+                }
+                else
+                {
+                    sceneCameraFlags[inspectorEntityID] = false;
+                }
+            }
+
+            if (sceneCameraFlags[inspectorEntityID])
+            {
+                if (ImGui::Button("Move View To Camera"))
+                    applySceneCameraEntityToSceneCam();
+                ImGui::SameLine();
+                if (ImGui::Button("Match Camera To View"))
+                {
+                    positions[inspectorEntityID] = sceneCam.pos;
+                    rotations[inspectorEntityID] = sceneCam.orientation;
+                }
+
+                if (positionChanged || rotationChanged)
+                    applySceneCameraEntityToSceneCam();
+            }
+        }
 
         // ---- Archetype assignment ----
         if (archetypeIDs)
@@ -1856,6 +2098,98 @@ void renderFBOToScreen(u32 fboIndex, u32 shaderProgram)
     glEnable(GL_DEPTH_TEST);
 }
 
+static void drawSkyboxSettingsWindow()
+{
+    if (!showSkyboxSettings) return;
+
+    ImGui::Begin("Skybox Settings", &showSkyboxSettings);
+
+    static const c8 *faceLabels[6] = {
+        "Right  (+X)", "Left   (-X)", "Top    (+Y)",
+        "Bottom (-Y)", "Front  (+Z)", "Back   (-Z)"
+    };
+
+    // Per-face texture path inputs
+    static c8 faceInputs[6][512] = {0};
+    static b8 initInputs = false;
+    if (!initInputs)
+    {
+        for (u32 i = 0; i < 6; i++)
+            strncpy(faceInputs[i], g_skyboxFaces[i], sizeof(faceInputs[i]) - 1);
+        initInputs = true;
+    }
+
+    ImGui::Text("Set each cubemap face texture:");
+    ImGui::Separator();
+
+    for (u32 i = 0; i < 6; i++)
+    {
+        ImGui::PushID((int)i);
+        ImGui::Text("%s", faceLabels[i]);
+        ImGui::SameLine(120.0f);
+        ImGui::SetNextItemWidth(-1.0f);
+        c8 label[32];
+        snprintf(label, sizeof(label), "##face%u", i);
+        ImGui::InputText(label, faceInputs[i], sizeof(faceInputs[i]));
+        ImGui::PopID();
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::Button("Apply"))
+    {
+        const c8 *ptrs[6];
+        for (u32 i = 0; i < 6; i++) ptrs[i] = faceInputs[i];
+        reloadSkyboxFromFaces(ptrs);
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Apply To Project"))
+    {
+        const c8 *ptrs[6];
+        for (u32 i = 0; i < 6; i++) ptrs[i] = faceInputs[i];
+        saveSkyboxFacesToProject(ptrs);
+    }
+
+    ImGui::SameLine();
+
+    // Quick-fill from folder shortcut
+    static c8 folderInput[512] = {0};
+    ImGui::SetNextItemWidth(250.0f);
+    ImGui::InputText("##folderPath", folderInput, sizeof(folderInput));
+    ImGui::SameLine();
+    if (ImGui::Button("Load Folder"))
+    {
+        if (folderInput[0] != '\0')
+        {
+            const c8 *suffixes[6] = {"right.jpg","left.jpg","top.jpg","bottom.jpg","front.jpg","back.jpg"};
+            for (u32 i = 0; i < 6; i++)
+                snprintf(faceInputs[i], sizeof(faceInputs[i]), "%s/%s", folderInput, suffixes[i]);
+        }
+    }
+
+    // Quick-pick: use project's res/Textures/Skybox
+    if (hubProjectDir[0] != '\0')
+    {
+        if (ImGui::Button("Use Project Skybox"))
+        {
+            c8 projSkybox[512];
+            snprintf(projSkybox, sizeof(projSkybox), "%s/res/Textures/Skybox", hubProjectDir);
+            const c8 *suffixes[6] = {"right.jpg","left.jpg","top.jpg","bottom.jpg","front.jpg","back.jpg"};
+            for (u32 i = 0; i < 6; i++)
+                snprintf(faceInputs[i], sizeof(faceInputs[i]), "%s/%s", projSkybox, suffixes[i]);
+            const c8 *ptrs[6];
+            for (u32 i = 0; i < 6; i++) ptrs[i] = faceInputs[i];
+            reloadSkyboxFromFaces(ptrs);
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Cubemap Texture ID: %u", cubeMapTexture);
+
+    ImGui::End();
+}
+
 static b8 showBuildLog = false;
 
 static void drawBuildLogWindow()
@@ -1914,6 +2248,7 @@ static void restoreSnapshot()
         entitySize      = (i32)entitySizeCache;
         migrateSceneArchetypeIfNeeded();
         rebindArchetypeFields();
+        applySceneCameraEntityToSceneCam();
 
         if (sd.materialCount > 0 && sd.materials)
         {
@@ -1973,6 +2308,8 @@ void doBuildAndRun()
 
     // snapshot the current scene so we can restore it when play stops
     snapshotScene();
+
+    applySceneCameraEntityToSceneCam();
 
     g_gameDLL.plugin.init(hubProjectDir);
 
@@ -2084,6 +2421,11 @@ void drawDockspaceAndPanels()
                 showLoadModal = true;
             }
             ImGui::Separator();
+            if (ImGui::MenuItem("Skybox Settings..."))
+            {
+                showSkyboxSettings = true;
+            }
+            ImGui::Separator();
             
             
             //if (sceneManager && sceneManager->sceneCount > 0)
@@ -2154,6 +2496,15 @@ void drawDockspaceAndPanels()
                 else
                     ERROR("Failed to update engine files.");
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Build Game (Standalone)"))
+            {
+                showBuildLog = true;
+                if (buildStandalone(hubProjectDir, scenePathBuffer, g_buildLog, sizeof(g_buildLog)))
+                    INFO("Standalone game built and packaged to export/");
+                else
+                    ERROR("Failed to build standalone game.");
+            }
             ImGui::EndMenu();
         }
 
@@ -2214,6 +2565,7 @@ void drawDockspaceAndPanels()
     drawSceneListWindow();
     drawInspectorWindow();
     drawProfilerWindow();
+    drawSkyboxSettingsWindow();
     drawBuildLogWindow();
     drawConsoleWindow();
 
@@ -2388,6 +2740,7 @@ void drawDockspaceAndPanels()
 
                 // Rebind all field pointers
                 rebindArchetypeFields();
+                applySceneCameraEntityToSceneCam();
 
                 // Apply loaded materials
                 if (sd.materialCount > 0 && sd.materials)
