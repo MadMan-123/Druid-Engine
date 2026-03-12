@@ -16,6 +16,15 @@ b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
     outArchetype->capacity = capacity;
     outArchetype->id = 0; // This should be set by the caller to a unique ID
 
+    // enforce single-instance archetype: cap at 1 entity
+    // (isSingle must be set by the caller BEFORE calling createArchetype)
+    if(outArchetype->isSingle && capacity > 1)
+    {
+        WARN("createArchetype: isSingle set, clamping capacity to 1");
+        capacity = 1;
+        outArchetype->capacity = 1;
+    }
+
     //create arenas for the archetype
     outArchetype->arena = createEntityArena(layout, capacity, &outArchetype->arenaCount);    
 
@@ -60,6 +69,13 @@ u8 createEntityInArchetype(Archetype *arch, u64 *outEntity)
     if(arch->arenaCount == 0)
     {
         ERROR("createEntityInArchetype: No arenas in archetype");
+        return false;
+    }
+
+    // reject if isSingle and we already have an entity
+    if(arch->isSingle && arch->arena[0].count >= 1)
+    {
+        ERROR("createEntityInArchetype: isSingle archetype already has an entity");
         return false;
     }
 

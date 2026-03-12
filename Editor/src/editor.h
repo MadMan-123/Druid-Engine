@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <GL/glew.h>
 #include <imgui.h>
+#include "project_builder.h"
 #define MAX_CONSOLE_LINES 10000
 #define MAX_CONSOLE_LINE_LENGTH 256
 #define DRUID_PROFILE 1 // Set to 1 to enable profiling, 0 to disable
@@ -49,6 +50,7 @@ extern c8* names;
 extern u32 *modelIDs;
 extern u32 *shaderHandles;
 extern u32 *entityMaterialIDs;
+extern u32 *archetypeIDs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 
@@ -98,11 +100,24 @@ void update(f32 dt);
 void render(f32 dt);
 void destroy();
 
-// Editor UI drawing entry point (panels, dockspace, etc.)
+// Project build & game DLL management (implemented in editor.cpp)
+void doBuildAndRun();
+void doStopGame();
+
+// Editsor UI drawing entry point (panels, dockspace, etc.)
 void drawDockspaceAndPanels();
 
 // Rebind the global field pointers after the archetype changes
 void rebindArchetypeFields();
+
+// Migrate a loaded scene archetype to the current SceneEntity layout if it
+// has fewer fields (e.g. old scenes missing archetypeID). Safe to call even
+// when no migration is needed.
+void migrateSceneArchetypeIfNeeded();
+
+// Scan the project src/ for archetype system files and populate the editor
+// registry. Should be called once after a project is opened.
+void scanProjectArchetypes(const c8 *projectDir);
 
 void editorLog(LogLevel level, const c8* msg);
 

@@ -154,6 +154,7 @@ SceneData loadScene(const c8 *filePath)
         fclose(f);
         return out;
     }
+    memset(out.archetypes, 0, sizeof(Archetype) * hdr.archetypeCount);
 
     for (u32 a = 0; a < hdr.archetypeCount; a++)
     {
@@ -203,7 +204,10 @@ SceneData loadScene(const c8 *filePath)
         u32 liveCount = 0;
         fread(&liveCount, sizeof(u32), 1, f);
 
-        // ensure capacity is at least as large as the live count
+        // ensure capacity is at least as large as the live count,
+        // and always at least 128 so there is room for new entities.
+        if (capacity < 128)
+            capacity = 128;
         if (capacity < liveCount)
             capacity = liveCount;
         if (!createArchetype(layout, capacity, &out.archetypes[a]))

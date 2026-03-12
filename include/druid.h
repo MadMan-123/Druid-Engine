@@ -114,6 +114,22 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #endif
 #endif
 
+// System DLL export macro — used by generated archetype code.
+// User projects define DRUID_SYSTEM_EXPORT before including druid.h.
+#ifdef DRUID_SYSTEM_EXPORT
+  #ifdef _WIN32
+    #define DSAPI __declspec(dllexport)
+  #else
+    #define DSAPI __attribute__((visibility("default")))
+  #endif
+#else
+  #ifdef _WIN32
+    #define DSAPI __declspec(dllimport)
+  #else
+    #define DSAPI
+  #endif
+#endif
+
 #ifndef RELEASE_BUILD
 #define RELEASE_BUILD 0
 #endif
@@ -166,6 +182,14 @@ extern "C"
 #define INFO(message, ...) logOutput(LOG_INFO, message, ##__VA_ARGS__)
 #define DEBUG(message, ...) logOutput(LOG_DEBUG, message, ##__VA_ARGS__)
 #define TRACE(message, ...) logOutput(LOG_TRACE, message, ##__VA_ARGS__)
+
+    //=====================================================================================================================
+    // Bitwise flag utilities
+    #define FLAG_SET(value,flagIndex) ((value) |= (1 << (flagIndex)))
+    #define FLAG_CLEAR(value,flagIndex) ((value) &= ~(1 << (flagIndex)))
+    #define FLAG_CHECK(value,flagIndex) (((value) >> (flagIndex)) & 1)
+
+
 
     //=====================================================================================================================
     // MATHS
@@ -335,7 +359,45 @@ extern "C"
     // Returns true on success or if the directory already exists.
     DAPI b8 createDir(const c8 *path);
    
-    
+    //=====================================================================================================================
+    // Platform OS layer
+    // Wraps Windows / Linux specific calls so the rest of the engine stays clean.
+
+    // shared library (DLL / .so)
+    DAPI void *platformLibraryLoad(const c8 *path);
+    DAPI void  platformLibraryFree(void *handle);
+    DAPI void *platformLibrarySymbol(void *handle, const c8 *name);
+
+    // file operations that need OS calls
+    DAPI b8   platformFileCopy(const c8 *src, const c8 *dst);
+    DAPI b8   platformFileDelete(const c8 *path);
+    DAPI void platformDirCopyRecursive(const c8 *src, const c8 *dst);
+
+    // process / pipe
+    DAPI void *platformPipeOpen(const c8 *command);
+    DAPI i32   platformPipeClose(void *pipe);
+
+    // executable info
+    DAPI void platformGetExePath(c8 *out, u32 size);
+
+    //=====================================================================================================================
+    // DLL loader — unified API
+    // One set of functions for loading any Druid DLL (game plugins, ECS systems,
+    // etc.). Handles the temp-copy trick so the original file isn't locked.
+
+    typedef struct
+    {
+        void *handle;                   // OS library handle
+        c8    loadedPath[MAX_PATH_LENGTH]; // temp-copy path for cleanup
+        b8    loaded;
+    } DLLHandle;
+
+    // load a shared library into handle, copying it to a temp file first
+    DAPI b8   dllLoad(const c8 *dllPath, DLLHandle *out);
+    // look up an exported symbol by name
+    DAPI void *dllSymbol(DLLHandle *handle, const c8 *name);
+    // unload and clean up the temp copy
+    DAPI void  dllUnload(DLLHandle *handle);
 
 
 
@@ -475,6 +537,8 @@ extern "C"
         EntityArena *arena;
         u32 arenaCount;
         u32 capacity;
+        b8 isSingle;    // when true, archetype holds exactly one entity (e.g. Player)
+        b8 isPersistent; // when true, archetype survives scene switches
     } Archetype;
 
     // Archetype API (declarations only) - implementations live in world model
@@ -484,6 +548,9 @@ extern "C"
 
     // Create an entity in the given archetype. Returns a packed u64 handle
     // (arch id + index) via outEntity. Returns true on success.
+    DAPI u8 createEntityInArchetype(Archetype *arch, u64 *outEntity);
+
+    // Remove an entity at (arenaIndex, index) from the archetype.
     DAPI b8 removeEntityFromArchetype(Archetype *arch, u32 arenaIndex,
                                       u32 index);
 
@@ -493,6 +560,89 @@ extern "C"
     //=====================================================================================================================
 
     typedef void (*SystemFn)(Archetype, f32);
+
+    //=====================================================================================================================
+    // ECS System DLL
+    // Each archetype can have systems compiled as DLLs. The editor generates
+    // a .h and .c file pair per archetype, compiles them into a shared library
+    // and hot-reloads the system functions.
+
+    #ifndef MAX_SCENE_NAME
+    #define MAX_SCENE_NAME 128
+    #endif
+
+    typedef void (*ECSSystemInitFn)(void);
+    typedef void (*ECSSystemUpdateFn)(Archetype *arch, f32 dt);
+    typedef struct Renderer Renderer;  // forward declaration
+    typedef void (*ECSSystemRenderFn)(Archetype *arch, Renderer *r);
+    typedef void (*ECSSystemDestroyFn)(void);
+
+    typedef struct
+    {
+        ECSSystemInitFn     init;
+        ECSSystemUpdateFn   update;
+        ECSSystemRenderFn   render;   // optional — NULL means no custom rendering
+        ECSSystemDestroyFn  destroy;
+    } ECSSystemPlugin;
+
+    // the DLL must export this
+    typedef void (*GetECSSystemFn)(ECSSystemPlugin *out);
+
+    typedef struct
+    {
+        DLLHandle       dll;      // unified DLL handle
+        ECSSystemPlugin plugin;
+        b8              loaded;
+        c8              name[MAX_SCENE_NAME]; // archetype name this system belongs to
+    } ECSSystemDLL;
+
+    // load / unload an ECS system DLL
+    DAPI b8   loadECSSystemDLL(const c8 *dllPath, ECSSystemDLL *out);
+    DAPI void unloadECSSystemDLL(ECSSystemDLL *dll);
+
+    // Look up a specific archetype's ECS system entry point from an already-
+    // loaded DLL handle (e.g. the game DLL). Tries the per-archetype naming
+    // convention first (druidGetECSSystem_<name>), then the legacy single
+    // export. Returns true and fills *out on success.
+    DAPI b8 loadECSSystemFromHandle(DLLHandle *dll, const c8 *archetypeName,
+                                     ECSSystemPlugin *out);
+
+    //=====================================================================================================================
+    // Archetype code file tracking
+    // The editor writes a .h and .c file per archetype into the project's src/
+    // folder. This struct tracks the on-disk paths so we can regenerate or
+    // recompile them.
+
+    #define MAX_ARCHETYPE_SYSTEMS 32
+
+    typedef struct
+    {
+        c8 name[MAX_SCENE_NAME];           // archetype name (e.g. "Enemy")
+        c8 headerPath[MAX_PATH_LENGTH];    // project-relative .h path
+        c8 sourcePath[MAX_PATH_LENGTH];    // project-relative .c path
+        StructLayout layout;               // field layout
+        b8 isSingle;                       // single-instance archetype
+        b8 isPersistent;                   // survives scene switches
+        b8 uniformScale;                   // Scale is f32 instead of Vec3
+    } ArchetypeFileEntry;
+
+    typedef struct
+    {
+        ArchetypeFileEntry entries[MAX_ARCHETYPE_SYSTEMS];
+        u32 count;
+    } ArchetypeRegistry;
+
+    // write the .h / .c files for a given archetype into the project.
+    // typeNames is a parallel array of C type strings (e.g. "Vec3", "f32").
+    DAPI b8 generateArchetypeFiles(const c8 *projectDir,
+                                    const c8 *archetypeName,
+                                    const FieldInfo *fields,
+                                    const c8 **typeNames,
+                                    u32 fieldCount,
+                                    b8 isSingle);
+
+    // compile all archetype system DLLs in the project
+    DAPI b8 buildArchetypeSystems(const c8 *projectDir, c8 *outLog, u32 logSize);
 
     // Entity manager
     typedef struct
@@ -506,7 +656,6 @@ extern "C"
     // ------------------------------------------------------------------
     // Scenes
 
-#define MAX_SCENE_NAME 128
 #define MAX_SCENE_ARCHETYPES 32
 #define MAX_FIELD_NAME 64
 #define SCENE_MAGIC 0x43535244 // "DRSC"
@@ -679,6 +828,35 @@ extern "C"
 
     DAPI Mat4 getView(const Camera *camera, b8 removeTranslation);
 
+    //=====================================================================================================================
+    // Buffer
+    // Generic slot-based object buffer. Heap-allocates an array of `elemSize`
+    // bytes per slot and tracks occupancy with a parallel b8 array.
+    // Use bufferAcquire/bufferRelease with indices, bufferGet to access data.
+
+    typedef struct
+    {
+        void *data;          // heap array (capacity * elemSize bytes)
+        b8   *occupied;      // per-slot occupancy flags
+        u32   elemSize;      // sizeof one element
+        u32   capacity;      // total slots allocated
+        u32   count;         // slots currently in use
+    } Buffer;
+
+    // Create a buffer with `capacity` slots of `elemSize` bytes each
+    DAPI b8   bufferCreate(Buffer *buf, u32 elemSize, u32 capacity);
+    // Find the first free slot, mark it occupied, zero the element, return its index.
+    // Returns (u32)-1 when the buffer is full.
+    DAPI u32  bufferAcquire(Buffer *buf);
+    // Release a slot back to the buffer and zero its memory
+    DAPI void bufferRelease(Buffer *buf, u32 index);
+    // Get a pointer to the element at `index` (NULL if out of range)
+    DAPI void *bufferGet(Buffer *buf, u32 index);
+    // Check if a slot is occupied
+    DAPI b8   bufferIsOccupied(Buffer *buf, u32 index);
+    // Destroy the buffer and free heap memory
+    DAPI void bufferDestroy(Buffer *buf);
+
     // Display
     typedef struct
     {
@@ -700,17 +878,66 @@ extern "C"
     DAPI void returnError(const c8 *errorString);
     DAPI void onDestroy(Display *display);
 
-    // Graphics state
-    /*
-    typedef struct{
-        Display display;
-    }GraphicsState;
+    //=====================================================================================================================
+    // Renderer
+    // Global rendering context that owns Buffer-based collections of cameras,
+    // instance buffers and GBuffers.  Pass desired capacities to createRenderer;
+    // individual slots are acquired/released through the convenience helpers
+    // below, which delegate to the underlying Buffer.
 
+    #define RENDERER_MAX_INSTANCE  4096
 
-    //create
-    DAPI GraphicsState* createGraphicsState();
-    DAPI void cleanUpGraphicsState(GraphicsState* state);
-    */
+    typedef struct Renderer
+    {
+        Display *display;
+
+        Buffer cameras;          // Buffer of Camera
+        u32  activeCamera;     // index used by rendererBeginFrame
+
+        Buffer instanceBuffers;  // Buffer of InstanceBuffer
+
+        Buffer gBuffers;         // Buffer of GBuffer
+
+        // core UBO shared across all shaders (view, projection, time, camPos)
+        u32 coreUBO;
+
+        // default shader used when no override is set
+        u32 defaultShader;
+
+        // timing
+        f32 time;
+    } Renderer;
+
+    DAPI extern Renderer *renderer;
+
+    // create the global renderer (called once after display is alive)
+    // maxCameras / maxIBuffers / maxGBuffers control buffer sizes (heap-allocated)
+    DAPI Renderer *createRenderer(Display *display, f32 fov, f32 nearClip, f32 farClip,
+                                  u32 maxCameras, u32 maxIBuffers, u32 maxGBuffers);
+    // per-frame: push active camera + time into the core UBO
+    DAPI void rendererBeginFrame(Renderer *r, f32 dt);
+    // per-frame: flush instanced draws from a specific instance buffer
+    DAPI void rendererFlushInstances(Renderer *r, u32 ibufferIndex, u32 shaderProgram);
+    DAPI void destroyRenderer(Renderer *r);
+
+    // ---- convenience acquire / release wrappers ----
+    // Each returns an index into the buffer, or (u32)-1 on failure.
+
+    // cameras
+    DAPI u32  rendererAcquireCamera(Renderer *r, Vec3 pos, f32 fov, f32 aspect,
+                                     f32 nearClip, f32 farClip);
+    DAPI void rendererReleaseCamera(Renderer *r, u32 index);
+
+    // instance buffers
+    DAPI u32  rendererAcquireInstanceBuffer(Renderer *r, u32 capacity);
+    DAPI void rendererReleaseInstanceBuffer(Renderer *r, u32 index);
+
+    // GBuffers
+    DAPI u32  rendererAcquireGBuffer(Renderer *r, u32 width, u32 height);
+    DAPI void rendererReleaseGBuffer(Renderer *r, u32 index);
+
+    // convenience: set which camera rendererBeginFrame uploads to the UBO
+    DAPI void rendererSetActiveCamera(Renderer *r, u32 index);
 
     // Shaders
     DAPI u32 initShader(const c8 *filename);
@@ -963,6 +1190,23 @@ extern "C"
                                                 u32 shaderCount);
     void cleanUpResourceManager(ResourceManager *manager);
     void readResources(ResourceManager *manager, const c8 *filename);
+
+    // ---- typed resource getters ----
+    // Bounds-checked access into the resource manager buffers.
+    // Return NULL / 0 when the index is out of range.
+    DAPI Mesh     *resGetMesh(u32 index);
+    DAPI Model    *resGetModel(u32 index);
+    DAPI Material *resGetMaterial(u32 index);
+    DAPI u32       resGetTexture(u32 index);
+    DAPI u32       resGetShader(u32 index);
+
+    // Name-based lookup: resolves the name through the hash map, then returns
+    // the buffer element.  Returns NULL / 0 when not found.
+    DAPI Mesh     *resGetMeshByName(const c8 *name);
+    DAPI Model    *resGetModelByName(const c8 *name);
+    DAPI Material *resGetMaterialByName(const c8 *name);
+    DAPI u32       resGetTextureByName(const c8 *name);
+    DAPI u32       resGetShaderByName(const c8 *name);
 
     // shader
 

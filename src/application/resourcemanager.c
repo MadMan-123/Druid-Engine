@@ -363,6 +363,80 @@ void readResources(ResourceManager *manager, const c8 *filename)
     destroyMap(&shaderNameMap);
 }
 
+//=====================================================================================================================
+// Typed resource getters — index-based
+//=====================================================================================================================
 
+Mesh *resGetMesh(u32 index)
+{
+    if (!resources || index >= resources->meshUsed) return NULL;
+    return &resources->meshBuffer[index];
+}
 
+Model *resGetModel(u32 index)
+{
+    if (!resources || index >= resources->modelUsed) return NULL;
+    return &resources->modelBuffer[index];
+}
 
+Material *resGetMaterial(u32 index)
+{
+    if (!resources || index >= resources->materialUsed) return NULL;
+    return &resources->materialBuffer[index];
+}
+
+u32 resGetTexture(u32 index)
+{
+    if (!resources || index >= resources->textureUsed) return 0;
+    return resources->textureHandles[index];
+}
+
+u32 resGetShader(u32 index)
+{
+    if (!resources || index >= resources->shaderUsed) return 0;
+    return resources->shaderHandles[index];
+}
+
+//=====================================================================================================================
+// Typed resource getters — name-based
+//=====================================================================================================================
+
+Mesh *resGetMeshByName(const c8 *name)
+{
+    if (!resources || !name) return NULL;
+    u32 idx = 0;
+    if (!findInMap(&resources->mesheIDs, name, &idx)) return NULL;
+    return resGetMesh(idx);
+}
+
+Model *resGetModelByName(const c8 *name)
+{
+    if (!resources || !name) return NULL;
+    u32 idx = 0;
+    if (!findInMap(&resources->modelIDs, name, &idx)) return NULL;
+    return resGetModel(idx);
+}
+
+Material *resGetMaterialByName(const c8 *name)
+{
+    if (!resources || !name) return NULL;
+    u32 idx = 0;
+    if (!findInMap(&resources->materialIDs, name, &idx)) return NULL;
+    return resGetMaterial(idx);
+}
+
+u32 resGetTextureByName(const c8 *name)
+{
+    if (!resources || !name) return 0;
+    u32 idx = 0;
+    if (!findInMap(&resources->textureIDs, name, &idx)) return 0;
+    return resGetTexture(idx);
+}
+
+u32 resGetShaderByName(const c8 *name)
+{
+    if (!resources || !name) return 0;
+    u32 idx = 0;
+    if (!findInMap(&resources->shaderIDs, name, &idx)) return 0;
+    return resGetShader(idx);
+}

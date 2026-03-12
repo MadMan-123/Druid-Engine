@@ -1,4 +1,5 @@
 #include "hub.h"
+#include "project_builder.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
@@ -298,12 +299,39 @@ void hubRender(f32 dt)
             setStatus("A project already exists there. Use Load Project.");
         else if (scaffoldProject(hubProjectDir))
         {
+            // Generate default source files, shaders, and CMakeLists
+            if (generateProjectFiles(hubProjectDir))
+                setStatus("Project created with default files.");
+            else
+                setStatus("Project dirs created but failed to write template files.");
             addToSaved(hubProjectDir);
-            setStatus("Project created.");
             hubProjectSelected = true;
         }
         else
             setStatus("Failed to create directories. Check the path.");
+    }
+
+    ImGui::Spacing();
+
+    // update engine headers/libs/dlls in existing project
+    {
+        b8 canUpdate = hubProjectDir[0] != '\0' && isValidProject(hubProjectDir);
+        ImGui::BeginDisabled(!canUpdate);
+        if (ImGui::Button("Update Project", ImVec2(bw, bh)))
+        {
+            c8 log[4096];
+            if (updateProject(hubProjectDir, log, sizeof(log)))
+                setStatus("Engine files updated.");
+            else
+                setStatus("Update failed. Check engine build.");
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted("Build the engine and copy headers/libs/DLLs into the project.");
+            ImGui::EndTooltip();
+        }
+        ImGui::EndDisabled();
     }
 
     ImGui::Spacing();

@@ -37,7 +37,7 @@ void renderIDPass()
         -draw
         */
 
-    for (u32 i = 0; i < entitySizeCache; i++)
+    for (u32 i = 0; i < entityCount; i++)
     {
         if (!isActive[i])
             continue;

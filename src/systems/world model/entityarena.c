@@ -47,8 +47,9 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 			//allocate the field pointers
 			arena[i].fields = (void**)malloc(sizeof(void*) * layout->count);
 
-			//allocate memory
+			//allocate memory (zero-init so inactive entities have sane defaults)
 			arena[i].data = malloc(ARENA_MAX_SIZE);
+			memset(arena[i].data, 0, ARENA_MAX_SIZE);
 
 			//base of memory arena
 			u8* base = (u8*)arena[i].data;
@@ -76,8 +77,9 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 		//allocate the field pointers
 		arena->fields = (void**)malloc(sizeof(void*) * layout->count);
 
-		//allocate memory
+		//allocate memory (zero-init so inactive entities have sane defaults)
 		arena->data = malloc(total);
+		memset(arena->data, 0, total);
 		//base of memory arena
 		u8* base = (u8*)arena->data;
 		//track the offset to adjust pointers by

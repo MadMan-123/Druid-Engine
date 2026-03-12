@@ -5,6 +5,7 @@
 #include "editor.h"
 #include "entitypicker.h"
 #include "hub.h"
+#include "project_builder.h"
 #include <druid.h>
 #include <iostream>
 
@@ -139,6 +140,8 @@ void rebindArchetypeFields()
         FATAL("Failed to rebind archetype fields");
         return;
     }
+    u32 fieldCount = sceneArchetype.layout->count;
+
     positions         = (Vec3 *)fields[0];
     rotations         = (Vec4 *)fields[1];
     scales            = (Vec3 *)fields[2];
@@ -147,6 +150,109 @@ void rebindArchetypeFields()
     modelIDs          = (u32 *)fields[5];
     shaderHandles     = (u32 *)fields[6];
     entityMaterialIDs = (u32 *)fields[7];
+    archetypeIDs      = (fieldCount > 8) ? (u32 *)fields[8] : nullptr;
+}
+
+// After loading an old scene whose layout has fewer fields than the current
+// SceneEntity definition, migrate the data into a fresh archetype with the
+// full layout. Missing fields (e.g. archetypeID) are zero-filled.
+void migrateSceneArchetypeIfNeeded()
+{
+    u32 loadedFields = sceneArchetype.layout->count;
+    u32 currentFields = SceneEntity.count;
+    if (loadedFields >= currentFields)
+        return; // already up-to-date
+
+    u32 liveCount = sceneArchetype.arena[0].count;
+    u32 capacity  = sceneArchetype.capacity;
+
+    // Save old field pointers and their sizes
+    void **oldFields = getArchetypeFields(&sceneArchetype, 0);
+    StructLayout *oldLayout = sceneArchetype.layout;
+
+    // Allocate temp copies of old field data
+    void  *fieldCopies[32] = {0};
+    u32    fieldSizes[32]  = {0};
+    for (u32 i = 0; i < loadedFields && i < 32; i++)
+    {
+        u32 bytes = oldLayout->fields[i].size * liveCount;
+        fieldSizes[i] = oldLayout->fields[i].size;
+        if (bytes > 0)
+        {
+            fieldCopies[i] = malloc(bytes);
+            memcpy(fieldCopies[i], oldFields[i], bytes);
+        }
+    }
+
+    // Destroy old archetype (frees its arenas and dynamic layout from loadScene)
+    // The layout was dynamically allocated by loadScene, so destroyArchetype frees
+    // arenas but not the layout itself. We free it manually.
+    StructLayout *dynLayout = sceneArchetype.layout;
+    destroyArchetype(&sceneArchetype);
+    // Free the dynamic layout fields and name allocated by loadScene
+    if (dynLayout != &SceneEntity)
+    {
+        if (dynLayout->fields)
+        {
+            for (u32 i = 0; i < loadedFields; i++)
+            {
+                if (dynLayout->fields[i].name)
+                    free((void *)dynLayout->fields[i].name);
+            }
+            free(dynLayout->fields);
+        }
+        if (dynLayout->name)
+            free((void *)dynLayout->name);
+        free(dynLayout);
+    }
+
+    // Create new archetype with current SceneEntity layout
+    if (!createArchetype(&SceneEntity, capacity, &sceneArchetype))
+    {
+        FATAL("migrateSceneArchetypeIfNeeded: failed to create migrated archetype");
+        return;
+    }
+
+    // Copy old data into new archetype fields
+    void **newFields = getArchetypeFields(&sceneArchetype, 0);
+    for (u32 i = 0; i < loadedFields && i < currentFields; i++)
+    {
+        if (fieldCopies[i] && liveCount > 0)
+        {
+            // If old and new field sizes match, copy directly
+            if (fieldSizes[i] == SceneEntity.fields[i].size)
+            {
+                memcpy(newFields[i], fieldCopies[i],
+                       fieldSizes[i] * liveCount);
+            }
+        }
+    }
+
+    // Zero-fill new fields that didn't exist in the old layout
+    for (u32 i = loadedFields; i < currentFields; i++)
+    {
+        memset(newFields[i], 0, SceneEntity.fields[i].size * capacity);
+        // For archetypeID specifically, set all to (u32)-1 ("None")
+        if (i == 8 && SceneEntity.fields[i].size == sizeof(u32))
+        {
+            u32 *ids = (u32 *)newFields[i];
+            for (u32 e = 0; e < liveCount; e++)
+                ids[e] = (u32)-1;
+        }
+    }
+
+    // Restore live count
+    sceneArchetype.arena[0].count = liveCount;
+
+    // Free temp copies
+    for (u32 i = 0; i < loadedFields && i < 32; i++)
+    {
+        if (fieldCopies[i])
+            free(fieldCopies[i]);
+    }
+
+    INFO("Migrated scene archetype from %u to %u fields (%u entities)",
+         loadedFields, currentFields, liveCount);
 }
 
 b8 *isActive = nullptr;
@@ -157,12 +263,11 @@ c8 *names = nullptr;
 u32 *modelIDs = nullptr;
 u32 *shaderHandles = nullptr;
 u32 *entityMaterialIDs = nullptr;
+u32 *archetypeIDs = nullptr;
 Material *materials = nullptr;
 
 void init()
 {
-    // consoleLines = (const c8**)malloc(sizeof(c8*) * MAX_CONSOLE_LINES);
-
     entitySize = entityDefaultCount;
     entitySizeCache = entitySize;
     u32 outArenas = 0;
@@ -245,6 +350,25 @@ void init()
         WARN("Failed to load FBO shader - post-processing effects disabled");
     }
 
+    // ---- Create the global Renderer so ECS systems can acquire GBuffers/InstanceBuffers ----
+    if (!renderer)
+    {
+        Renderer *r = createRenderer(editor->display,
+                                     70.0f,  // fov
+                                     0.1f,   // near clip
+                                     100.0f, // far clip
+                                     8, 16, 8); // max cameras, instance buffers, gbuffers
+        if (r)
+        {
+            r->defaultShader = shader;
+            INFO("Editor: created Renderer (defaultShader=%u)", shader);
+        }
+        else
+        {
+            WARN("Editor: failed to create Renderer — ECS rendering disabled");
+        }
+    }
+
     // create a small cube mesh for gizmos and pickable handles
     cubeMesh = createBoxMesh();
 
@@ -296,6 +420,8 @@ void init()
                 entityCount     = sceneArchetype.arena[0].count;
                 entitySize      = (i32)entitySizeCache;
 
+                // Migrate old scenes that lack newer fields (e.g. archetypeID)
+                migrateSceneArchetypeIfNeeded();
                 rebindArchetypeFields();
 
                 if (sd.materialCount > 0 && sd.materials)
@@ -322,12 +448,21 @@ void init()
             free(allFiles);
         }
     }
+
+    // Scan the project's src/ for existing archetype system files so the
+    // archetype designer shows them immediately on project open.
+    scanProjectArchetypes(hubProjectDir);
+
+    //set vsync off
+    SDL_GL_SetSwapInterval(0);
 }
 
 Vec2 cacheMouse = {0, 0};
 PickResult result;
 
 b8 canSave = true;
+static b8 canBuildRun = true;
+static b8 canStop = true;
 void update(f32 dt)
 {
     if (entitySize != entitySizeCache)
@@ -531,6 +666,31 @@ void update(f32 dt)
 
     //if cntrl + s is pressed then save the scene
     // add a canSave flag to prevent multiple saves on key hold
+
+    // F5 = Build & Run,  Shift+F5 = Stop
+    const b8 f5Down = isKeyDown(KEY_F5);
+    const b8 shiftDown = isKeyDown(KEY_LSHIFT) || isKeyDown(KEY_RSHIFT);
+
+    if (canBuildRun && f5Down && !shiftDown)
+    {
+        canBuildRun = false;
+        doBuildAndRun();
+    }
+    else if (!canBuildRun && !f5Down)
+    {
+        canBuildRun = true;
+    }
+
+    if (canStop && f5Down && shiftDown)
+    {
+        canStop = false;
+        doStopGame();
+    }
+    else if (!canStop && !f5Down)
+    {
+        canStop = true;
+    }
+
     const b8 ctrlSaveDown = isKeyDown(KEY_LCTRL) && isKeyDown(KEY_S);
     if (canSave && ctrlSaveDown)
     {
@@ -542,7 +702,7 @@ void update(f32 dt)
         sd.materials = resources->materialBuffer;
 
         //copy the archetype name into the scene data 
-        strncpy(sd.archetypeNames[0], "SceneEntity", MAX_NAME_SIZE - 1);
+        strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
         DEBUG("Saving to path: %s", scenePathBuffer);
         if (saveScene(scenePathBuffer, &sd))
         {
@@ -582,6 +742,12 @@ void render(f32 dt)
 
 void destroy()
 {
+    if (g_gameRunning && g_gameDLL.loaded)
+    {
+        g_gameDLL.plugin.destroy();
+        unloadGameDLL(&g_gameDLL);
+        g_gameRunning = false;
+    }
 
     // destroy archetype and free its arenas
     destroyArchetype(&sceneArchetype);
@@ -606,6 +772,21 @@ void destroy()
     destroyIDFramebuffer();
     destroyMultiFBOs();
 
+    // destroy the global renderer
+    if (renderer)
+        destroyRenderer(renderer);
+
+    // free console log lines
+    if (consoleLines)
+    {
+        for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
+        {
+            if (consoleLines[i]) free((void *)consoleLines[i]);
+        }
+        free(consoleLines);
+        consoleLines = NULL;
+    }
+
     ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
 
     ImGui_ImplSDL3_Shutdown(); // shutdown imgui sdl backend
@@ -626,6 +807,8 @@ i32 main(i32 argc, char **argv)
         return 0;
 
     logOutputSrc = &editorLog;
+    useCustomOutputSrc = true;
+    consoleLines = (const c8**)calloc(MAX_CONSOLE_LINES, sizeof(c8*));
     editor = createApplication("Druid Editor",init, update, render, destroy);
     editor->width = (f32)(1920 * 1.25f);
     editor->height = (f32)(1080 * 1.25f);

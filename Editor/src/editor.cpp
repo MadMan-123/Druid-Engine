@@ -4,6 +4,7 @@
 
 #include "editor.h"
 #include "hub.h"
+#include "project_builder.h"
 #include "../deps/imgui/imgui.h"
 #include "../deps/imgui/imgui_impl_opengl3.h"
 #include "../deps/imgui/imgui_impl_sdl3.h"
@@ -23,8 +24,12 @@ DEFINE_ARCHETYPE(SceneEntity,
     FIELD(c8[MAX_NAME_SIZE], name),
     FIELD(u32, modelID),
     FIELD(u32, shaderHandle),
-    FIELD(u32, materialID)
+    FIELD(u32, materialID),
+    FIELD(u32, archetypeID)
 );
+
+// Editor-side registry of user-created archetypes
+static ArchetypeRegistry g_archRegistry = {0};
 
 // buffer of 2D array of strings
 const c8 **consoleLines = NULL;
@@ -37,6 +42,7 @@ c8 scenePathBuffer[512] = "";
 static b8 showSaveModal = false;
 static b8 showLoadModal = false;
 static b8 showNewSceneModal = false;
+static b8 showProfiler = false;
 
 // Multi-FBO system
 Framebuffer viewportFBs[MAX_FBOS] = {0};
@@ -78,6 +84,230 @@ u32 fboShader = 0;  // FBO post-processing shader
 
 ManipulateTransformState manipulateState = MANIPULATE_POSITION;
 
+// ---- Live ECS system plugins loaded from the game DLL ----
+// During play mode, the editor auto-discovers ECS system entry points from
+// the game DLL and calls their update/render callbacks each frame.
+static ECSSystemPlugin g_ecsSystems[MAX_ARCHETYPE_SYSTEMS] = {0};
+static b8              g_ecsSystemLoaded[MAX_ARCHETYPE_SYSTEMS] = {0};
+static u32             g_ecsSystemCount = 0;
+
+// ---- Per-archetype system data (created at play start, destroyed at stop) ----
+// Each registered archetype gets its own Archetype instance populated only
+// with the scene entities assigned to it. This way each ECS system operates
+// on its own field layout and entity set.
+static Archetype g_ecsArchetypes[MAX_ARCHETYPE_SYSTEMS] = {0};
+static u32      *g_ecsSceneMap[MAX_ARCHETYPE_SYSTEMS]    = {0}; // per-sys idx → scene entity id
+static u32       g_ecsArchEntityCount[MAX_ARCHETYPE_SYSTEMS] = {0};
+static i32       g_ecsFieldMap[MAX_ARCHETYPE_SYSTEMS][64];     // [sys][field] → scene field idx (-1 = no match)
+static i32       g_ecsUniformScaleIdx[MAX_ARCHETYPE_SYSTEMS];            // system field idx for f32 Scale (-1 = none)
+
+// Scanned field storage — populated by scanProjectArchetypes so the registry
+// has valid layout.fields pointers even before the DLL is loaded.
+static FieldInfo g_scannedFields[MAX_ARCHETYPE_SYSTEMS][32];
+static c8        g_scannedFieldNames[MAX_ARCHETYPE_SYSTEMS][32][128];
+
+// ---- helpers ----
+
+// Case-insensitive string comparison for matching ECS fields to scene fields.
+static int fieldNameCmp(const char *a, const char *b)
+{
+    while (*a && *b) {
+        char ca = (*a >= 'A' && *a <= 'Z') ? (char)(*a + 32) : *a;
+        char cb = (*b >= 'A' && *b <= 'Z') ? (char)(*b + 32) : *b;
+        if (ca != cb) return ca - cb;
+        a++; b++;
+    }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+// Look up a known type size by name (mirrors the Archetype Designer table).
+static u32 knownTypeSize(const char *typeName)
+{
+    struct { const char *n; u32 s; } tbl[] = {
+        {"f32",4},{"i32",4},{"u32",4},{"b8",1},{"Vec2",8},
+        {"Vec3",12},{"Vec4",16},{"Mat4",64},{"u64",8},{"c8[256]",256}
+    };
+    for (u32 i = 0; i < sizeof(tbl)/sizeof(tbl[0]); i++)
+        if (strcmp(typeName, tbl[i].n) == 0) return tbl[i].s;
+    return 0;
+}
+
+// Populate per-system Archetype instances from the scene archetype.
+// Call after ECS system discovery in doBuildAndRun().
+static void populateEcsArchetypes()
+{
+    // Clean up any leftovers
+    for (u32 a = 0; a < MAX_ARCHETYPE_SYSTEMS; a++)
+    {
+        if (g_ecsArchetypes[a].arena) destroyArchetype(&g_ecsArchetypes[a]);
+        memset(&g_ecsArchetypes[a], 0, sizeof(Archetype));
+        free(g_ecsSceneMap[a]);
+        g_ecsSceneMap[a] = nullptr;
+        g_ecsArchEntityCount[a] = 0;
+        memset(g_ecsFieldMap[a], -1, sizeof(g_ecsFieldMap[a]));
+        g_ecsUniformScaleIdx[a] = -1;
+    }
+
+    void **scnFields = getArchetypeFields(&sceneArchetype, 0);
+    if (!scnFields) return;
+
+    for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+    {
+        if (!g_ecsSystemLoaded[a]) continue;
+
+        // Look up the StructLayout compiled into the game DLL.
+        c8 symName[256];
+        snprintf(symName, sizeof(symName), "%s_layout", g_archRegistry.entries[a].name);
+        StructLayout *dllLayout = (StructLayout *)dllSymbol(&g_gameDLL.dll, symName);
+        if (!dllLayout)
+        {
+            WARN("Could not find '%s' in DLL — skipping ECS archetype", symName);
+            continue;
+        }
+
+        // Count scene entities assigned to this archetype
+        u32 matchCount = 0;
+        for (u32 id = 0; id < entityCount; id++)
+            if (archetypeIDs && archetypeIDs[id] == a) matchCount++;
+
+        if (matchCount == 0)
+        {
+            WARN("No entities assigned to archetype '%s'", g_archRegistry.entries[a].name);
+            continue;
+        }
+
+        // Create per-system archetype using the DLL layout
+        Archetype *sysArch = &g_ecsArchetypes[a];
+        if (!createArchetype(dllLayout, matchCount, sysArch))
+        {
+            ERROR("Failed to create per-system archetype for '%s'", g_archRegistry.entries[a].name);
+            continue;
+        }
+
+        g_ecsSceneMap[a] = (u32 *)calloc(matchCount, sizeof(u32));
+
+        // Build field mapping: for each system field, find a scene field with
+        // the same name (case-insensitive) AND the same byte size.
+        // Special case: f32 Scale <-> Vec3 scale (uniform scale).
+        g_ecsUniformScaleIdx[a] = -1;
+        u32 mappedCount = 0;
+        for (u32 f = 0; f < dllLayout->count && f < 64; f++)
+        {
+            g_ecsFieldMap[a][f] = -1;
+            for (u32 sf = 0; sf < sceneArchetype.layout->count; sf++)
+            {
+                if (fieldNameCmp(dllLayout->fields[f].name,
+                                 sceneArchetype.layout->fields[sf].name) == 0)
+                {
+                    if (dllLayout->fields[f].size == sceneArchetype.layout->fields[sf].size)
+                    {
+                        g_ecsFieldMap[a][f] = (i32)sf;
+                        mappedCount++;
+                        break;
+                    }
+                    // f32 Scale in system vs Vec3 scale in scene
+                    if (dllLayout->fields[f].size == sizeof(f32)
+                        && sceneArchetype.layout->fields[sf].size == sizeof(Vec3)
+                        && fieldNameCmp(dllLayout->fields[f].name, "scale") == 0)
+                    {
+                        g_ecsUniformScaleIdx[a] = (i32)f;
+                        // Don't put it in g_ecsFieldMap — handled separately
+                        mappedCount++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Populate the per-system archetype with matching scene entities
+        void **sysFields = getArchetypeFields(sysArch, 0);
+        u32 idx = 0;
+        for (u32 id = 0; id < entityCount; id++)
+        {
+            if (!archetypeIDs || archetypeIDs[id] != a) continue;
+            g_ecsSceneMap[a][idx] = id;
+
+            // Copy matching fields from scene → per-system
+            for (u32 f = 0; f < dllLayout->count && f < 64; f++)
+            {
+                i32 sf = g_ecsFieldMap[a][f];
+                if (sf < 0) continue;
+                u32 sz = dllLayout->fields[f].size;
+                memcpy((u8 *)sysFields[f] + sz * idx,
+                       (u8 *)scnFields[sf] + sz * id, sz);
+            }
+            // Uniform scale: scene Vec3 → system f32 (take x component)
+            if (g_ecsUniformScaleIdx[a] >= 0)
+            {
+                i32 sF = g_ecsUniformScaleIdx[a];
+                Vec3 *scnScale = (Vec3 *)((u8 *)scnFields[2] + sizeof(Vec3) * id);
+                f32  *sysScale = (f32  *)((u8 *)sysFields[sF] + sizeof(f32) * idx);
+                *sysScale = scnScale->x;
+            }
+
+            sysArch->arena[0].count++;
+            idx++;
+        }
+        g_ecsArchEntityCount[a] = matchCount;
+
+        INFO("ECS archetype '%s': %u entities, %u/%u fields mapped to scene",
+             g_archRegistry.entries[a].name, matchCount, mappedCount, dllLayout->count);
+    }
+}
+
+// Destroy all per-system archetypes. Call from doStopGame().
+static void cleanupEcsArchetypes()
+{
+    for (u32 a = 0; a < MAX_ARCHETYPE_SYSTEMS; a++)
+    {
+        if (g_ecsArchetypes[a].arena) destroyArchetype(&g_ecsArchetypes[a]);
+        memset(&g_ecsArchetypes[a], 0, sizeof(Archetype));
+        free(g_ecsSceneMap[a]);
+        g_ecsSceneMap[a] = nullptr;
+        g_ecsArchEntityCount[a] = 0;
+        g_ecsUniformScaleIdx[a] = -1;
+    }
+}
+
+// Sync per-system archetype data back to the scene archetype so the editor
+// renderer draws entities at their ECS-updated positions / rotations.
+static void syncEcsToScene()
+{
+    void **scnFields = getArchetypeFields(&sceneArchetype, 0);
+    if (!scnFields) return;
+
+    for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+    {
+        if (!g_ecsSystemLoaded[a] || g_ecsArchEntityCount[a] == 0) continue;
+
+        void **sysFields = getArchetypeFields(&g_ecsArchetypes[a], 0);
+        if (!sysFields) continue;
+
+        StructLayout *sysLayout = g_ecsArchetypes[a].layout;
+        for (u32 idx = 0; idx < g_ecsArchEntityCount[a]; idx++)
+        {
+            u32 sceneID = g_ecsSceneMap[a][idx];
+            for (u32 f = 0; f < sysLayout->count && f < 64; f++)
+            {
+                i32 sf = g_ecsFieldMap[a][f];
+                if (sf < 0) continue;
+                u32 sz = sysLayout->fields[f].size;
+                memcpy((u8 *)scnFields[sf] + sz * sceneID,
+                       (u8 *)sysFields[f]  + sz * idx, sz);
+            }
+            // Uniform scale: system f32 → scene Vec3 (broadcast to all 3)
+            if (g_ecsUniformScaleIdx[a] >= 0)
+            {
+                i32 sF = g_ecsUniformScaleIdx[a];
+                f32  *sysScale = (f32  *)((u8 *)sysFields[sF] + sizeof(f32) * idx);
+                Vec3 *scnScale = (Vec3 *)((u8 *)scnFields[2]  + sizeof(Vec3) * sceneID);
+                scnScale->x = *sysScale;
+                scnScale->y = *sysScale;
+                scnScale->z = *sysScale;
+            }
+        }
+    }
+}
 
 static void drawTextureSelector(const c8 *label, u32 *textureHandle, const c8 *comboID)
 {
@@ -163,6 +393,78 @@ static void renderGameScene()
     glClearColor(0.2f, 0.4f, 0.8f, 1.0f); // Blue clear color to test scene rendering
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // ── Play mode: render scene, then hand off to game plugin + ECS ──
+    if (g_gameRunning && g_gameDLL.loaded)
+    {
+        f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
+
+        // Draw skybox
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(GL_FALSE);
+        glUseProgram(skyboxShader);
+        glBindVertexArray(skyboxMesh->vao);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
+
+        // Draw scene entities (same forward pass as edit mode)
+        Transform newTransform = {0};
+        for (u32 id = 0; id < entityCount; id++)
+        {
+            if (!isActive[id]) continue;
+            newTransform = {positions[id], rotations[id], scales[id]};
+
+            u32 modelID = modelIDs[id];
+            if (modelID == (u32)-1 || modelID >= resources->modelUsed) continue;
+
+            Model *model = &resources->modelBuffer[modelID];
+            if (!model) continue;
+
+            for (u32 i = 0; i < model->meshCount; i++)
+            {
+                u32 meshIndex = model->meshIndices[i];
+                if (meshIndex >= resources->meshUsed) continue;
+
+                Mesh *mesh = &resources->meshBuffer[meshIndex];
+                if (!mesh || mesh->vao == 0) continue;
+
+                u32 materialIndex = model->materialIndices[i];
+                if (entityMaterialIDs && entityMaterialIDs[id] != (u32)-1)
+                    materialIndex = entityMaterialIDs[id];
+                if (materialIndex >= resources->materialUsed) continue;
+
+                Material *material = &resources->materialBuffer[materialIndex];
+                u32 entityShader = shaderHandles[id];
+                u32 shaderToUse = (entityShader != 0) ? entityShader : shader;
+                glUseProgram(shaderToUse);
+                updateShaderModel(shaderToUse, newTransform);
+                MaterialUniforms uniforms = getMaterialUniforms(shaderToUse);
+                updateMaterial(material, &uniforms);
+                drawMesh(mesh);
+            }
+        }
+
+        // Game plugin render callback
+        g_gameDLL.plugin.render(dt);
+
+        // Run ECS system render callbacks (custom rendering per archetype)
+        for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+        {
+            if (g_ecsSystemLoaded[a] && g_ecsSystems[a].render && g_ecsArchEntityCount[a] > 0)
+                g_ecsSystems[a].render(&g_ecsArchetypes[a], renderer);
+        }
+
+        unbindFramebuffer();
+        glDisable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        return;
+    }
+
+    // ── Edit mode: render editor scene + gizmos ──
+
     // skybox
     glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_FALSE);
@@ -178,7 +480,7 @@ static void renderGameScene()
 
     // draw each scene entity
     Transform newTransform = {0};
-    for (u32 id = 0; id < entitySizeCache; id++)
+    for (u32 id = 0; id < entityCount; id++)
     {
         if (!isActive[id])
             continue;
@@ -247,7 +549,8 @@ static void renderGameScene()
         }
         else
         {
-            ERROR("Invalid model ID for entity %d: modelID=%d, modelUsed=%d", id, modelID, resources->modelUsed);
+            // modelID out of range – entity has no valid model, skip silently
+            continue;
         }
     }
 
@@ -429,10 +732,693 @@ static void drawDebugWindow()
     ImGui::End();
 }
 
+static void drawConsoleWindow()
+{
+    ImGui::Begin("Output");
+
+    if (ImGui::Button("Clear"))
+    {
+        for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
+        {
+            if (consoleLines[i])
+            {
+                free((void *)consoleLines[i]);
+                consoleLines[i] = NULL;
+            }
+        }
+    }
+    ImGui::SameLine();
+    static b8 autoScroll = true;
+    ImGui::Checkbox("Auto-scroll", (bool *)&autoScroll);
+    ImGui::Separator();
+
+    ImGui::BeginChild("##log_scroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
+    {
+        if (!consoleLines[i]) break;
+
+        const c8 *line = consoleLines[i];
+        ImVec4 col = ImVec4(1, 1, 1, 1);
+        if (strstr(line, "[ERROR]") || strstr(line, "[FATAL]"))
+            col = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+        else if (strstr(line, "[WARNING]"))
+            col = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+        else if (strstr(line, "[DEBUG]") || strstr(line, "[TRACE]"))
+            col = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, col);
+        ImGui::TextUnformatted(line);
+        ImGui::PopStyleColor();
+    }
+    if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+        ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Scan the project src/ directory for archetype system files and populate
+// g_archRegistry so the archetype designer shows already-generated
+// archetypes on project open.
+//
+// Detection heuristic: any .c file in src/ that contains the marker string
+//   "FieldInfo <Name>_fields[]"
+// is treated as an archetype system file. We also parse the preceding comment
+// block for field indices, names, and C types so the registry entry holds a
+// usable layout.
+// ---------------------------------------------------------------------------
+void scanProjectArchetypes(const c8 *projectDir)
+{
+    if (!projectDir || projectDir[0] == '\0') return;
+
+    c8 srcDir[MAX_PATH_LENGTH];
+    snprintf(srcDir, sizeof(srcDir), "%s/src", projectDir);
+
+    u32 totalFiles = 0;
+    c8 **files = listFilesInDirectory(srcDir, &totalFiles);
+    if (!files || totalFiles == 0) return;
+
+    for (u32 fi = 0; fi < totalFiles; fi++)
+    {
+        const c8 *path = files[fi];
+        u32 plen = (u32)strlen(path);
+
+        // only look at .c files
+        if (plen < 3 || strcmp(path + plen - 2, ".c") != 0)
+        {
+            free(files[fi]);
+            continue;
+        }
+
+        FILE *f = fopen(path, "r");
+        if (!f) { free(files[fi]); continue; }
+
+        // Read the file into memory (limit to 64 KB)
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz <= 0 || sz > 65536) { fclose(f); free(files[fi]); continue; }
+
+        c8 *buf = (c8 *)malloc((u32)sz + 1);
+        fread(buf, 1, (u32)sz, f);
+        buf[sz] = '\0';
+        fclose(f);
+
+        // Look for "FieldInfo <name>_fields[]"
+        const c8 *marker = strstr(buf, "FieldInfo ");
+        if (!marker || !strstr(marker, "_fields[]"))
+        {
+            free(buf);
+            free(files[fi]);
+            continue;
+        }
+
+        // Extract archetype name: between "FieldInfo " and "_fields[]"
+        const c8 *nameStart = marker + strlen("FieldInfo ");
+        const c8 *nameEnd   = strstr(nameStart, "_fields[]");
+        if (!nameEnd || nameEnd <= nameStart)
+        {
+            free(buf);
+            free(files[fi]);
+            continue;
+        }
+
+        c8 archName[MAX_SCENE_NAME] = {0};
+        u32 nameLen = (u32)(nameEnd - nameStart);
+        if (nameLen >= MAX_SCENE_NAME) nameLen = MAX_SCENE_NAME - 1;
+        memcpy(archName, nameStart, nameLen);
+        archName[nameLen] = '\0';
+
+        // Skip "game" or "game.c" - that's the main game plugin, not an archetype
+        if (strcmp(archName, "game") == 0)
+        {
+            free(buf);
+            free(files[fi]);
+            continue;
+        }
+
+        // Check if already registered
+        b8 alreadyRegistered = false;
+        for (u32 r = 0; r < g_archRegistry.count; r++)
+        {
+            if (strcmp(g_archRegistry.entries[r].name, archName) == 0)
+            { alreadyRegistered = true; break; }
+        }
+        if (alreadyRegistered || g_archRegistry.count >= MAX_ARCHETYPE_SYSTEMS)
+        {
+            free(buf);
+            free(files[fi]);
+            continue;
+        }
+
+        // Parse field entries from { "name", sizeof(type) } patterns
+        // and populate the registry layout with proper FieldInfo data.
+        ArchetypeFileEntry *entry = &g_archRegistry.entries[g_archRegistry.count];
+        memset(entry, 0, sizeof(ArchetypeFileEntry));
+        strncpy(entry->name, archName, MAX_SCENE_NAME - 1);
+        snprintf(entry->headerPath, MAX_PATH_LENGTH, "src/%s.h", archName);
+        snprintf(entry->sourcePath, MAX_PATH_LENGTH, "src/%s.c", archName);
+        entry->layout.name = entry->name;
+
+        u32 regIdx = g_archRegistry.count;
+
+        // Parse { "name", sizeof(type) } entries and store field info
+        u32 fieldCount = 0;
+        const c8 *scan = strstr(buf, "_fields[] = {");
+        if (scan)
+        {
+            scan = strchr(scan, '{');
+            if (scan) scan++; // skip the opening {
+
+            while (scan && fieldCount < 32)
+            {
+                // find next { "
+                const c8 *entryStart = strstr(scan, "{ \"");
+                if (!entryStart) break;
+                // make sure we haven't passed the closing };
+                const c8 *closeBrace = strstr(scan, "};");
+                if (closeBrace && entryStart > closeBrace) break;
+
+                // Extract field name between quotes
+                const c8 *ns = entryStart + 3;
+                const c8 *ne = strchr(ns, '"');
+                if (ne && (u32)(ne - ns) < 128)
+                {
+                    memset(g_scannedFieldNames[regIdx][fieldCount], 0, 128);
+                    memcpy(g_scannedFieldNames[regIdx][fieldCount], ns, (u32)(ne - ns));
+                }
+
+                // Extract type from sizeof(Type)
+                u32 parsedSize = 0;
+                const c8 *szOf = strstr(entryStart, "sizeof(");
+                if (szOf)
+                {
+                    szOf += 7;
+                    const c8 *szEnd = strchr(szOf, ')');
+                    if (szEnd)
+                    {
+                        c8 typeBuf[64] = {0};
+                        u32 tlen = (u32)(szEnd - szOf);
+                        if (tlen < 64) memcpy(typeBuf, szOf, tlen);
+                        parsedSize = knownTypeSize(typeBuf);
+                    }
+                }
+
+                g_scannedFields[regIdx][fieldCount].name = g_scannedFieldNames[regIdx][fieldCount];
+                g_scannedFields[regIdx][fieldCount].size = parsedSize;
+
+                scan = entryStart + 3;
+                fieldCount++;
+
+                // advance past this entry
+                const c8 *entryEnd = strchr(scan, '}');
+                if (entryEnd) scan = entryEnd + 1;
+                else break;
+            }
+        }
+
+        entry->layout.count  = fieldCount;
+        entry->layout.fields = g_scannedFields[regIdx];
+
+        // Check for isSingle (look for "isSingle" in the comment block or source)
+        if (strstr(buf, "isSingle"))
+            entry->isSingle = true;
+
+        // Detect uniform scale: field named "Scale" with sizeof(f32)
+        if (fieldCount >= 3
+            && strcmp(g_scannedFieldNames[regIdx][2], "Scale") == 0
+            && g_scannedFields[regIdx][2].size == sizeof(f32))
+            entry->uniformScale = true;
+
+        g_archRegistry.count++;
+        INFO("Scanned archetype: %s (%u fields) from %s", archName, fieldCount, path);
+
+        free(buf);
+        free(files[fi]);
+    }
+
+    free(files);
+}
+
 static void drawPrefabsWindow()
 {
-    ImGui::Begin("Prefabs");
-    ImGui::Text("(Archetype designer coming soon)");
+    // ---- archetype designer state (persists across frames) ----
+    static c8  archName[128]           = "";
+    static bool archIsSingle           = false;
+    static bool archIsPersistent       = false;
+
+    // field editing table
+    #define ARCH_MAX_FIELDS 32
+    static c8  fieldNames[ARCH_MAX_FIELDS][128];
+    static i32 fieldTypeIndex[ARCH_MAX_FIELDS]; // combo selection
+    static u32 fieldCount                       = 0;
+    static bool firstInit                       = true;
+
+    if (firstInit)
+    {
+        memset(fieldNames, 0, sizeof(fieldNames));
+        memset(fieldTypeIndex, 0, sizeof(fieldTypeIndex));
+        firstInit = false;
+    }
+
+    // built-in type list — maps to sizeof used by generateArchetypeFiles
+    static const c8 *typeNames[]  = { "f32", "i32", "u32", "b8", "Vec2", "Vec3", "Vec4", "Mat4", "u64", "c8[256]" };
+    static const u32 typeSizes[]  = { 4,      4,     4,     1,    8,      12,     16,     64,     8,     256      };
+    static const u32 typeCount    = sizeof(typeSizes) / sizeof(typeSizes[0]);
+
+    // result message
+    static c8  resultMsg[256] = "";
+
+    ImGui::Begin("Archetypes");
+
+    ImGui::Text("Archetype Designer");
+    ImGui::Separator();
+
+    ImGui::InputText("Name", archName, sizeof(archName));
+    ImGui::Checkbox("isSingle", &archIsSingle);
+    ImGui::SameLine();
+    ImGui::Checkbox("isPersistent", &archIsPersistent);
+
+    // Transform is always included; offer uniform scale option
+    static bool archUniformScale = false;
+    ImGui::Checkbox("Uniform Scale (f32)", &archUniformScale);
+    ImGui::TextDisabled("Transform auto-included: Position(Vec3), Rotation(Vec4), Scale(%s)",
+                        archUniformScale ? "f32" : "Vec3");
+
+    ImGui::Separator();
+    ImGui::Text("Extra Fields (%u / %u)", fieldCount, (u32)ARCH_MAX_FIELDS);
+
+    // field table
+    if (ImGui::BeginTable("##fields", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+    {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableSetupColumn("##del", ImGuiTableColumnFlags_WidthFixed, 24.0f);
+        ImGui::TableHeadersRow();
+
+        u32 removeIdx = (u32)-1;
+        for (u32 i = 0; i < fieldCount; i++)
+        {
+            ImGui::TableNextRow();
+            ImGui::PushID((int)i);
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("##fn", fieldNames[i], sizeof(fieldNames[i]));
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-1);
+            ImGui::Combo("##ft", &fieldTypeIndex[i], typeNames, (int)typeCount);
+
+            ImGui::TableSetColumnIndex(2);
+            if (ImGui::SmallButton("X"))
+                removeIdx = i;
+
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+
+        // deferred remove to avoid iterator invalidation
+        if (removeIdx != (u32)-1 && removeIdx < fieldCount)
+        {
+            for (u32 j = removeIdx; j < fieldCount - 1; j++)
+            {
+                memcpy(fieldNames[j], fieldNames[j + 1], sizeof(fieldNames[j]));
+                fieldTypeIndex[j] = fieldTypeIndex[j + 1];
+            }
+            fieldCount--;
+        }
+    }
+
+    if (fieldCount < ARCH_MAX_FIELDS)
+    {
+        if (ImGui::Button("+ Add Field"))
+        {
+            memset(fieldNames[fieldCount], 0, sizeof(fieldNames[fieldCount]));
+            fieldTypeIndex[fieldCount] = 0;
+            fieldCount++;
+        }
+    }
+
+    ImGui::Separator();
+
+    // Generate button — transform-only archetypes are valid (fieldCount may be 0)
+    bool canGenerate = (archName[0] != '\0' && hubProjectDir[0] != '\0');
+    if (!canGenerate) ImGui::BeginDisabled();
+
+    if (ImGui::Button("Generate Archetype Files"))
+    {
+        // Prepend transform fields: Position(Vec3), Rotation(Vec4), Scale(Vec3|f32)
+        static c8 tfNames[3][128] = {"Position", "Rotation", "Scale"};
+        const u32 tfCount = 3;
+        const u32 totalFields = tfCount + fieldCount;
+
+        FieldInfo allFields[ARCH_MAX_FIELDS + 3];
+        const c8 *allTypes[ARCH_MAX_FIELDS + 3];
+
+        allFields[0] = { tfNames[0], sizeof(Vec3) }; allTypes[0] = "Vec3";
+        allFields[1] = { tfNames[1], sizeof(Vec4) }; allTypes[1] = "Vec4";
+        if (archUniformScale) {
+            allFields[2] = { tfNames[2], sizeof(f32) }; allTypes[2] = "f32";
+        } else {
+            allFields[2] = { tfNames[2], sizeof(Vec3) }; allTypes[2] = "Vec3";
+        }
+
+        for (u32 i = 0; i < fieldCount; i++)
+        {
+            allFields[tfCount + i].name = fieldNames[i];
+            allFields[tfCount + i].size = typeSizes[fieldTypeIndex[i]];
+            allTypes[tfCount + i]       = typeNames[fieldTypeIndex[i]];
+        }
+
+        if (generateArchetypeFiles(hubProjectDir, archName, allFields, allTypes, totalFields, archIsSingle))
+        {
+            snprintf(resultMsg, sizeof(resultMsg), "Generated %s archetype files.", archName);
+
+            // Register in the editor-side archetype registry
+            if (g_archRegistry.count < MAX_ARCHETYPE_SYSTEMS)
+            {
+                u32 regIdx = g_archRegistry.count;
+                for (u32 r = 0; r < g_archRegistry.count; r++)
+                {
+                    if (strcmp(g_archRegistry.entries[r].name, archName) == 0)
+                    { regIdx = r; break; }
+                }
+                ArchetypeFileEntry *entry = &g_archRegistry.entries[regIdx];
+                strncpy(entry->name, archName, MAX_SCENE_NAME - 1);
+                snprintf(entry->headerPath, MAX_PATH_LENGTH, "src/%s.h", archName);
+                snprintf(entry->sourcePath, MAX_PATH_LENGTH, "src/%s.c", archName);
+                entry->isSingle     = archIsSingle;
+                entry->isPersistent = archIsPersistent;
+                entry->uniformScale = archUniformScale;
+                entry->layout.name  = entry->name;
+                entry->layout.count = totalFields;
+                // Copy scanned fields for the registry
+                for (u32 i = 0; i < totalFields && i < 32; i++)
+                {
+                    strncpy(g_scannedFieldNames[regIdx][i], allFields[i].name, 127);
+                    g_scannedFields[regIdx][i].name = g_scannedFieldNames[regIdx][i];
+                    g_scannedFields[regIdx][i].size = allFields[i].size;
+                }
+                entry->layout.fields = g_scannedFields[regIdx];
+                if (regIdx == g_archRegistry.count)
+                    g_archRegistry.count++;
+            }
+        }
+        else
+            snprintf(resultMsg, sizeof(resultMsg), "Failed to generate archetype files!");
+    }
+
+    if (!canGenerate) ImGui::EndDisabled();
+
+    if (resultMsg[0] != '\0')
+    {
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", resultMsg);
+    }
+
+    // ---- Registered Archetypes list ----
+    ImGui::Separator();
+    ImGui::Text("Registered Archetypes (%u)", g_archRegistry.count);
+
+    if (g_archRegistry.count > 0)
+    {
+        for (u32 a = 0; a < g_archRegistry.count; a++)
+        {
+            ArchetypeFileEntry *entry = &g_archRegistry.entries[a];
+            ImGui::PushID((int)a + 1000);
+
+            ImGui::BulletText("%s  (%u fields%s%s)",
+                entry->name,
+                entry->layout.count,
+                entry->isSingle ? ", single" : "",
+                entry->isPersistent ? ", persistent" : "");
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Edit"))
+            {
+                // Load this archetype into the designer fields
+                strncpy(archName, entry->name, sizeof(archName) - 1);
+                archIsSingle    = entry->isSingle;
+                archIsPersistent = entry->isPersistent;
+
+                // We need to re-parse the actual field data from the .c file
+                // to populate fieldNames and fieldTypeIndex
+                c8 srcPath[MAX_PATH_LENGTH];
+                snprintf(srcPath, sizeof(srcPath), "%s/%s", hubProjectDir, entry->sourcePath);
+                FILE *ef = fopen(srcPath, "r");
+                if (ef)
+                {
+                    fseek(ef, 0, SEEK_END);
+                    long esz = ftell(ef);
+                    fseek(ef, 0, SEEK_SET);
+                    if (esz > 0 && esz < 65536)
+                    {
+                        c8 *ebuf = (c8 *)malloc((u32)esz + 1);
+                        fread(ebuf, 1, (u32)esz, ef);
+                        ebuf[esz] = '\0';
+
+                        // Parse { "name", sizeof(Type) } entries
+                        u32 allFieldCount = 0;
+                        c8  allFieldNames[ARCH_MAX_FIELDS + 3][128];
+                        i32 allFieldTypeIdx[ARCH_MAX_FIELDS + 3];
+                        memset(allFieldNames, 0, sizeof(allFieldNames));
+                        memset(allFieldTypeIdx, 0, sizeof(allFieldTypeIdx));
+
+                        const c8 *scan = strstr(ebuf, "_fields[] = {");
+                        if (scan)
+                        {
+                            scan = strchr(scan, '{');
+                            if (scan) scan++;
+
+                            while (scan && allFieldCount < ARCH_MAX_FIELDS + 3)
+                            {
+                                const c8 *es = strstr(scan, "{ \"");
+                                if (!es) break;
+                                const c8 *closeBr = strstr(scan, "};");
+                                if (closeBr && es > closeBr) break;
+
+                                const c8 *ns = es + 3;
+                                const c8 *ne = strchr(ns, '"');
+                                if (ne && (ne - ns) < 128)
+                                    memcpy(allFieldNames[allFieldCount], ns, (u32)(ne - ns));
+
+                                const c8 *szOf = strstr(es, "sizeof(");
+                                if (szOf)
+                                {
+                                    szOf += 7;
+                                    const c8 *szEnd = strchr(szOf, ')');
+                                    if (szEnd)
+                                    {
+                                        c8 typeBuf[64] = {0};
+                                        u32 tlen = (u32)(szEnd - szOf);
+                                        if (tlen < 64) memcpy(typeBuf, szOf, tlen);
+                                        allFieldTypeIdx[allFieldCount] = 0;
+                                        for (u32 t = 0; t < typeCount; t++)
+                                        {
+                                            if (strcmp(typeBuf, typeNames[t]) == 0)
+                                            { allFieldTypeIdx[allFieldCount] = (i32)t; break; }
+                                        }
+                                    }
+                                }
+
+                                allFieldCount++;
+                                const c8 *entryEnd = strchr(es + 1, '}');
+                                scan = entryEnd ? entryEnd + 1 : nullptr;
+                            }
+                        }
+
+                        // Detect uniform scale from field[2] and strip
+                        // the first 3 transform fields from the designer.
+                        archUniformScale = false;
+                        u32 skipCount = 0;
+                        if (allFieldCount >= 3)
+                        {
+                            // Check first 3 match Position/Rotation/Scale
+                            if (strcmp(allFieldNames[0], "Position") == 0
+                                && strcmp(allFieldNames[1], "Rotation") == 0
+                                && strcmp(allFieldNames[2], "Scale") == 0)
+                            {
+                                skipCount = 3;
+                                // f32 index is 0 in typeNames[]
+                                archUniformScale = (allFieldTypeIdx[2] == 0);
+                            }
+                        }
+
+                        fieldCount = 0;
+                        for (u32 j = skipCount; j < allFieldCount && fieldCount < ARCH_MAX_FIELDS; j++)
+                        {
+                            memcpy(fieldNames[fieldCount], allFieldNames[j], 128);
+                            fieldTypeIndex[fieldCount] = allFieldTypeIdx[j];
+                            fieldCount++;
+                        }
+
+                        free(ebuf);
+                    }
+                    fclose(ef);
+                    snprintf(resultMsg, sizeof(resultMsg), "Loaded %s into designer.", entry->name);
+                }
+                else
+                {
+                    snprintf(resultMsg, sizeof(resultMsg), "Could not open %s for editing.", srcPath);
+                }
+            }
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Regenerate"))
+            {
+                if (strcmp(archName, entry->name) == 0)
+                {
+                    // Prepend transform fields before user fields
+                    static c8 rgTfNames[3][128] = {"Position", "Rotation", "Scale"};
+                    const u32 rgTfCount = 3;
+                    const u32 rgTotal = rgTfCount + fieldCount;
+
+                    FieldInfo rFields[ARCH_MAX_FIELDS + 3];
+                    const c8 *rTypes[ARCH_MAX_FIELDS + 3];
+
+                    rFields[0] = { rgTfNames[0], sizeof(Vec3) }; rTypes[0] = "Vec3";
+                    rFields[1] = { rgTfNames[1], sizeof(Vec4) }; rTypes[1] = "Vec4";
+                    if (archUniformScale) {
+                        rFields[2] = { rgTfNames[2], sizeof(f32) }; rTypes[2] = "f32";
+                    } else {
+                        rFields[2] = { rgTfNames[2], sizeof(Vec3) }; rTypes[2] = "Vec3";
+                    }
+                    for (u32 i = 0; i < fieldCount; i++)
+                    {
+                        rFields[rgTfCount + i].name = fieldNames[i];
+                        rFields[rgTfCount + i].size = typeSizes[fieldTypeIndex[i]];
+                        rTypes[rgTfCount + i]       = typeNames[fieldTypeIndex[i]];
+                    }
+                    if (generateArchetypeFiles(hubProjectDir, archName, rFields, rTypes, rgTotal, archIsSingle))
+                    {
+                        entry->layout.count = rgTotal;
+                        entry->isSingle     = archIsSingle;
+                        entry->isPersistent = archIsPersistent;
+                        entry->uniformScale = archUniformScale;
+                        snprintf(resultMsg, sizeof(resultMsg), "Regenerated %s files.", archName);
+                    }
+                    else
+                        snprintf(resultMsg, sizeof(resultMsg), "Failed to regenerate %s!", archName);
+                }
+                else
+                {
+                    snprintf(resultMsg, sizeof(resultMsg),
+                             "Click Edit on '%s' first, then Regenerate.", entry->name);
+                }
+            }
+
+            ImGui::PopID();
+        }
+    }
+    else
+    {
+        ImGui::TextDisabled("No archetypes registered yet.");
+    }
+
+    ImGui::End();
+    #undef ARCH_MAX_FIELDS
+}
+
+// Ring buffer for frame time history
+#define PROFILER_HISTORY_SIZE 120
+static f32 frameTimeHistory[PROFILER_HISTORY_SIZE] = {0};
+static f32 fpsHistory[PROFILER_HISTORY_SIZE] = {0};
+static u32 profilerHistoryIndex = 0;
+static f64 profilerAccumulator = 0.0;
+static u32 profilerFrameCount = 0;
+static f32 profilerAvgFps = 0.0f;
+static f32 profilerAvgFrameTime = 0.0f;
+static f32 profilerMinFrameTime = 9999.0f;
+static f32 profilerMaxFrameTime = 0.0f;
+
+static void drawProfilerWindow()
+{
+    if (!showProfiler) return;
+
+    ImGui::Begin("Profiler", &showProfiler);
+
+    f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 1.0));
+    f32 currentFps = (f32)editor->fps;
+
+    // Update ring buffer
+    frameTimeHistory[profilerHistoryIndex] = dt * 1000.0f; // ms
+    fpsHistory[profilerHistoryIndex] = currentFps;
+    profilerHistoryIndex = (profilerHistoryIndex + 1) % PROFILER_HISTORY_SIZE;
+
+    // Compute running stats
+    profilerAccumulator += dt;
+    profilerFrameCount++;
+    if (profilerAccumulator >= 0.5) // update every 0.5s
+    {
+        profilerAvgFps = (f32)(profilerFrameCount / profilerAccumulator);
+        profilerAvgFrameTime = (f32)(profilerAccumulator / profilerFrameCount) * 1000.0f;
+        profilerAccumulator = 0.0;
+        profilerFrameCount = 0;
+    }
+
+    // Min / Max over history
+    profilerMinFrameTime = 9999.0f;
+    profilerMaxFrameTime = 0.0f;
+    for (u32 i = 0; i < PROFILER_HISTORY_SIZE; i++)
+    {
+        if (frameTimeHistory[i] > 0.0f)
+        {
+            if (frameTimeHistory[i] < profilerMinFrameTime) profilerMinFrameTime = frameTimeHistory[i];
+            if (frameTimeHistory[i] > profilerMaxFrameTime) profilerMaxFrameTime = frameTimeHistory[i];
+        }
+    }
+
+    // Header stats
+    ImGui::Text("FPS: %.1f", currentFps);
+    ImGui::SameLine();
+    ImGui::Text("  Avg: %.1f", profilerAvgFps);
+    ImGui::Text("Frame Time: %.2f ms", dt * 1000.0f);
+    ImGui::SameLine();
+    ImGui::Text("  Min: %.2f ms  Max: %.2f ms", profilerMinFrameTime, profilerMaxFrameTime);
+
+    ImGui::Separator();
+
+    // Frame time graph
+    {
+        // Build ordered array starting from oldest sample
+        f32 ordered[PROFILER_HISTORY_SIZE];
+        for (u32 i = 0; i < PROFILER_HISTORY_SIZE; i++)
+            ordered[i] = frameTimeHistory[(profilerHistoryIndex + i) % PROFILER_HISTORY_SIZE];
+
+        c8 overlay[64];
+        snprintf(overlay, sizeof(overlay), "%.2f ms", dt * 1000.0f);
+        ImGui::PlotLines("Frame Time (ms)", ordered, PROFILER_HISTORY_SIZE, 0, overlay, 0.0f, profilerMaxFrameTime * 1.2f, ImVec2(0, 60));
+    }
+
+    // FPS graph
+    // {
+    //     f32 ordered[PROFILER_HISTORY_SIZE];
+    //     for (u32 i = 0; i < PROFILER_HISTORY_SIZE; i++)
+    //         ordered[i] = fpsHistory[(profilerHistoryIndex + i) % PROFILER_HISTORY_SIZE];
+
+    //     c8 overlay[64];
+    //     snprintf(overlay, sizeof(overlay), "%.0f FPS", currentFps);
+    //     ImGui::PlotLines("FPS", ordered, PROFILER_HISTORY_SIZE, 0, overlay, 0.0f, profilerAvgFps * 1.5f, ImVec2(0, 80));
+    // }
+
+    ImGui::Separator();
+
+    // Rendering stats
+    ImGui::Text("-- Rendering --");
+    ImGui::Text("Entities: %u / %u", entityCount, entitySizeCache);
+    ImGui::Text("Viewport: %u x %u", viewportWidth, viewportHeight);
+    ImGui::Text("Active FBO: %u", activeFBO);
+    if (resources)
+    {
+        ImGui::Text("Meshes: %u / %u", resources->meshUsed, resources->meshCount);
+        ImGui::Text("Textures: %u / %u", resources->textureUsed, resources->textureCount);
+        ImGui::Text("Shaders: %u / %u", resources->shaderUsed, resources->shaderCount);
+        ImGui::Text("Materials: %u / %u", resources->materialUsed, resources->materialCount);
+        ImGui::Text("Models: %u / %u", resources->modelUsed, resources->modelCount);
+    }
+
     ImGui::End();
 }
 static Vec3 EulerAnglesDegrees = v3Zero;
@@ -458,6 +1444,7 @@ static void drawSceneListWindow()
             modelIDs[entityCount] = (u32)-1; // Initialize modelID to an invalid index
             entityMaterialIDs[entityCount] = (u32)-1; // no custom material
             shaderHandles[entityCount] = 0; // no custom shader
+            archetypeIDs[entityCount] = (u32)-1; // no archetype assigned
 
             // make the inital name this
             sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d", entityCount);
@@ -524,6 +1511,105 @@ static void drawInspectorWindow()
             rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
         }
         ImGui::InputFloat3("scale", (f32 *)&scales[inspectorEntityID]);
+
+        // ---- Archetype assignment ----
+        if (archetypeIDs)
+        {
+            u32 currentArchID = archetypeIDs[inspectorEntityID];
+            const c8 *archPreview = (currentArchID < g_archRegistry.count)
+                ? g_archRegistry.entries[currentArchID].name : "None";
+
+            if (ImGui::BeginCombo("Archetype", archPreview))
+            {
+                // "None" option
+                if (ImGui::Selectable("None", currentArchID == (u32)-1))
+                    archetypeIDs[inspectorEntityID] = (u32)-1;
+
+                for (u32 a = 0; a < g_archRegistry.count; a++)
+                {
+                    bool selected = (currentArchID == a);
+                    if (ImGui::Selectable(g_archRegistry.entries[a].name, selected))
+                        archetypeIDs[inspectorEntityID] = a;
+                    if (selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            // ---- Archetype field values ----
+            if (currentArchID < g_archRegistry.count)
+            {
+                ArchetypeFileEntry *archEntry = &g_archRegistry.entries[currentArchID];
+                ImGui::Separator();
+                ImGui::Text("Archetype: %s", archEntry->name);
+
+                // During play mode: show live values from the per-system archetype
+                if (g_gameRunning && g_ecsSystemLoaded[currentArchID]
+                    && g_ecsArchEntityCount[currentArchID] > 0
+                    && g_ecsArchetypes[currentArchID].arena)
+                {
+                    // Find this entity's index within the per-system archetype
+                    u32 perSysIdx = (u32)-1;
+                    for (u32 i = 0; i < g_ecsArchEntityCount[currentArchID]; i++)
+                    {
+                        if (g_ecsSceneMap[currentArchID][i] == inspectorEntityID)
+                        { perSysIdx = i; break; }
+                    }
+
+                    if (perSysIdx != (u32)-1)
+                    {
+                        void **fields = getArchetypeFields(&g_ecsArchetypes[currentArchID], 0);
+                        StructLayout *layout = g_ecsArchetypes[currentArchID].layout;
+                        if (fields && layout)
+                        {
+                            for (u32 f = 0; f < layout->count; f++)
+                            {
+                                u32 sz = layout->fields[f].size;
+                                void *ptr = (u8 *)fields[f] + sz * perSysIdx;
+
+                                ImGui::PushID((int)(5000 + f));
+                                if (sz == sizeof(f32))
+                                    ImGui::DragFloat(layout->fields[f].name, (f32 *)ptr, 0.01f);
+                                else if (sz == sizeof(Vec3))
+                                    ImGui::DragFloat3(layout->fields[f].name, (f32 *)ptr, 0.01f);
+                                else if (sz == sizeof(Vec4))
+                                    ImGui::DragFloat4(layout->fields[f].name, (f32 *)ptr, 0.01f);
+                                else if (sz == sizeof(Vec2))
+                                    ImGui::DragFloat2(layout->fields[f].name, (f32 *)ptr, 0.01f);
+                                else
+                                    ImGui::Text("%s (%u bytes)", layout->fields[f].name, sz);
+                                ImGui::PopID();
+                            }
+                        }
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("Entity not in this archetype's runtime set");
+                    }
+                }
+                else
+                {
+                    // Edit mode or system not loaded: show field names from scanner
+                    StructLayout *layout = &archEntry->layout;
+                    if (layout->fields)
+                    {
+                        for (u32 f = 0; f < layout->count; f++)
+                        {
+                            const c8 *fname = layout->fields[f].name;
+                            u32 fsz = layout->fields[f].size;
+                            if (fsz > 0)
+                                ImGui::TextDisabled("  %s  (%u bytes)", fname, fsz);
+                            else
+                                ImGui::TextDisabled("  %s", fname);
+                        }
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("  %u fields (start play to inspect)", layout->count);
+                    }
+                }
+            }
+        }
 
         u32 currentModelID = modelIDs[inspectorEntityID];
         u32 selectedIndex = (currentModelID < resources->modelUsed) ? currentModelID : 0;
@@ -770,6 +1856,187 @@ void renderFBOToScreen(u32 fboIndex, u32 shaderProgram)
     glEnable(GL_DEPTH_TEST);
 }
 
+static b8 showBuildLog = false;
+
+static void drawBuildLogWindow()
+{
+    if (!showBuildLog) return;
+
+    ImGui::Begin("Build Log", &showBuildLog);
+    if (g_buildInProgress)
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Building...");
+    else
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Idle");
+
+    ImGui::Separator();
+    ImGui::BeginChild("##logscroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::TextUnformatted(g_buildLog);
+    ImGui::EndChild();
+    ImGui::End();
+}
+
+// temporary file used to snapshot the scene before play-mode
+static const c8 *PLAY_SNAPSHOT_PATH = "__play_snapshot__.drsc";
+static b8 g_hasPlaySnapshot = false;
+
+static void snapshotScene()
+{
+    // build a SceneData from the live archetype
+    SceneData sd = {0};
+    sd.archetypeCount = 1;
+    sd.archetypes = &sceneArchetype;
+    strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
+    sceneArchetype.arena[0].count = entityCount;
+    sd.materialCount = resources->materialUsed;
+    sd.materials     = resources->materialBuffer;
+
+    c8 fullPath[MAX_PATH_LENGTH];
+    snprintf(fullPath, sizeof(fullPath), "%s/%s", hubProjectDir, PLAY_SNAPSHOT_PATH);
+    g_hasPlaySnapshot = saveScene(fullPath, &sd);
+    if (!g_hasPlaySnapshot)
+        WARN("Failed to snapshot scene before play");
+}
+
+static void restoreSnapshot()
+{
+    if (!g_hasPlaySnapshot) return;
+
+    c8 fullPath[MAX_PATH_LENGTH];
+    snprintf(fullPath, sizeof(fullPath), "%s/%s", hubProjectDir, PLAY_SNAPSHOT_PATH);
+
+    SceneData sd = loadScene(fullPath);
+    if (sd.archetypeCount > 0 && sd.archetypes)
+    {
+        destroyArchetype(&sceneArchetype);
+        sceneArchetype  = sd.archetypes[0];
+        entitySizeCache = sceneArchetype.capacity;
+        entityCount     = sceneArchetype.arena[0].count;
+        entitySize      = (i32)entitySizeCache;
+        migrateSceneArchetypeIfNeeded();
+        rebindArchetypeFields();
+
+        if (sd.materialCount > 0 && sd.materials)
+        {
+            u32 count = sd.materialCount;
+            if (count > resources->materialCount)
+                count = resources->materialCount;
+            memcpy(resources->materialBuffer, sd.materials,
+                   sizeof(Material) * count);
+            resources->materialUsed = count;
+            free(sd.materials);
+        }
+
+        inspectorEntityID     = 0;
+        currentInspectorState = EMPTY_VIEW;
+        manipulateTransform   = false;
+        INFO("Scene restored from play-mode snapshot");
+    }
+    else
+    {
+        WARN("Failed to restore scene from snapshot");
+    }
+
+    // clean up the temp file
+    remove(fullPath);
+    g_hasPlaySnapshot = false;
+}
+
+void doBuildAndRun()
+{
+    if (g_gameRunning && g_gameDLL.loaded)
+    {
+        g_gameDLL.plugin.destroy();
+        unloadGameDLL(&g_gameDLL);
+        g_gameRunning = false;
+    }
+
+    showBuildLog = true;
+
+    if (!buildProject(hubProjectDir, g_buildLog, sizeof(g_buildLog)))
+    {
+        ERROR("Build failed");
+        return;
+    }
+
+    c8 dllPath[MAX_PATH_LENGTH];
+#ifdef _WIN32
+    snprintf(dllPath, sizeof(dllPath), "%s/bin/libgame.dll", hubProjectDir);
+#else
+    snprintf(dllPath, sizeof(dllPath), "%s/bin/libgame.so", hubProjectDir);
+#endif
+
+    if (!loadGameDLL(dllPath, &g_gameDLL))
+    {
+        ERROR("Failed to load game DLL: %s", dllPath);
+        return;
+    }
+
+    // snapshot the current scene so we can restore it when play stops
+    snapshotScene();
+
+    g_gameDLL.plugin.init(hubProjectDir);
+
+    // Auto-discover ECS system entry points from the loaded game DLL.
+    // For each registered archetype, try to find druidGetECSSystem_<name>.
+    g_ecsSystemCount = 0;
+    if (g_archRegistry.count == 0)
+        WARN("No archetypes registered — ECS system discovery will be skipped. "
+             "Create archetypes in the Prefabs window first.");
+    for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+    {
+        ECSSystemPlugin sys = {0};
+        INFO("Looking for ECS entry: druidGetECSSystem_%s", g_archRegistry.entries[a].name);
+        if (loadECSSystemFromHandle(&g_gameDLL.dll, g_archRegistry.entries[a].name, &sys))
+        {
+            g_ecsSystems[a] = sys;
+            g_ecsSystemLoaded[a] = true;
+            g_ecsSystemCount++;
+            if (sys.init) sys.init();
+            INFO("Loaded ECS system: %s", g_archRegistry.entries[a].name);
+        }
+        else
+        {
+            g_ecsSystemLoaded[a] = false;
+        }
+    }
+
+    // Create per-system archetypes so each ECS system only touches its own
+    // entities (those with a matching archetypeID in the scene).
+    populateEcsArchetypes();
+
+    g_gameRunning = true;
+    INFO("Game started (%u ECS systems discovered)", g_ecsSystemCount);
+}
+
+void doStopGame()
+{
+    if (!g_gameRunning) return;
+
+    // Destroy ECS systems before unloading the DLL
+    for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+    {
+        if (g_ecsSystemLoaded[a] && g_ecsSystems[a].destroy)
+            g_ecsSystems[a].destroy();
+        g_ecsSystemLoaded[a] = false;
+        memset(&g_ecsSystems[a], 0, sizeof(ECSSystemPlugin));
+    }
+    g_ecsSystemCount = 0;
+
+    // Destroy per-system archetypes (must happen while DLL is still loaded
+    // since the layouts belong to the DLL).
+    cleanupEcsArchetypes();
+
+    if (g_gameDLL.loaded)
+        g_gameDLL.plugin.destroy();
+
+    unloadGameDLL(&g_gameDLL);
+    g_gameRunning = false;
+
+    // restore the scene to its pre-play state
+    restoreSnapshot();
+    INFO("Game stopped");
+}
+
 void drawDockspaceAndPanels()
 {
     static b8 dockspaceOpen = true;
@@ -842,6 +2109,69 @@ void drawDockspaceAndPanels()
             //}
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("View"))
+        {
+            if (ImGui::MenuItem("Profiler", NULL, showProfiler))
+            {
+                showProfiler = !showProfiler;
+            }
+            if (ImGui::MenuItem("Build Log", NULL, showBuildLog))
+            {
+                showBuildLog = !showBuildLog;
+            }
+            ImGui::EndMenu();
+        }
+
+        // project menu
+        if (ImGui::BeginMenu("Project"))
+        {
+            if (ImGui::MenuItem("Build", "Ctrl+B"))
+            {
+                showBuildLog = true;
+                buildProject(hubProjectDir, g_buildLog, sizeof(g_buildLog));
+            }
+            if (ImGui::MenuItem("Build & Run", "F5"))
+            {
+                doBuildAndRun();
+            }
+            if (ImGui::MenuItem("Stop", "Shift+F5", false, g_gameRunning))
+            {
+                doStopGame();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Regenerate Default Files"))
+            {
+                if (generateProjectFiles(hubProjectDir))
+                    INFO("Regenerated default project files.");
+                else
+                    ERROR("Failed to regenerate project files.");
+            }
+            if (ImGui::MenuItem("Update Engine Files"))
+            {
+                showBuildLog = true;
+                if (updateProject(hubProjectDir, g_buildLog, sizeof(g_buildLog)))
+                    INFO("Engine files updated in project.");
+                else
+                    ERROR("Failed to update engine files.");
+            }
+            ImGui::EndMenu();
+        }
+
+        // run/stop buttons
+        ImGui::Separator();
+        if (!g_gameRunning)
+        {
+            if (ImGui::MenuItem("  > Run  "))
+                doBuildAndRun();
+        }
+        else
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            if (ImGui::MenuItem("  [] Stop  "))
+                doStopGame();
+            ImGui::PopStyleColor();
+        }
+
         ImGui::EndMenuBar();
     }
 
@@ -865,10 +2195,15 @@ void drawDockspaceAndPanels()
         ImGuiID dock_id_prefabs = ImGui::DockBuilderSplitNode(
             dock_id_middle, ImGuiDir_Up, 0.5f, nullptr, &dock_id_middle);
 
+        ImGuiID dock_id_bottom = ImGui::DockBuilderSplitNode(
+            dock_main_id, ImGuiDir_Down, 0.25f, nullptr, &dock_main_id);
+
         ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
         ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
         ImGui::DockBuilderDockWindow("Scene List", dock_id_prefabs);
         ImGui::DockBuilderDockWindow("Prefabs", dock_id_middle);
+        ImGui::DockBuilderDockWindow("Profiler", dock_id_bottom);
+        ImGui::DockBuilderDockWindow("Build Log", dock_id_bottom);
         ImGui::DockBuilderFinish(dockspace_id);
     }
 
@@ -878,6 +2213,27 @@ void drawDockspaceAndPanels()
     drawPrefabsWindow();
     drawSceneListWindow();
     drawInspectorWindow();
+    drawProfilerWindow();
+    drawBuildLogWindow();
+    drawConsoleWindow();
+
+    // tick game plugin + ECS systems
+    if (g_gameRunning && g_gameDLL.loaded)
+    {
+        f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
+        g_gameDLL.plugin.update(dt);
+
+        // Run ECS system update callbacks on per-system archetypes
+        for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+        {
+            if (g_ecsSystemLoaded[a] && g_ecsSystems[a].update && g_ecsArchEntityCount[a] > 0)
+                g_ecsSystems[a].update(&g_ecsArchetypes[a], dt);
+        }
+
+        // Sync ECS-updated data (position, rotation, …) back to the scene
+        // archetype so the editor renderer draws entities correctly.
+        syncEcsToScene();
+    }
 
     ImGui::End(); // MainDockSpace
 
@@ -1027,6 +2383,9 @@ void drawDockspaceAndPanels()
                 entityCount     = sceneArchetype.arena[0].count;
                 entitySize      = (i32)entitySizeCache;
 
+                // Migrate old scenes that lack newer fields (e.g. archetypeID)
+                migrateSceneArchetypeIfNeeded();
+
                 // Rebind all field pointers
                 rebindArchetypeFields();
 
@@ -1103,7 +2462,7 @@ void drawDockspaceAndPanels()
 
 void editorLog(LogLevel level, const c8 *msg)
 {
-    // add the message to the console lines to be rendered
+    if (!consoleLines) return;
     for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
     {
         if (consoleLines[i] == NULL)
