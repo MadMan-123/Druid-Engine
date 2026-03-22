@@ -374,6 +374,10 @@ static const c8 *TPL_GAME_CPP =
     "            drawMesh(&resources->meshBuffer[mi]);\n"
     "        }\n"
     "    }\n"
+    "\n"
+    "    // Default forward-pass render for ECS archetypes with no custom render\n"
+    "    for (u32 a = 0; a < g_scene.archetypeCount; a++)\n"
+    "        rendererDefaultArchetypeRender(&g_scene.archetypes[a], renderer);\n"
     "}\n"
     "\n"
     "static void gameDestroy(void)\n"
@@ -957,9 +961,22 @@ b8 updateProject(const c8 *projectDir, c8 *outLog, u32 logSize)
     c8 engineRoot[MAX_PATH_LENGTH];
     getEngineRoot(engineRoot, sizeof(engineRoot));
 
+    // Try ninja at the engine root first (preferred), fall back to cmake build dir
     c8 cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-             "cd /d \"%s/build\" && cmake --build . 2>&1", engineRoot);
+    c8 ninjaCheck[MAX_PATH_LENGTH];
+    snprintf(ninjaCheck, sizeof(ninjaCheck), "%s/build.ninja", engineRoot);
+    FILE *nf = fopen(ninjaCheck, "r");
+    if (nf)
+    {
+        fclose(nf);
+        snprintf(cmd, sizeof(cmd),
+                 "cd /d \"%s\" && ninja 2>&1", engineRoot);
+    }
+    else
+    {
+        snprintf(cmd, sizeof(cmd),
+                 "cd /d \"%s/build\" && cmake --build . 2>&1", engineRoot);
+    }
 
     FILE *pipe = (FILE *)platformPipeOpen(cmd);
     if (!pipe)
@@ -981,6 +998,9 @@ b8 updateProject(const c8 *projectDir, c8 *outLog, u32 logSize)
 
     if (ret != 0)
     {
+        u32 len = (u32)strlen(outLog);
+        snprintf(outLog + len, logSize - len,
+                 "\n--- Engine build failed (exit code %d) ---\n", ret);
         g_buildInProgress = false;
         return false;
     }
