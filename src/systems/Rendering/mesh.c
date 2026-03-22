@@ -9,34 +9,29 @@
 void freeMesh(Mesh *mesh)
 {
     if (!mesh) return;
-    
     mesh->drawCount = 0;
-    glDeleteVertexArrays(1, &mesh->vao);
-    glDeleteBuffers(1, &mesh->vbo);
-    glDeleteBuffers(1, &mesh->ebo);
+    if (!mesh->buffered)
+    {
+        glDeleteVertexArrays(1, &mesh->vao);
+        glDeleteBuffers(1, &mesh->vbo);
+        glDeleteBuffers(1, &mesh->ebo);
+    }
+    // buffered meshes: GPU memory is owned by GeometryBuffer — don't delete here
     free(mesh);
 }
 void freeMeshArray(Mesh *meshes, u32 meshCount)
 {
-    if (!meshes)
-        return;
+    if (!meshes) return;
 
     for (u32 i = 0; i < meshCount; i++)
     {
-        // Only free GPU resources, not the mesh struct itself
-        if (meshes[i].vao != 0) {
-            glDeleteVertexArrays(1, &meshes[i].vao);
-        }
-        if (meshes[i].vbo != 0) {
-            glDeleteBuffers(1, &meshes[i].vbo);
-        }
-        if (meshes[i].ebo != 0) {
-            glDeleteBuffers(1, &meshes[i].ebo);
-        }
+        if (meshes[i].buffered) continue;  // GPU memory owned by GeometryBuffer
+        if (meshes[i].vao != 0) glDeleteVertexArrays(1, &meshes[i].vao);
+        if (meshes[i].vbo != 0) glDeleteBuffers(1, &meshes[i].vbo);
+        if (meshes[i].ebo != 0) glDeleteBuffers(1, &meshes[i].ebo);
     }
 
-    free(meshes);  // Free the whole array at once
-
+    free(meshes);
 }
 void drawMesh(Mesh *mesh)
 {
@@ -45,28 +40,38 @@ void drawMesh(Mesh *mesh)
         ERROR("drawMesh: mesh is NULL");
         return;
     }
-    
     if (mesh->vao == 0)
     {
         ERROR("drawMesh: mesh VAO is 0 (uninitialized)");
         return;
     }
-    
-    glBindVertexArray(mesh->vao);
+    if (mesh->drawCount == 0) return;
 
-    // Check if mesh has indices - if not, use glDrawArrays instead of glDrawElements
-    if (mesh->drawCount > 0) {
-        // If we have indices in EBO, use glDrawElements
+    glBindVertexArray(mesh->vao);
+    profileCountVAOBind();
+
+    if (mesh->buffered)
+    {
+        glDrawElementsBaseVertex(
+            GL_TRIANGLES,
+            (GLsizei)mesh->drawCount,
+            GL_UNSIGNED_INT,
+            (void *)(uintptr_t)((u64)mesh->firstIndex * sizeof(u32)),
+            (GLint)mesh->baseVertex);
+    }
+    else
+    {
         GLint buffer_bound;
         glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &buffer_bound);
-        if (buffer_bound != 0) {
-            glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
-        } else {
-            // No index buffer, use vertex arrays
-            glDrawArrays(GL_TRIANGLES, 0, mesh->drawCount);
-        }
+        if (buffer_bound != 0)
+            glDrawElements(GL_TRIANGLES, (GLsizei)mesh->drawCount, GL_UNSIGNED_INT, 0);
+        else
+            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)mesh->drawCount);
     }
 
+    g_drawCalls++;
+    g_triangles += mesh->drawCount / 3;
+    g_vertices  += mesh->drawCount;
     glBindVertexArray(0);
 }
 
@@ -301,67 +306,66 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
         return;
     }
 
-    // Set drawCount based on whether we have indices or not
     mesh->drawCount = (model.indicesCount > 0) ? model.indicesCount : model.positionsCount;
+    mesh->buffered  = false;
 
-    // generate our VAO to store the state of our vertex buffer
-    glGenVertexArrays(1, &mesh->vao);
-    // generate our buffer to store our interleaved vertex data on the GPU
-    glGenBuffers(1, &mesh->vbo);
-    // generate our buffer to store our index data on the GPU
-    glGenBuffers(1, &mesh->ebo);
+    const u32 stride = GEO_VERTEX_STRIDE;  // 32 bytes: Vec3+Vec2+Vec3
 
-    // work out the total stride of our vertex data (position + texcoord + normal)
-    u32 stride = sizeof(Vec3) + sizeof(Vec2) + sizeof(Vec3);
-
-    //prepare interleaved vertex data (floats)
+    // Build interleaved vertex data
     f32 *interleavedData = (f32 *)malloc(model.positionsCount * stride);
     u32 offset = 0;
     for (u32 i = 0; i < model.positionsCount; i++)
     {
-        // Position (Vec3)
         interleavedData[offset++] = model.positions[i].x;
         interleavedData[offset++] = model.positions[i].y;
         interleavedData[offset++] = model.positions[i].z;
-        // TexCoord (Vec2)
         interleavedData[offset++] = model.texCoords[i].x;
         interleavedData[offset++] = model.texCoords[i].y;
-        // Normal (Vec3)
         interleavedData[offset++] = model.normals[i].x;
         interleavedData[offset++] = model.normals[i].y;
         interleavedData[offset++] = model.normals[i].z;
     }
 
-    // upload interleaved vertex data to GPU
+    // Fast path � upload into the global GeometryBuffer (no per-draw buffer binds)
+    if (resources && resources->geoBuffer)
+    {
+        if (geometryBufferUpload(resources->geoBuffer, mesh,
+                                  interleavedData, model.positionsCount,
+                                  model.indices,   model.indicesCount))
+        {
+            free(interleavedData);
+            return;
+        }
+        WARN("initMeshFromModel: GeometryBuffer full, falling back to standalone");
+    }
+
+    // Slow path � dedicated VAO/VBO/EBO for this mesh
+    glGenVertexArrays(1, &mesh->vao);
+    glGenBuffers(1, &mesh->vbo);
+    glGenBuffers(1, &mesh->ebo);
+
     glBindVertexArray(mesh->vao);
 
-    // specify the layout of our vertex data to OpenGL (position, normal, texcoord) 
     glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
     glBufferData(GL_ARRAY_BUFFER, model.positionsCount * stride, interleavedData, GL_STATIC_DRAW);
-    // index data to ebo (only if we have indices)
-    if (model.indicesCount > 0 && model.indices) {
+
+    if (model.indicesCount > 0 && model.indices)
+    {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indicesCount * sizeof(u32), model.indices, GL_STATIC_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     model.indicesCount * sizeof(u32), model.indices, GL_STATIC_DRAW);
     }
-   
-    
-    // position attribute (location 0)
+
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void *)0);
-    // texcoord attribute (location 1) - immediately after position
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (void *)(sizeof(Vec3)));
-    // normal attribute (location 2) - after position + texcoord
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride, (void *)(sizeof(Vec3) + sizeof(Vec2)));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride,
+                          (void *)(sizeof(Vec3) + sizeof(Vec2)));
 
-    
-
-
-    
     free(interleavedData);
 }
-
 // Function to generate height data using compute shader
 HeightMap generateHeightMap(i32 sizeX, i32 sizeZ, f32 heightScale,
                             const c8 *computeShaderPath)

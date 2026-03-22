@@ -113,9 +113,16 @@ void initSystems(const Application* app)
 	//null check the resource manager
 	assert(resources != NULL && "Resource Manager not created correctly");
 	
+	profileCalibrate();
+
 	//initialize the display
 	initDisplay(app->title, app->display, width, height);
 
+	// Create global geometry buffer AFTER OpenGL context exists, BEFORE mesh loading.
+	// 500k vertices (16 MB) + 1.5M indices (6 MB) — covers typical asset budgets.
+	resources->geoBuffer = geometryBufferCreate(500000, 1500000);
+	if (!resources->geoBuffer)
+		WARN("GeometryBuffer creation failed — meshes will use standalone VAO/VBO/EBO");
 
 	//try and read in the resources
 	readResources(resources,"../"RES_FOLDER);
@@ -137,15 +144,18 @@ void startApplication(Application* app)
 	u64 fpsTime   = previousTime;
 	while (app->state != EXIT)
 	{
+		profileBeginFrame();
+
 		//calculate delta time for this frame (in seconds)
 		u64 current = SDL_GetPerformanceCounter();
 		f32 dt = (f32)((f64)(current - previousTime) / performanceFreq);
 		previousTime = current;
-		inputUpdate(app); //process input events
-	
-		//update & render – pass freshly computed dt
-		app->update(dt);
-		render(app, dt);
+
+		{ PROFILE_SCOPE("Input");  inputUpdate(app); }
+		{ PROFILE_SCOPE("Update"); app->update(dt);  }
+		{ PROFILE_SCOPE("Render"); applicationRenderStep(app, dt);  }
+
+		profileEndFrame();
 
 		//fps counter
 		frameCount++;
@@ -165,7 +175,7 @@ void startApplication(Application* app)
 
 
 
-void render(Application* app, f32 dt)
+void applicationRenderStep(Application* app, f32 dt)
 {
 	clearDisplay(0.0f, 0.0f, 0.0f, 1.0f);
 	

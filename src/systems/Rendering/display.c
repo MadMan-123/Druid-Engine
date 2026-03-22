@@ -65,6 +65,17 @@ void initDisplay(const c8* title, Display* display, f32 width, f32 height)
 }
 
 
+void setVSync(i32 interval)
+{
+    if (!SDL_GL_SetSwapInterval(interval))
+    {
+        WARN("setVSync: SDL_GL_SetSwapInterval(%d) failed: %s", interval, SDL_GetError());
+        // If adaptive vsync (-1) failed, fall back to regular vsync
+        if (interval == -1)
+            SDL_GL_SetSwapInterval(1);
+    }
+}
+
 void onDestroy(Display* display)
 {
         //destroy the display context and window

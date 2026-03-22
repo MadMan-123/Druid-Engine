@@ -76,6 +76,7 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     manager->modelUsed = 0;
     manager->shaderUsed = 0;
     manager->textureUsed = 0;
+    manager->geoBuffer = NULL;  // created later in initSystems after GL context
 
     // allocate arrays
     manager->materialBuffer =
@@ -131,7 +132,8 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
 
 void cleanUpResourceManager(ResourceManager *manager)
 {
-    // free all resources in the manager
+    if (!manager) return;
+    if (manager->geoBuffer) geometryBufferDestroy(manager->geoBuffer);
     free(manager->materialBuffer);
     free(manager->meshBuffer);
     free(manager->modelBuffer);

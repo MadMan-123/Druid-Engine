@@ -336,6 +336,19 @@ inline Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ) {
     return result;
 }
 
+inline Mat4 mat4Ortho(f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip)
+{
+    Mat4 result = mat4Zero();
+    result.m[0][0] =  2.0f / (right - left);
+    result.m[1][1] =  2.0f / (top - bottom);
+    result.m[2][2] = -2.0f / (farClip - nearClip);
+    result.m[3][0] = -(right + left) / (right - left);
+    result.m[3][1] = -(top + bottom) / (top - bottom);
+    result.m[3][2] = -(farClip + nearClip) / (farClip - nearClip);
+    result.m[3][3] =  1.0f;
+    return result;
+}
+
 inline Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) {
     Vec3 f = v3Norm(v3Sub(center, eye));
     Vec3 s = v3Norm(v3Cross(f, up));
@@ -439,24 +452,26 @@ Mat4 mat3ToMat4(const Mat3 m3)
 //Transform a vector by a matrix
 inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
 {
+    // m[col][row] — read across columns for each result row
     Vec4 result;
-    
-    result.x = m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z + m.m[0][3] * v.w;
-    result.y = m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z + m.m[1][3] * v.w;
-    result.z = m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z + m.m[2][3] * v.w;
-    result.w = m.m[3][0] * v.x + m.m[3][1] * v.y + m.m[3][2] * v.z + m.m[3][3] * v.w;
-    
+
+    result.x = m.m[0][0] * v.x + m.m[1][0] * v.y + m.m[2][0] * v.z + m.m[3][0] * v.w;
+    result.y = m.m[0][1] * v.x + m.m[1][1] * v.y + m.m[2][1] * v.z + m.m[3][1] * v.w;
+    result.z = m.m[0][2] * v.x + m.m[1][2] * v.y + m.m[2][2] * v.z + m.m[3][2] * v.w;
+    result.w = m.m[0][3] * v.x + m.m[1][3] * v.y + m.m[2][3] * v.z + m.m[3][3] * v.w;
+
     return result;
 }
 
-inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p) 
+inline Vec3 mat4TransformPoint(Mat4 m, Vec3 p)
 {
+    // m[col][row] — read across columns for each result row (w=1 implicit)
     Vec4 temp;
-    
-    temp.x = m.m[0][0] * p.x + m.m[0][1] * p.y + m.m[0][2] * p.z + m.m[0][3];
-    temp.y = m.m[1][0] * p.x + m.m[1][1] * p.y + m.m[1][2] * p.z + m.m[1][3];
-    temp.z = m.m[2][0] * p.x + m.m[2][1] * p.y + m.m[2][2] * p.z + m.m[2][3];
-    temp.w = m.m[3][0] * p.x + m.m[3][1] * p.y + m.m[3][2] * p.z + m.m[3][3];
+
+    temp.x = m.m[0][0] * p.x + m.m[1][0] * p.y + m.m[2][0] * p.z + m.m[3][0];
+    temp.y = m.m[0][1] * p.x + m.m[1][1] * p.y + m.m[2][1] * p.z + m.m[3][1];
+    temp.z = m.m[0][2] * p.x + m.m[1][2] * p.y + m.m[2][2] * p.z + m.m[3][2];
+    temp.w = m.m[0][3] * p.x + m.m[1][3] * p.y + m.m[2][3] * p.z + m.m[3][3];
     
     if (fabs(temp.w) > 0.0001f)
     {

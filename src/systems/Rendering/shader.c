@@ -299,9 +299,29 @@ void updateShaderMVP(u32 shaderProgram, const Transform transform,
 
 void updateShaderModel(u32 shaderProgram, const Transform transform)
 {
+    // Fast path: write into the global ModelSSBO and set u_modelIndex.
+    // The SSBO must already be bound to slot 2 (done in rendererBeginFrame).
+    if (renderer && renderer->modelSSBO)
+    {
+        i32 modelIndexLoc = glGetUniformLocation(shaderProgram, "u_modelIndex");
+        if (modelIndexLoc != -1)
+        {
+            u32 slotIndex = modelSSBOWrite(renderer->modelSSBO, &transform);
+            if (slotIndex != (u32)-1)
+            {
+                glUniform1i(modelIndexLoc, (i32)slotIndex);
+                return;
+            }
+            // SSBO full — fall through to legacy upload below
+        }
+    }
+
+    // Legacy path: upload the model matrix as a plain uniform.
+    // Used when the shader has no u_modelIndex, the SSBO is unavailable,
+    // or the buffer is full for this frame.
     Mat4 model = getModel(&transform);
     i32 modelUniform = glGetUniformLocation(shaderProgram, "model");
-    if (modelUniform != -1) 
+    if (modelUniform != -1)
     {
         glUniformMatrix4fv(modelUniform, 1, GL_FALSE, &model.m[0][0]);
     }

@@ -287,6 +287,7 @@ extern "C"
     DAPI Mat4 mat4LookAt(Vec3 eye, Vec3 target, Vec3 up);
 
     DAPI Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ);
+    DAPI Mat4 mat4Ortho(f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip);
     // Identity and Zero
     DAPI Mat4 mat4Identity(void);
     DAPI Mat4 mat4Zero(void);
@@ -316,6 +317,7 @@ extern "C"
     DAPI Mat4 mat4Inverse(Mat4 m);
 
     DAPI Mat4 mat4Perspective(f32 fovRadians, f32 aspect, f32 nearZ, f32 farZ);
+    DAPI Mat4 mat4Ortho(f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip);
     DAPI Mat3 mat4ToMat3(const Mat4 m4);
     DAPI Mat4 mat3ToMat4(const Mat3 m3);
     // helper tools
@@ -539,9 +541,11 @@ extern "C"
         u32 capacity;
         b8 isSingle;    // when true, archetype holds exactly one entity (e.g. Player)
         b8 isPersistent; // when true, archetype survives scene switches
+        b8 isBuffered;     // uses pool semantics — Alive field at index 0
+        u32 poolCapacity;  // max pool size (0 = unlimited growth)
     } Archetype;
 
-    // Archetype API (declarations only) - implementations live in world model
+    // Archetype API (declarations only) - implementations live in systems/ecs
     DAPI b8 createArchetype(StructLayout *layout, u32 capacity,
                             Archetype *outArchetype);
     DAPI b8 destroyArchetype(Archetype *arch);
@@ -556,6 +560,12 @@ extern "C"
 
     // Get the archetype soa field pointers for the given arena index.
     DAPI void **getArchetypeFields(Archetype *arch, u32 arenaIndex);
+
+    // Pool API for buffered archetypes (isBuffered == true).
+    // Alive field is always at index 0; indices are stable (no swap-remove).
+    DAPI u32  archetypePoolSpawn(Archetype *arch);
+    DAPI void archetypePoolDespawn(Archetype *arch, u32 index);
+    DAPI b8   archetypePoolIsAlive(Archetype *arch, u32 index);
 
     //=====================================================================================================================
 
@@ -624,6 +634,8 @@ extern "C"
         b8 isSingle;                       // single-instance archetype
         b8 isPersistent;                   // survives scene switches
         b8 uniformScale;                   // Scale is f32 instead of Vec3
+        b8 isBuffered;                     // true = archetype uses instance pooling (e.g. bullets)
+        u32 poolCapacity;                  // max pool size for buffered archetypes (0 = unlimited)
     } ArchetypeFileEntry;
 
     typedef struct
@@ -634,12 +646,15 @@ extern "C"
 
     // write the .h / .c files for a given archetype into the project.
     // typeNames is a parallel array of C type strings (e.g. "Vec3", "f32").
+    // When isBuffered is true, an automatic "Alive" field is added for instance pooling.
     DAPI b8 generateArchetypeFiles(const c8 *projectDir,
                                     const c8 *archetypeName,
                                     const FieldInfo *fields,
                                     const c8 **typeNames,
                                     u32 fieldCount,
-                                    b8 isSingle);
+                                    b8 isSingle,
+                                    b8 isBuffered,
+                                    u32 poolCapacity);
 
     // compile all archetype system DLLs in the project
     DAPI b8 buildArchetypeSystems(const c8 *projectDir, c8 *outLog, u32 logSize);
@@ -659,7 +674,7 @@ extern "C"
 #define MAX_SCENE_ARCHETYPES 32
 #define MAX_FIELD_NAME 64
 #define SCENE_MAGIC 0x43535244 // "DRSC"
-#define SCENE_VERSION 2
+#define SCENE_VERSION 3
 
     typedef struct
     {
@@ -706,6 +721,58 @@ extern "C"
 #ifndef MAX_NAME_SIZE
 #define MAX_NAME_SIZE 256
 #endif
+
+    // ------------------------------------------------------------------
+    // SceneRuntime — engine-managed active scene for standalone play.
+    //
+    // Call sceneRuntimeInit(projectDir) once in your game's init function.
+    // The engine finds the startup scene (startup_scene.txt or first .drsc
+    // in scenes/), loads it, extracts all standard field pointers, applies
+    // materials and the scene camera.  Game code reads from sceneRuntime->*
+    // directly — no manual loadScene / field extraction needed.
+
+    typedef struct
+    {
+        SceneData  data;              // loaded SceneData (archetypes + materials)
+        // Standard SceneEntity field pointers (NULL if field absent in scene)
+        Vec3 *positions;              // "position"
+        Vec4 *rotations;              // "rotation"
+        Vec3 *scales;                 // "scale"
+        b8   *isActive;               // "isActive"
+        u32  *modelIDs;               // "modelID"
+        u32  *shaderHandles;          // "shaderHandle"
+        u32  *materialIDs;            // "materialID"
+        b8   *sceneCameraFlags;       // "isSceneCamera"
+        u32  *archetypeIDs;           // "archetypeID"
+        u32  *ecsSlotIDs;             // "ecsSlotID"
+        u32   entityCount;
+        b8    loaded;
+    } SceneRuntime;
+
+    DAPI extern SceneRuntime *sceneRuntime;
+
+    // Load and activate the startup scene for projectDir.
+    // Populates sceneRuntime, applies materials to ResourceManager,
+    // and syncs the active renderer camera to the scene-camera entity.
+    DAPI b8   sceneRuntimeInit(const c8 *projectDir);
+    // Replace the currently loaded scene with the one at filePath.
+    // Re-extracts all standard field pointers and applies materials.
+    // Call this to switch scenes at runtime (e.g. level transitions).
+    DAPI b8   sceneRuntimeLoad(const c8 *filePath);
+    // Free all runtime scene data and set sceneRuntime to NULL.
+    DAPI void sceneRuntimeDestroy(void);
+    // Get the current SceneRuntime pointer (NULL if not initialised).
+    DAPI SceneRuntime *sceneRuntimeGetData(void);
+
+    // Scene transition callback — invoked around scene loads/switches.
+    typedef void (*SceneTransitionFn)(void *userData);
+
+    // Register callbacks invoked before unloading / after loading a scene.
+    // Pass NULL for any callback you don't need.
+    DAPI void sceneRuntimeSetCallbacks(SceneTransitionFn onBeforeUnload,
+                                       SceneTransitionFn onAfterLoad,
+                                       void *userData);
+    // ------------------------------------------------------------------
 
     // Scene manager API
     DAPI SceneManager *createSceneManager(u32 sceneCapacity);
@@ -828,11 +895,12 @@ extern "C"
 
     DAPI Mat4 getView(const Camera *camera, b8 removeTranslation);
 
+    DAPI void cameraSetPerspective(Camera *cam, f32 fovDeg, f32 aspect, f32 nearClip, f32 farClip);
+    DAPI void cameraSetOrthographic(Camera *cam, f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip);
+
     //=====================================================================================================================
     // Buffer
     // Generic slot-based object buffer. Heap-allocates an array of `elemSize`
-    // bytes per slot and tracks occupancy with a parallel b8 array.
-    // Use bufferAcquire/bufferRelease with indices, bufferGet to access data.
 
     typedef struct
     {
@@ -877,6 +945,26 @@ extern "C"
 
     DAPI void returnError(const c8 *errorString);
     DAPI void onDestroy(Display *display);
+    // VSync: 0 = off, 1 = on, -1 = adaptive (if supported)
+    DAPI void setVSync(i32 interval);
+
+    //=====================================================================================================================
+    // ModelSSBO — persistently mapped per-draw model matrix SSBO (binding point 2)
+
+    typedef struct
+    {
+        u32   buffer;
+        Mat4 *data;
+        u32   capacity;
+        u32   count;
+    } ModelSSBO;
+
+    DAPI ModelSSBO *modelSSBOCreate(u32 capacity);
+    DAPI void       modelSSBODestroy(ModelSSBO *ssbo);
+    DAPI void       modelSSBOBeginFrame(ModelSSBO *ssbo);
+    DAPI u32        modelSSBOWrite(ModelSSBO *ssbo, const Transform *t); // returns slot index for u_modelIndex
+    DAPI void       modelSSBOUpload(ModelSSBO *ssbo);
+    DAPI void       modelSSBOBind(ModelSSBO *ssbo, u32 bindingPoint);
 
     //=====================================================================================================================
     // Renderer
@@ -897,12 +985,18 @@ extern "C"
         Buffer instanceBuffers;  // Buffer of InstanceBuffer
 
         Buffer gBuffers;         // Buffer of GBuffer
+        u32 activeGBuffer;        // slot index in gBuffers, or (u32)-1 for forward rendering
+        b8  useDeferredRendering; // when true, default render writes to GBuffer
 
         // core UBO shared across all shaders (view, projection, time, camPos)
         u32 coreUBO;
 
         // default shader used when no override is set
         u32 defaultShader;
+
+        // batched model-matrix SSBO — written once per draw, reset each frame
+        // bound to GL_SHADER_STORAGE_BUFFER binding point 2
+        ModelSSBO *modelSSBO;
 
         // timing
         f32 time;
@@ -920,6 +1014,11 @@ extern "C"
     DAPI void rendererFlushInstances(Renderer *r, u32 ibufferIndex, u32 shaderProgram);
     DAPI void destroyRenderer(Renderer *r);
 
+    // Default forward-pass render for ECS archetypes whose ECSSystemPlugin.render is NULL.
+    // Looks up Position (Vec3), Rotation (Vec4), Scale (Vec3), ModelID (u32) fields by name;
+    // optionally skips dead entities via an Alive (b8) field.
+    DAPI void rendererDefaultArchetypeRender(Archetype *arch, Renderer *r);
+
     // ---- convenience acquire / release wrappers ----
     // Each returns an index into the buffer, or (u32)-1 on failure.
 
@@ -936,9 +1035,21 @@ extern "C"
     DAPI u32  rendererAcquireGBuffer(Renderer *r, u32 width, u32 height);
     DAPI void rendererReleaseGBuffer(Renderer *r, u32 index);
 
+    // deferred rendering
+    DAPI b8   rendererEnableDeferred(Renderer *r, u32 width, u32 height);
+    DAPI void rendererDisableDeferred(Renderer *r);
+    DAPI void rendererBeginDeferredPass(Renderer *r);
+    DAPI void rendererEndDeferredPass(Renderer *r);
+    DAPI void rendererLightingPass(Renderer *r, u32 lightingShader);
+
     // convenience: set which camera rendererBeginFrame uploads to the UBO
     DAPI void rendererSetActiveCamera(Renderer *r, u32 index);
 
+    DAPI Camera *rendererGetCamera(Renderer *r, u32 index);
+    DAPI u32     rendererGetActiveCamera(Renderer *r);
+
+
+    //=====================================================================================================================
     // Shaders
     DAPI u32 initShader(const c8 *filename);
 
@@ -968,17 +1079,21 @@ extern "C"
     // New optimized functions for UBO rendering
     DAPI void updateShaderModel(u32 shaderProgram, const Transform transform);  
     DAPI void updateFrameUBOData(const Camera* camera, f32 deltaTime);
-
-    // Uniform Buffer Object 
-    DAPI u32 createUBO(u32 size, const void *data,
-                       GLenum usage); // returns buffer handle
+    //=====================================================================================================================
+    // Uniform Buffer Object
+    DAPI u32  createUBO(u32 size, const void *data, GLenum usage);
     DAPI void updateUBO(u32 ubo, u32 offset, u32 size, const void *data);
     DAPI void bindUBOBase(u32 ubo, u32 bindingPoint);
     DAPI void freeUBO(u32 ubo);
-    // CoreShaderData UBO helpers (create once, update each frame)
-    DAPI u32 createCoreShaderUBO();
-
+    DAPI u32  createCoreShaderUBO(void);
     DAPI void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos, const Mat4 *view, const Mat4 *projection);
+
+    //=====================================================================================================================
+    // Shader Storage Buffer Object
+    DAPI u32  createSSBO(u32 size, const void *data, GLenum usage);
+    DAPI void updateSSBO(u32 ssbo, u32 offset, u32 size, const void *data);
+    DAPI void bindSSBOBase(u32 ssbo, u32 bindingPoint);
+    DAPI void destroySSBO(u32 ssbo);
 
     // Textures
     // 32 textures MAX
@@ -998,10 +1113,11 @@ extern "C"
         i32 height;
     } HeightMap;
 
-// Materials
-#define RES_FOLDER "res/"
-#define MODEL_FOLDER "res/models/"
-#define TEXTURE_FOLDER "res/textures/"
+    //====================================================================================================================
+    // Materials
+    #define RES_FOLDER "res/"
+    #define MODEL_FOLDER "res/models/"
+    #define TEXTURE_FOLDER "res/textures/"
 
     typedef struct
     {
@@ -1015,7 +1131,6 @@ extern "C"
         u32 colour;
     } MaterialUniforms;
 
-    // Mesh
     typedef struct Material
     {
         u32 albedoTex;
@@ -1028,6 +1143,8 @@ extern "C"
         Vec3 colour;
     } Material;
 
+    //=====================================================================================================================
+    //vertices and meshes
     typedef struct
     {
         Vec3 *positions; 
@@ -1051,15 +1168,20 @@ extern "C"
 
     typedef struct
     {
-        // vertex array object
+        // vertex array object (0 when buffered — uses GeometryBuffer's VAO)
         u32 vao;
-        // interleaved vertex buffer object
+        // interleaved vertex buffer object (0 when buffered)
         u32 vbo;
-        // index buffer object
+        // index buffer object (0 when buffered)
         u32 ebo;
-        
+
         u32 subMeshCount;
-        u32 drawCount; // how much of the vertexArrayObject do we want to draw
+        u32 drawCount;    // index count (or vertex count for non-indexed)
+
+        // GeometryBuffer fields — only valid when buffered == true
+        u32 baseVertex;   // first vertex in the global GeometryBuffer
+        u32 firstIndex;   // first index  in the global GeometryBuffer
+        b8  buffered;     // true = GPU data lives in resources->geoBuffer
     } Mesh;
 
     DAPI u32 loadMaterialTexture(struct aiMaterial *mat,
@@ -1111,9 +1233,49 @@ extern "C"
     DAPI void instanceBufferCreate (InstanceBuffer* buf, u32 capacity);
     DAPI void instanceBufferDestroy(InstanceBuffer* buf);
 
+    //=====================================================================================================================
+    // GeometryBuffer — single GPU VBO+EBO mega-buffer for all static mesh geometry
+    //
+    // All mesh vertex and index data is packed into one large allocation on the GPU.
+    // Each Mesh records its baseVertex / firstIndex offsets so drawMesh() can issue
+    // glDrawElementsBaseVertex without switching buffers.
+    //
+    // Vertex layout (interleaved, 32 bytes per vertex):
+    //   [0..11]  Vec3 position
+    //   [12..19] Vec2 texCoord
+    //   [20..31] Vec3 normal
+    //
+    // Usage:
+    //   resources->geoBuffer is created automatically in initSystems().
+    //   When the buffer is non-NULL, initMeshFromModel() uploads into it
+    //   instead of creating standalone VAO/VBO/EBO objects.
 
+    #define GEO_VERTEX_STRIDE 32u   // sizeof(Vec3)+sizeof(Vec2)+sizeof(Vec3)
 
-    // framebuffer 
+    typedef struct
+    {
+        u32  vao;           // single global VAO — shared by all buffered meshes
+        u32  vbo;           // vertex buffer (all mesh vertices, interleaved)
+        u32  ebo;           // index  buffer (all mesh indices, u32)
+        u32  maxVertices;   // capacity in vertex count
+        u32  maxIndices;    // capacity in index  count
+        u32  vertexCount;   // vertices uploaded so far
+        u32  indexCount;    // indices  uploaded so far
+    } GeometryBuffer;
+
+    // Create the geometry buffer with room for maxVertices vertices and maxIndices indices.
+    // Must be called AFTER the OpenGL context is alive (i.e. after initDisplay).
+    DAPI GeometryBuffer *geometryBufferCreate(u32 maxVertices, u32 maxIndices);
+    DAPI void            geometryBufferDestroy(GeometryBuffer *buf);
+
+    // Upload one mesh's geometry into the buffer.
+    // Fills mesh->baseVertex, mesh->firstIndex, mesh->drawCount, mesh->buffered.
+    // Returns false if the buffer is full.
+    DAPI b8 geometryBufferUpload(GeometryBuffer *buf, Mesh *mesh,
+                                  const void *interleavedVertices, u32 vertexCount,
+                                  const u32  *indices,             u32 indexCount);
+
+    // framebuffer
     typedef struct Framebuffer
     {
         u32 fbo;
@@ -1162,6 +1324,9 @@ extern "C"
         Model *modelBuffer;
         u32 *textureHandles;
         u32 *shaderHandles;
+
+        // Global geometry pool — owned by the resource manager
+        GeometryBuffer *geoBuffer;
         HashMap textureIDs;
         HashMap shaderIDs;
         HashMap mesheIDs;
@@ -1413,6 +1578,127 @@ extern "C"
         EXIT
     };
 
+    //=====================================================================================================================
+    // Profiler — per-frame scoped timing, GPU timing, draw/geometry/state counters
+    //
+    // Usage:
+    //   PROFILE_SCOPE("label");           // auto-timed scope (cleanup attribute)
+    //   PROFILE_CYCLES_BEGIN(var);         // manual cycle range start
+    //   PROFILE_CYCLES_END(var, out);      // manual cycle range end
+    //
+    // Enabled when DRUID_PROFILE is defined (-DDRUID_PROFILE in CMake).
+    //=====================================================================================================================
+
+#define PROFILE_MAX_ENTRIES 128
+
+    // Inline RDTSC — ~5 cycles, no function call overhead
+    static inline u64 profileRDTSC_(void)
+    {
+    #if defined(_MSC_VER)
+        return __rdtsc();
+    #elif defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+        u32 lo, hi;
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        return ((u64)hi << 32) | lo;
+    #else
+        return SDL_GetPerformanceCounter();
+    #endif
+    }
+
+    typedef struct
+    {
+        const c8 *name;
+        u64       cycles;
+        f64       elapsed_us;
+    } ProfileEntry;
+
+    typedef struct
+    {
+        // scoped timing entries
+        ProfileEntry entries[PROFILE_MAX_ENTRIES];
+        u32          count;
+
+        // CPU frame timing (RDTSC)
+        u64          frameCycles;
+        f64          frameTime_us;
+
+        // GPU frame timing (GL_TIME_ELAPSED, double-buffered)
+        f64          gpuFrameTime_us;
+
+        // draw call / geometry counters
+        u32          drawCalls;
+        u32          triangles;
+        u32          vertices;
+        u32          entityCount;
+
+        // GL state change counters (per frame)
+        u32          shaderBinds;       // glUseProgram calls
+        u32          textureBinds;      // glBindTexture calls
+        u32          vaoBinds;          // glBindVertexArray calls
+        u32          bufferBinds;       // glBindBuffer calls (VBO/EBO/SSBO)
+        u32          uniformUploads;    // uniform set calls (glUniform*)
+        u32          fboBinds;          // glBindFramebuffer calls
+
+        // buffer upload stats
+        u32          bufferUploadsCount;    // number of glBufferSubData / glBufferData calls
+        u64          bufferUploadBytes;     // total bytes uploaded to GPU this frame
+
+        // memory allocation tracking (malloc/free)
+        u64          heapAllocBytes;    // total bytes allocated this frame
+        u32          heapAllocCount;    // number of malloc calls this frame
+        u64          heapFreeCount;     // number of free calls this frame
+        u64          heapLiveBytes;     // running total of live heap (alloc - free)
+
+        // GPU pipeline queries (GL_PRIMITIVES_GENERATED)
+        u64          primitivesGenerated;
+    } ProfileFrame;
+
+    typedef struct { const c8 *name; u64 startCycles; } ProfileScope_;
+
+    DAPI void profileScopeEnd_(ProfileScope_ *s);
+
+    DAPI void               profileCalibrate(void);
+    DAPI void               profileBeginFrame(void);
+    DAPI void               profileEndFrame(void);
+    DAPI void               profileRecordEntry(const c8 *name, u64 cycles, f64 elapsed_us);
+    DAPI const ProfileFrame *profileGetCurrentFrame(void);
+
+    // geometry counters (called from drawMesh, etc.)
+    DAPI void               profileAddTriangles(u32 count);
+    DAPI void               profileAddVertices(u32 count);
+    DAPI void               profileAddEntities(u32 count);
+
+    // GL state change tracking (call from wrappers or manually)
+    DAPI void               profileCountShaderBind(void);
+    DAPI void               profileCountTextureBind(void);
+    DAPI void               profileCountVAOBind(void);
+    DAPI void               profileCountBufferBind(void);
+    DAPI void               profileCountUniformUpload(void);
+    DAPI void               profileCountFBOBind(void);
+    DAPI void               profileCountBufferUpload(u64 bytes);
+
+    // memory tracking
+    DAPI void               profileCountAlloc(u64 bytes);
+    DAPI void               profileCountFree(void);
+
+    DAPI extern u32 g_drawCalls;
+    DAPI extern u32 g_triangles;
+    DAPI extern u32 g_vertices;
+
+#ifdef DRUID_PROFILE
+#define PROFILE_SCOPE(label) \
+    ProfileScope_ _pscope_##__LINE__ __attribute__((cleanup(profileScopeEnd_))) = \
+        { (label), profileRDTSC_() }
+#define PROFILE_CYCLES_BEGIN(var) u64 var = profileRDTSC_()
+#define PROFILE_CYCLES_END(var, out) (out) = profileRDTSC_() - (var)
+#else
+#define PROFILE_SCOPE(label) ((void)0)
+#define PROFILE_CYCLES_BEGIN(var) ((void)0)
+#define PROFILE_CYCLES_END(var, out) ((void)0)
+#endif
+
+    //=====================================================================================================================
+
     extern double FPS;
     typedef struct
     {
@@ -1447,7 +1733,7 @@ extern "C"
     DAPI void initSystems(const Application *app);
     DAPI void startApplication(Application *app);
 
-    DAPI void render(Application *app, f32 dt);
+    DAPI void applicationRenderStep(Application *app, f32 dt);
 
     // Input
 
