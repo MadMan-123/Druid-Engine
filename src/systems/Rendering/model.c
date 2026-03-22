@@ -1,4 +1,4 @@
-#include "druid.h"
+#include "../../../include/druid.h"
 #include <assimp/cimport.h>
 #include <assimp/material.h>
 #include <assimp/postprocess.h>

@@ -80,14 +80,14 @@ u8 createEntityInArchetype(Archetype *arch, u64 *outEntity)
     }
 
     u32 index = createEntity(&arch->arena[0]);
-    if(index == 0)
+    if(index == (u32)-1)
     {
         ERROR("createEntityInArchetype: Failed to create entity in arena");
         return false;
     }
 
     //pack the archetype id and index into a u64
-    *outEntity = ((u64)arch->id << 32) | (u64)(index - 1); // index is 1-based
+    *outEntity = ((u64)arch->id << 32) | (u64)index;
 
     return true;
 }
@@ -130,5 +130,87 @@ void **getArchetypeFields(Archetype *arch, u32 arenaIndex)
 
 
     return arch->arena[arenaIndex].fields;
+}
+
+//=====================================================================================================================
+// Pool API for buffered archetypes
+//=====================================================================================================================
+
+u32 archetypePoolSpawn(Archetype *arch)
+{
+    if (!arch || !arch->isBuffered)
+    {
+        ERROR("archetypePoolSpawn: NULL archetype or not buffered");
+        return (u32)-1;
+    }
+
+    void **fields = getArchetypeFields(arch, 0);
+    if (!fields)
+    {
+        ERROR("archetypePoolSpawn: failed to get fields");
+        return (u32)-1;
+    }
+
+    // Alive field is always at index 0 for buffered archetypes
+    b8 *alive = (b8 *)fields[0];
+    u32 count = arch->arena[0].count;
+
+    // Linear scan for first dead slot
+    for (u32 i = 0; i < count; i++)
+    {
+        if (!alive[i])
+        {
+            alive[i] = true;
+            return i;
+        }
+    }
+
+    // No free slot — try to grow if allowed
+    if (arch->poolCapacity == 0 || count < arch->poolCapacity)
+    {
+        u32 newIndex = count;
+        arch->arena[0].count = count + 1;
+
+        // Re-fetch fields pointer in case the arena grew
+        fields = getArchetypeFields(arch, 0);
+        alive = (b8 *)fields[0];
+        alive[newIndex] = true;
+        return newIndex;
+    }
+
+    // Pool is full
+    WARN("archetypePoolSpawn: pool is full (capacity %u)", arch->poolCapacity);
+    return (u32)-1;
+}
+
+void archetypePoolDespawn(Archetype *arch, u32 index)
+{
+    if (!arch || !arch->isBuffered)
+    {
+        ERROR("archetypePoolDespawn: NULL archetype or not buffered");
+        return;
+    }
+
+    void **fields = getArchetypeFields(arch, 0);
+    if (!fields) return;
+
+    b8 *alive = (b8 *)fields[0];
+    if (index < arch->arena[0].count)
+    {
+        alive[index] = false;
+    }
+}
+
+b8 archetypePoolIsAlive(Archetype *arch, u32 index)
+{
+    if (!arch || !arch->isBuffered) return false;
+
+    void **fields = getArchetypeFields(arch, 0);
+    if (!fields) return false;
+
+    b8 *alive = (b8 *)fields[0];
+    if (index >= arch->arena[0].count) return false;
+
+    return alive[index];
 }
 

@@ -84,12 +84,25 @@ b8 generateArchetypeFiles(const c8 *projectDir,
                            const FieldInfo *fields,
                            const c8 **typeNames,
                            u32 fieldCount,
-                           b8 isSingle)
+                           b8 isSingle,
+                           b8 isBuffered,
+                           u32 poolCapacity)
 {
     if (!projectDir || !archetypeName || !fields || !typeNames || fieldCount == 0)
     {
         ERROR("generateArchetypeFiles: invalid parameters");
         return false;
+    }
+
+    // Create camelCase version of name (e.g., "Bullet" → "bullet")
+    c8 camelCaseName[256];
+    if (archetypeName[0] != '\0')
+    {
+        snprintf(camelCaseName, sizeof(camelCaseName), "%c%s", tolower(archetypeName[0]), archetypeName + 1);
+    }
+    else
+    {
+        camelCaseName[0] = '\0';
     }
 
     // ---- write header file ----
@@ -113,10 +126,10 @@ b8 generateArchetypeFiles(const c8 *projectDir,
     fprintf(hf, "extern DSAPI StructLayout %s_layout;\n\n", archetypeName);
 
     // system callbacks
-    fprintf(hf, "DSAPI void %s_init(void);\n", archetypeName);
-    fprintf(hf, "DSAPI void %s_update(Archetype *arch, f32 dt);\n", archetypeName);
-    fprintf(hf, "DSAPI void %s_render(Archetype *arch, Renderer *r);\n", archetypeName);
-    fprintf(hf, "DSAPI void %s_destroy(void);\n\n", archetypeName);
+    fprintf(hf, "DSAPI void %sInit(void);\n", camelCaseName);
+    fprintf(hf, "DSAPI void %sUpdate(Archetype *arch, f32 dt);\n", camelCaseName);
+    fprintf(hf, "DSAPI void %sRender(Archetype *arch, Renderer *r);\n", camelCaseName);
+    fprintf(hf, "DSAPI void %sDestroy(void);\n\n", camelCaseName);
 
     // DLL entry point (unique per archetype so multiple systems can coexist in one DLL)
     fprintf(hf, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n");
@@ -138,13 +151,33 @@ b8 generateArchetypeFiles(const c8 *projectDir,
 
     fprintf(sf, "#include \"%s.h\"\n\n", archetypeName);
 
+    // Pool capacity define for buffered archetypes
+    if (isBuffered)
+    {
+        fprintf(sf, "#define POOL_CAPACITY %u\n\n", poolCapacity);
+    }
+
     // ---- field layout (SOA) ----
     fprintf(sf, "// SOA field layout — matches the order used by getArchetypeFields()\n");
     fprintf(sf, "//\n");
+    
+    // If buffered, first field is always Alive
+    if (isBuffered)
+    {
+        fprintf(sf, "//   [0] Alive  (b8)  - marks instances as active in the pool\n");
+    }
+    
     for (u32 i = 0; i < fieldCount; i++)
-        fprintf(sf, "//   [%u] %s  (%s)\n", i, fields[i].name, typeNames[i]);
+        fprintf(sf, "//   [%u] %s  (%s)\n", isBuffered ? i+1 : i, fields[i].name, typeNames[i]);
     fprintf(sf, "//\n");
     fprintf(sf, "DSAPI FieldInfo %s_fields[] = {\n", archetypeName);
+    
+    // Add Alive field for buffered archetypes
+    if (isBuffered)
+    {
+        fprintf(sf, "    { \"Alive\", sizeof(b8) },\n");
+    }
+    
     for (u32 i = 0; i < fieldCount; i++)
     {
         fprintf(sf, "    { \"%s\", sizeof(%s) }%s\n",
@@ -158,93 +191,95 @@ b8 generateArchetypeFiles(const c8 *projectDir,
     fprintf(sf, "    %s_fields,\n", archetypeName);
     fprintf(sf, "    sizeof(%s_fields) / sizeof(FieldInfo)\n", archetypeName);
     fprintf(sf, "};\n\n");
+    
+    // Add marker comment for scanning
+    if (isBuffered)
+    {
+        fprintf(sf, "// isBuffered\n");
+    }
+    if (isSingle)
+    {
+        fprintf(sf, "// isSingle\n");
+    }
+    fprintf(sf, "\n");
 
-    // ---- static renderer slots ----
-    fprintf(sf, "//=====================================================================================================================\n");
-    fprintf(sf, "// Renderer resources — acquired in init, released in destroy\n");
-    fprintf(sf, "//=====================================================================================================================\n\n");
     fprintf(sf, "static u32 s_ibSlot = (u32)-1;\n\n");
 
-    // ---- init ----
-    fprintf(sf, "//=====================================================================================================================\n");
-    fprintf(sf, "// Lifecycle\n");
-    fprintf(sf, "//=====================================================================================================================\n\n");
-
-    fprintf(sf, "void %s_init(void)\n{\n", archetypeName);
-    fprintf(sf, "    // Acquire an InstanceBuffer from the global renderer.\n");
+    fprintf(sf, "void %sInit(void)\n{\n", camelCaseName);
     fprintf(sf, "    s_ibSlot = rendererAcquireInstanceBuffer(renderer, 1024);\n");
     fprintf(sf, "}\n\n");
 
-    // ---- update ----
-    fprintf(sf, "void %s_update(Archetype *arch, f32 dt)\n{\n", archetypeName);
+    fprintf(sf, "void %sUpdate(Archetype *arch, f32 dt)\n{\n", camelCaseName);
     fprintf(sf, "    void **fields = getArchetypeFields(arch, 0);\n");
     fprintf(sf, "    u32    count  = arch->arena[0].count;\n\n");
 
     // typed field casts
-    for (u32 i = 0; i < fieldCount; i++)
-        fprintf(sf, "    %s *%s = (%s *)fields[%u];\n", typeNames[i], fields[i].name, typeNames[i], i);
+    if (isBuffered)
+    {
+        fprintf(sf, "    b8 *alive = (b8 *)fields[0];\n");
+        for (u32 i = 0; i < fieldCount; i++)
+            fprintf(sf, "    %s *%s = (%s *)fields[%u];\n", typeNames[i], fields[i].name, typeNames[i], i + 1);
+    }
+    else
+    {
+        for (u32 i = 0; i < fieldCount; i++)
+            fprintf(sf, "    %s *%s = (%s *)fields[%u];\n", typeNames[i], fields[i].name, typeNames[i], i);
+    }
     fprintf(sf, "\n");
 
     if (isSingle)
     {
-        fprintf(sf, "    // Single archetype — count is always 0 or 1.\n");
-        fprintf(sf, "    if (count == 0) return;\n\n");
-        fprintf(sf, "    // Access fields directly at index 0:\n");
-        fprintf(sf, "    // %s[0] = ...;\n", fields[0].name);
+        fprintf(sf, "    if (count == 0) return;\n");
+    }
+    else if (isBuffered)
+    {
+        fprintf(sf, "    for (u32 i = 0; i < count; i++)\n");
+        fprintf(sf, "    {\n");
+        fprintf(sf, "        if (!alive[i]) continue;\n");
+        fprintf(sf, "    }\n");
     }
     else
     {
         fprintf(sf, "    for (u32 i = 0; i < count; i++)\n");
         fprintf(sf, "    {\n");
-        fprintf(sf, "        // Example: %s[i]\n", fields[0].name);
         fprintf(sf, "    }\n");
     }
     fprintf(sf, "}\n\n");
 
-    // ---- render ----
-    fprintf(sf, "//=====================================================================================================================\n");
-    fprintf(sf, "// Rendering — called each frame during play mode.\n");
-    fprintf(sf, "//\n");
-    fprintf(sf, "// The editor already renders scene entities (meshes + materials) into the\n");
-    fprintf(sf, "// viewport before this callback runs.  Use this function for additional\n");
-    fprintf(sf, "// per-archetype effects (debug visualisation, particles, custom draw calls)\n");
-    fprintf(sf, "// or to override the default rendering entirely.\n");
-    fprintf(sf, "//\n");
-    fprintf(sf, "// The InstanceBuffer can be used for efficient instanced draws:\n");
-    fprintf(sf, "//   ib->data[ib->count++] = modelMatrix;   // push matrices\n");
-    fprintf(sf, "//   rendererFlushInstances(r, s_ibSlot, r->defaultShader);\n");
-    fprintf(sf, "//   glDrawArraysInstanced(...);\n");
-    fprintf(sf, "//=====================================================================================================================\n\n");
+    fprintf(sf, "// Optional: implement custom rendering for this archetype.\n");
+    fprintf(sf, "// When render is NULL (see druidGetECSSystem below), the engine uses a\n");
+    fprintf(sf, "// default forward pass based on Position/Rotation/Scale/ModelID fields.\n");
+    fprintf(sf, "// Uncomment and set out->render = %sRender to take full control.\n\n", camelCaseName);
 
-    fprintf(sf, "void %s_render(Archetype *arch, Renderer *r)\n{\n", archetypeName);
+    fprintf(sf, "/*\nvoid %sRender(Archetype *arch, Renderer *r)\n{\n", camelCaseName);
     fprintf(sf, "    void **fields = getArchetypeFields(arch, 0);\n");
     fprintf(sf, "    u32    count  = arch->arena[0].count;\n\n");
 
     // typed field casts (same as update)
-    for (u32 i = 0; i < fieldCount; i++)
-        fprintf(sf, "    %s *%s = (%s *)fields[%u];\n", typeNames[i], fields[i].name, typeNames[i], i);
-    fprintf(sf, "\n");
+    // If buffered, first field is Alive
+    if (isBuffered)
+    {
+        fprintf(sf, "    b8 *alive = (b8 *)fields[0];\n");
+        for (u32 i = 0; i < fieldCount; i++)
+            fprintf(sf, "    %s *%s = (%s *)fields[%u];\n", typeNames[i], fields[i].name, typeNames[i], i + 1);
+    }
+    else
+    {
+        for (u32 i = 0; i < fieldCount; i++)
+            fprintf(sf, "    %s *%s = (%s *)fields[%u];\n", typeNames[i], fields[i].name, typeNames[i], i);
+    }
+    fprintf(sf, "\n    (void)r;\n    (void)arch;\n    (void)count;\n");
+    fprintf(sf, "}\n*/\n\n");
 
-    fprintf(sf, "    (void)r; // renderer available for custom draw calls\n");
-    fprintf(sf, "    (void)count;\n");
-    fprintf(sf, "}\n\n");
-
-    // ---- destroy ----
-    fprintf(sf, "void %s_destroy(void)\n{\n", archetypeName);
-    fprintf(sf, "    // Release renderer resources.\n");
+    fprintf(sf, "void %sDestroy(void)\n{\n", camelCaseName);
     fprintf(sf, "    if (s_ibSlot != (u32)-1) { rendererReleaseInstanceBuffer(renderer, s_ibSlot); s_ibSlot = (u32)-1; }\n");
     fprintf(sf, "}\n\n");
 
-    // ---- DLL export ----
-    fprintf(sf, "//=====================================================================================================================\n");
-    fprintf(sf, "// DLL entry point — do not remove\n");
-    fprintf(sf, "//=====================================================================================================================\n\n");
-
     fprintf(sf, "void druidGetECSSystem_%s(ECSSystemPlugin *out)\n{\n", archetypeName);
-    fprintf(sf, "    out->init    = %s_init;\n", archetypeName);
-    fprintf(sf, "    out->update  = %s_update;\n", archetypeName);
-    fprintf(sf, "    out->render  = %s_render;\n", archetypeName);
-    fprintf(sf, "    out->destroy = %s_destroy;\n", archetypeName);
+    fprintf(sf, "    out->init    = %sInit;\n", camelCaseName);
+    fprintf(sf, "    out->update  = %sUpdate;\n", camelCaseName);
+    fprintf(sf, "    out->render  = NULL;  // default forward pass; set to %sRender for custom\n", camelCaseName);
+    fprintf(sf, "    out->destroy = %sDestroy;\n", camelCaseName);
     fprintf(sf, "}\n");
 
     fclose(sf);

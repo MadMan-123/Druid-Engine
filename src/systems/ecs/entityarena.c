@@ -116,14 +116,13 @@ b8 freeEntityArena(EntityArena* arena, u32 arenaCount)
 	return true;
 }
 
-//allocate an enitity
+//allocate an entity — returns 0-based index, or (u32)-1 on failure
 u32 createEntity(EntityArena* arena)
 {
-	
 	if(arena->count >= arena->entityCount)
 	{
 		WARN("Arena Filled\n");
-		return 0;
+		return (u32)-1;
 	}
 	u32 id = arena->count;
 
@@ -153,20 +152,16 @@ b8 removeEntityFromArena(EntityArena* arena, u32 index)
 		return false;
 	}
 
-	// move last element into the removed slot for each field to keep packed layout
+	// swap-remove: copy last element into the removed slot per-field (SoA layout)
 	u32 lastIndex = arena->count - 1;
 	if(index != lastIndex)
 	{
-		u8 *base = (u8*)arena->data;
-		u32 entitySize = 0;
-		// compute total entity size from layout
 		for(u32 i = 0; i < arena->layout->count; i++)
-			entitySize += arena->layout->fields[i].size;
-
-		// copy data from lastIndex to index for the entire entity block
-		u8 *dst = base + (index * entitySize);
-		u8 *src = base + (lastIndex * entitySize);
-		memcpy(dst, src, entitySize);
+		{
+			u32 fieldSize = arena->layout->fields[i].size;
+			u8 *field = (u8 *)arena->fields[i];
+			memcpy(field + index * fieldSize, field + lastIndex * fieldSize, fieldSize);
+		}
 	}
 
 	arena->count--;

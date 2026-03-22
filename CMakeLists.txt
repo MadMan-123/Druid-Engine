@@ -23,7 +23,7 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
 )
 
 # Disable warnings on stb_image
-set_source_files_properties(${CMAKE_SOURCE_DIR}/src/stb_image.c PROPERTIES COMPILE_FLAGS "-w")
+set_source_files_properties(${CMAKE_SOURCE_DIR}/src/external/stb_image.c PROPERTIES COMPILE_FLAGS "-w")
 
 # Build engine as a shared library using the globbed sources only
 add_library(druid SHARED ${ENGINE_SOURCES})
@@ -38,7 +38,7 @@ target_include_directories(druid PUBLIC
 
 # Compiler options
 target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32 DRUID_PROFILE)
-target_compile_options(druid PRIVATE -Wall -O3 -std=c11 -fPIC -g )
+target_compile_options(druid PRIVATE -Wall -O3 -fPIC -g)
 
 target_link_libraries(druid PUBLIC
     ${CMAKE_SOURCE_DIR}/deps/libglew.dll.a

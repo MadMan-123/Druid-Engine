@@ -1,4 +1,4 @@
-#include "../../../Include/druid.h"
+#include "../../../include/druid.h"
 
 Mat4 getViewProjection(const Camera* camera)
 {
@@ -80,6 +80,18 @@ void rotateY(Camera* camera, f32 angle) {
     //apply the yaw quaternion to the camera's orientation
     camera->orientation = quatNormalize(quatMul(camera->orientation, yawQuat));
 
-  
 
+
+}
+
+void cameraSetPerspective(Camera *cam, f32 fovDeg, f32 aspect, f32 nearClip, f32 farClip)
+{
+    if (!cam) return;
+    cam->projection = mat4Perspective(radians(fovDeg), aspect, nearClip, farClip);
+}
+
+void cameraSetOrthographic(Camera *cam, f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip)
+{
+    if (!cam) return;
+    cam->projection = mat4Ortho(left, right, bottom, top, nearClip, farClip);
 }

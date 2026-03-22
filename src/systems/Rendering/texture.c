@@ -1,5 +1,5 @@
 #include "../../../include/druid.h"
-#include "../../stb_image.h"
+#include "../../external/stb_image.h"
 
 u32 initTexture(const c8* fileName)
 {
@@ -71,11 +71,11 @@ u32 createCubeMapTexture(const c8** faces,u32 count)
 				data);
             stbi_image_free(data);
         } 
-		else 
+		else
 		{
-			//TODO: add proper error handling
-			printf("Cubemap texture failed to load at path: %s\n", faces[i]);
-	
+			ERROR("Cubemap face %u failed to load: %s", i, faces[i]);
+			ERROR("STB reason: %s", stbi_failure_reason());
+
     		stbi_image_free(data);
     		glDeleteTextures(1, &textureHandler);
     		return 0;
@@ -105,10 +105,8 @@ void freeTexture(u32 texture)
 
 void bindTexture(u32 texture,u32 unit, GLenum type)
 {
-	//check if the unit is valid
-	assert(unit >= 0 && unit <= 31); 
-
-	//bind the texture to the unit
-	glActiveTexture(GL_TEXTURE0 + unit); 
-	glBindTexture(type, texture); 
+	assert(unit >= 0 && unit <= 31);
+	glActiveTexture(GL_TEXTURE0 + unit);
+	glBindTexture(type, texture);
+	profileCountTextureBind();
 }

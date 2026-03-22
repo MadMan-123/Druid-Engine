@@ -1,5 +1,5 @@
 #pragma once
-#include "druid.h"
+#include <druid.h>
 
 // Defined in hub.cpp
 extern Application *hubApplication;

@@ -1,5 +1,5 @@
 //generate the functions for file handling but dont actually implement them here, just the declarations.
-#include "druid.h"
+#include "../../include/druid.h"
 
 #if PLATFORM_WINDOWS
 #define NOGDI

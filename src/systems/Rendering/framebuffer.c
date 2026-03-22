@@ -1,4 +1,4 @@
-#include "../../include/druid.h"
+#include "../../../include/druid.h"
 
 Framebuffer createFramebuffer(u32 width, u32 height, GLenum internalFormat, b8 hasDepth)
 {
@@ -59,11 +59,13 @@ void bindFramebuffer(Framebuffer *fb)
     if (!fb) return;
     glBindFramebuffer(GL_FRAMEBUFFER, fb->fbo);
     glViewport(0,0, fb->width, fb->height);
+    profileCountFBOBind();
 }
 
 void unbindFramebuffer(void)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    profileCountFBOBind();
 }
 
 void destroyFramebuffer(Framebuffer *fb)
