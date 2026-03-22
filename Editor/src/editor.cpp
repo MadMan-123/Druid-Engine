@@ -18,15 +18,16 @@
 // SceneEntity archetype definition (moved from druid.h)
 DEFINE_ARCHETYPE(SceneEntity,
     FIELD(Vec3, position),
-    FIELD(Vec4, rotation), 
+    FIELD(Vec4, rotation),
     FIELD(Vec3, scale),
     FIELD(b8, isActive),
     FIELD(c8[MAX_NAME_SIZE], name),
     FIELD(u32, modelID),
     FIELD(u32, shaderHandle),
     FIELD(u32, materialID),
-    FIELD(u32, archetypeID),
-    FIELD(b8, isSceneCamera)
+    FIELD(u32, archetypeID),   // index into g_archRegistry (which archetype type)
+    FIELD(b8, isSceneCamera),
+    FIELD(u32, ecsSlotID)      // runtime slot index within the ECS archetype's SoA buffer
 );
 
 // Editor-side registry of user-created archetypes
@@ -44,7 +45,8 @@ static b8 showSaveModal = false;
 static b8 showLoadModal = false;
 static b8 showNewSceneModal = false;
 static b8 showProfiler = false;
-static b8 showSkyboxSettings = false;
+static b8 showScenesPanel = true;
+b8 showSkyboxSettings = false;
 
 // Skybox face paths (6 faces: right, left, top, bottom, front, back)
 static c8 g_skyboxFaces[6][512] = {
@@ -76,6 +78,9 @@ u32 skyboxShader = 0;
 u32 skyboxViewLoc = 0;
 u32 skyboxProjLoc = 0;
 
+// Shared error string for skybox UI feedback
+static char g_skyboxError[256] = "";
+
 // Reload cubemap from 6 individual face texture paths
 static void reloadSkyboxFromFaces(const c8 *facePaths[6])
 {
@@ -83,13 +88,39 @@ static void reloadSkyboxFromFaces(const c8 *facePaths[6])
     for (u32 i = 0; i < 6; i++)
         faces[i] = facePaths[i];
 
+    // Validate that all 6 face files exist before attempting GPU upload
+    b8 allValid = true;
+    for (u32 i = 0; i < 6; i++)
+    {
+        if (!facePaths[i] || facePaths[i][0] == '\0')
+        {
+            ERROR("Skybox face %u: path is empty", i);
+            allValid = false;
+            continue;
+        }
+        if (!fileExists(facePaths[i]))
+        {
+            ERROR("Skybox face %u missing: %s", i, facePaths[i]);
+            allValid = false;
+        }
+    }
+    if (!allValid)
+    {
+        WARN("Cannot load skybox: one or more face images missing");
+        snprintf(g_skyboxError, sizeof(g_skyboxError), "Failed to load skybox: one or more face files not found");
+        return;
+    }
+
+    // Create the new cubemap FIRST, before destroying the old one
     u32 newTex = createCubeMapTexture(faces, 6);
     if (newTex == 0)
     {
         ERROR("Failed to load skybox cubemap");
+        snprintf(g_skyboxError, sizeof(g_skyboxError), "Failed to create cubemap texture (check face image formats)");
         return;
     }
 
+    // Only destroy the old texture after the new one succeeds
     if (cubeMapTexture != 0)
         freeTexture(cubeMapTexture);
     cubeMapTexture = newTex;
@@ -100,6 +131,9 @@ static void reloadSkyboxFromFaces(const c8 *facePaths[6])
         strncpy(g_skyboxFaces[i], facePaths[i], sizeof(g_skyboxFaces[i]) - 1);
         g_skyboxFaces[i][sizeof(g_skyboxFaces[i]) - 1] = '\0';
     }
+
+    // Clear any previous error on success
+    g_skyboxError[0] = '\0';
     INFO("Skybox reloaded");
 }
 
@@ -141,6 +175,7 @@ u32 inspectorEntityID =
 u32 arrowShader = 0;
 u32 colourLocation = 0;
 u32 fboShader = 0;  // FBO post-processing shader
+u32 deferredLightingShader = 0;
 
 ManipulateTransformState manipulateState = MANIPULATE_POSITION;
 
@@ -346,21 +381,24 @@ static void populateEcsArchetypes()
         for (u32 id = 0; id < entityCount; id++)
             if (archetypeIDs && archetypeIDs[id] == a) matchCount++;
 
-        if (matchCount == 0)
-        {
-            WARN("No entities assigned to archetype '%s'", g_archRegistry.entries[a].name);
-            continue;
-        }
+        // Always create the archetype even if no scene entities are assigned
+        // (e.g. Bullet — entities are spawned at runtime via createEntityInArchetype).
+        // Use a minimum capacity of 256 for dynamic archetypes so spawning works.
+        u32 archCapacity = matchCount > 0 ? matchCount : 256;
 
         // Create per-system archetype using the DLL layout
         Archetype *sysArch = &g_ecsArchetypes[a];
-        if (!createArchetype(dllLayout, matchCount, sysArch))
+        sysArch->isSingle     = g_archRegistry.entries[a].isSingle;
+        sysArch->isBuffered   = g_archRegistry.entries[a].isBuffered;
+        sysArch->poolCapacity = g_archRegistry.entries[a].poolCapacity;
+        sysArch->isPersistent = g_archRegistry.entries[a].isPersistent;
+        if (!createArchetype(dllLayout, archCapacity, sysArch))
         {
             ERROR("Failed to create per-system archetype for '%s'", g_archRegistry.entries[a].name);
             continue;
         }
 
-        g_ecsSceneMap[a] = (u32 *)calloc(matchCount, sizeof(u32));
+        g_ecsSceneMap[a] = matchCount > 0 ? (u32 *)calloc(matchCount, sizeof(u32)) : nullptr;
 
         // Build field mapping: for each system field, find a scene field with
         // the same name (case-insensitive) AND the same byte size.
@@ -401,7 +439,11 @@ static void populateEcsArchetypes()
         for (u32 id = 0; id < entityCount; id++)
         {
             if (!archetypeIDs || archetypeIDs[id] != a) continue;
-            g_ecsSceneMap[a][idx] = id;
+            if (g_ecsSceneMap[a]) g_ecsSceneMap[a][idx] = id;
+
+            // Record the ECS slot index back into the scene entity so game code
+            // can look up its own position in the ECS SoA arrays.
+            if (ecsSlotIDs) ecsSlotIDs[id] = idx;
 
             // Copy matching fields from scene → per-system
             for (u32 f = 0; f < dllLayout->count && f < 64; f++)
@@ -426,8 +468,8 @@ static void populateEcsArchetypes()
         }
         g_ecsArchEntityCount[a] = matchCount;
 
-        INFO("ECS archetype '%s': %u entities, %u/%u fields mapped to scene",
-             g_archRegistry.entries[a].name, matchCount, mappedCount, dllLayout->count);
+        INFO("ECS archetype '%s': %u entities (%u capacity), %u/%u fields mapped to scene",
+             g_archRegistry.entries[a].name, matchCount, archCapacity, mappedCount, dllLayout->count);
     }
 }
 
@@ -559,13 +601,14 @@ static void renderGameScene()
 
     f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
 
-    // ── Sync the editor camera into the renderer's active camera slot ──
-    // In edit mode: always sync sceneCam so the editor free-cam works.
-    // In play mode: the game plugin is allowed to modify the renderer camera
-    //               directly (it gets a pointer from bufferGet).
+    // ── Sync camera into the renderer's active camera slot ──
+    // Edit mode: always sync the editor free-cam (sceneCam).
+    // Play mode: the game DLL / ECS systems own the camera — do NOT
+    //            overwrite it here.  The initial position is set from the
+    //            scene camera entity in doBuildAndRun().
     if (!g_gameRunning && renderer && g_editorCamSlot != (u32)-1)
     {
-        Camera *rCam = (Camera *)bufferGet(&renderer->cameras, g_editorCamSlot);
+        Camera *rCam = rendererGetCamera(renderer, g_editorCamSlot);
         if (rCam) *rCam = sceneCam;
     }
 
@@ -591,18 +634,30 @@ static void renderGameScene()
     // ── Play mode: render scene, then hand off to game plugin + ECS ──
     if (g_gameRunning && g_gameDLL.loaded)
     {
-        // Draw skybox
-        glDepthFunc(GL_LEQUAL);
-        glDepthMask(GL_FALSE);
-        glUseProgram(skyboxShader);
-        glBindVertexArray(skyboxMesh->vao);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        glBindVertexArray(0);
-        glDepthMask(GL_TRUE);
-        glDepthFunc(GL_LESS);
+        b8 deferred = renderer && renderer->useDeferredRendering
+                      && renderer->activeGBuffer != (u32)-1;
 
-        // Draw scene entities (same forward pass as edit mode)
+        // If deferred, bind GBuffer for all geometry (scene + ECS)
+        if (deferred)
+            rendererBeginDeferredPass(renderer);
+
+        // Draw skybox (always forward — doesn't write to GBuffer)
+        if (!deferred)
+        {
+            glDepthFunc(GL_LEQUAL);
+            glDepthMask(GL_FALSE);
+            glUseProgram(skyboxShader);
+            glBindVertexArray(skyboxMesh->vao);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glBindVertexArray(0);
+            glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS);
+        }
+
+        // Draw scene entities
+        {
+        PROFILE_SCOPE("Scene Render");
         Transform newTransform = {0};
         for (u32 id = 0; id < entityCount; id++)
         {
@@ -646,12 +701,43 @@ static void renderGameScene()
                 drawMesh(mesh);
             }
         }
+        } // PROFILE_SCOPE("Scene Render")
 
         // Run ECS system render callbacks (custom rendering per archetype)
+        // If the archetype has no custom render, fall back to the default forward pass.
+        // All geometry goes to the same render target (GBuffer if deferred, viewport FBO if forward).
+        {
+        PROFILE_SCOPE("ECS Render");
         for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
         {
-            if (g_ecsSystemLoaded[a] && g_ecsSystems[a].render && g_ecsArchEntityCount[a] > 0)
+            if (g_ecsArchEntityCount[a] == 0 && !g_ecsArchetypes[a].isBuffered) continue;
+            if (g_ecsSystemLoaded[a] && g_ecsSystems[a].render)
                 g_ecsSystems[a].render(&g_ecsArchetypes[a], renderer);
+            else
+                rendererDefaultArchetypeRender(&g_ecsArchetypes[a], renderer);
+        }
+        } // PROFILE_SCOPE("ECS Render")
+
+        // End deferred geometry pass, run lighting, then draw skybox on top
+        if (deferred)
+        {
+            rendererEndDeferredPass(renderer);
+
+            // Lighting pass renders to the viewport FBO
+            bindFramebuffer(&viewportFBs[activeFBO]);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            rendererLightingPass(renderer, deferredLightingShader);
+
+            // Draw skybox after lighting (writes directly to viewport FBO)
+            glDepthFunc(GL_LEQUAL);
+            glDepthMask(GL_FALSE);
+            glUseProgram(skyboxShader);
+            glBindVertexArray(skyboxMesh->vao);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glBindVertexArray(0);
+            glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS);
         }
 
         unbindFramebuffer();
@@ -759,31 +845,40 @@ static void renderGameScene()
     if (manipulateTransform)
     {
         Vec3 pos = positions[inspectorEntityID];
-        const f32 scaleSize = 0.1f;
-        const f32 scaleLength = 1.1f;
 
-        Transform X = {v3Add(pos, v3Right), quatIdentity(),
-                       {scaleLength, scaleSize, scaleSize}};
-        Transform Y = {v3Add(pos, v3Up), quatIdentity(),
-                       {scaleSize, scaleLength, scaleSize}};
+        // Scale gizmos based on distance from camera so they stay a constant screen size
+        f32 dist = v3Mag(v3Sub(pos, sceneCam.pos));
+        if (dist < 1.0f) dist = 1.0f;
+        f32 gizmoScale = dist * 0.12f;
 
-        Transform Z = {v3Add(pos, v3Back), quatIdentity(),
-                       {scaleSize, scaleSize, scaleLength}};
+        const f32 scaleSize   = 0.06f * gizmoScale;
+        const f32 scaleLength = 1.0f  * gizmoScale;
+        const f32 offset      = 0.5f  * gizmoScale;
 
-        // visually draw the arrows
+        Vec3 offX = {offset, 0.0f,    0.0f};
+        Vec3 offY = {0.0f,   offset,  0.0f};
+        Vec3 offZ = {0.0f,   0.0f,   -offset};
+        Transform X = {v3Add(pos, offX), quatIdentity(), {scaleLength, scaleSize, scaleSize}};
+        Transform Y = {v3Add(pos, offY), quatIdentity(), {scaleSize, scaleLength, scaleSize}};
+        Transform Z = {v3Add(pos, offZ), quatIdentity(), {scaleSize, scaleSize, scaleLength}};
 
-        // *** Use the arrow shader ONLY for the arrows ***
+        // Draw gizmos on top of everything (no depth test)
+        glDisable(GL_DEPTH_TEST);
         glUseProgram(arrowShader);
 
-        updateShaderModel(arrowShader, X);  // Only set model matrix
-        glUniform3f(colourLocation, 0.0f, 1.0f, 0.0f);
+        updateShaderModel(arrowShader, X);
+        glUniform3f(colourLocation, 1.0f, 0.2f, 0.2f);
         drawMesh(cubeMesh);
+
         updateShaderModel(arrowShader, Y);
-        glUniform3f(colourLocation, 1.0f, 0.0f, 0.0f);
+        glUniform3f(colourLocation, 0.2f, 1.0f, 0.2f);
         drawMesh(cubeMesh);
+
         updateShaderModel(arrowShader, Z);
-        glUniform3f(colourLocation, 0.0f, 0.0f, 1.0f);
+        glUniform3f(colourLocation, 0.2f, 0.4f, 1.0f);
         drawMesh(cubeMesh);
+
+        glEnable(GL_DEPTH_TEST);
     }
 
     // Ensure we're in a clean OpenGL state before unbinding
@@ -827,14 +922,28 @@ static void drawViewportWindow()
     ImGui::SetCursorPos(
         ImVec2(cursor.x + imageOffset.x, cursor.y + imageOffset.y));
 
-    // Save image position for mouse picking
-    g_viewportScreenPos = ImVec2(viewportWindowPos.x + imageOffset.x,
-                                 viewportWindowPos.y + imageOffset.y);
+    // Save image position for mouse picking — must include the content region
+    // offset (title bar + padding) so viewport-relative coords are correct.
+    g_viewportScreenPos = ImGui::GetCursorScreenPos();
     g_viewportSize = ImVec2(targetW, targetH);
 
     // update camera projection
     sceneCam.projection =
         mat4Perspective(radians(70.0f), targetAspect, 0.1f, 100.0f);
+
+    // Sync camera into renderer and push UBO BEFORE the ID pass so that
+    // entity/gizmo picking uses the current frame's view/projection matrices.
+    // (rendererBeginFrame inside renderGameScene would be too late.)
+    if (renderer && !g_gameRunning && g_editorCamSlot != (u32)-1)
+    {
+        Camera *rCam = (Camera *)bufferGet(&renderer->cameras, g_editorCamSlot);
+        if (rCam)
+        {
+            *rCam = sceneCam;
+            Mat4 view = getView(rCam, false);
+            updateCoreShaderUBO(renderer->time, &rCam->pos, &view, &rCam->projection);
+        }
+    }
 
     renderIDPass();
     renderGameScene();
@@ -877,8 +986,17 @@ static void drawViewportWindow()
 
 static void drawDebugWindow()
 {
-    const c8 *inspectorStateNames[] = {"EMPTY_VIEW", "ENTITY_VIEW"};
+    const c8 *inspectorStateNames[] = {"EMPTY_VIEW", "ENTITY_VIEW", "SKYBOX_VIEW"};
     ImGui::Begin("Debug");
+
+    // VSync toggle
+    {
+        static bool vsyncOn = false;
+        if (ImGui::Checkbox("VSync", &vsyncOn))
+            setVSync(vsyncOn ? 1 : 0);
+    }
+    ImGui::Separator();
+
     ImGui::Text("FPS %lf", editor->fps);
     ImGui::Text("Entity Count: %d", entityCount);
     ImGui::Text("Entity Size: %d", entitySize);
@@ -1147,6 +1265,16 @@ void scanProjectArchetypes(const c8 *projectDir)
         if (strstr(buf, "isSingle"))
             entry->isSingle = true;
 
+        // Check for isBuffered
+        if (strstr(buf, "isBuffered"))
+            entry->isBuffered = true;
+
+        // Scan for POOL_CAPACITY define
+        {
+            const char *pcDef = strstr(buf, "#define POOL_CAPACITY ");
+            if (pcDef) entry->poolCapacity = (u32)atoi(pcDef + 22);
+        }
+
         // Detect uniform scale: field named "Scale" with sizeof(f32)
         if (fieldCount >= 3
             && strcmp(g_scannedFieldNames[regIdx][2], "Scale") == 0
@@ -1169,6 +1297,8 @@ static void drawPrefabsWindow()
     static c8  archName[128]           = "";
     static bool archIsSingle           = false;
     static bool archIsPersistent       = false;
+    static bool archIsBuffered         = false;
+    static i32 archBufferSize          = 100;  // pool size for buffered archetypes
 
     // field editing table
     #define ARCH_MAX_FIELDS 32
@@ -1201,6 +1331,16 @@ static void drawPrefabsWindow()
     ImGui::Checkbox("isSingle", &archIsSingle);
     ImGui::SameLine();
     ImGui::Checkbox("isPersistent", &archIsPersistent);
+    ImGui::SameLine();
+    ImGui::Checkbox("isBuffered", &archIsBuffered);
+    
+    if (archIsBuffered)
+    {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(100);
+        ImGui::SliderInt("Pool Size", &archBufferSize, 10, 1000);
+        ImGui::TextDisabled("Buffered archetypes create a pool with hidden instances (Alive flag)");
+    }
 
     // Transform is always included; offer uniform scale option
     static bool archUniformScale = false;
@@ -1294,7 +1434,7 @@ static void drawPrefabsWindow()
             allTypes[tfCount + i]       = typeNames[fieldTypeIndex[i]];
         }
 
-        if (generateArchetypeFiles(hubProjectDir, archName, allFields, allTypes, totalFields, archIsSingle))
+        if (generateArchetypeFiles(hubProjectDir, archName, allFields, allTypes, totalFields, archIsSingle, archIsBuffered, (u32)archBufferSize))
         {
             snprintf(resultMsg, sizeof(resultMsg), "Generated %s archetype files.", archName);
 
@@ -1311,9 +1451,11 @@ static void drawPrefabsWindow()
                 strncpy(entry->name, archName, MAX_SCENE_NAME - 1);
                 snprintf(entry->headerPath, MAX_PATH_LENGTH, "src/%s.h", archName);
                 snprintf(entry->sourcePath, MAX_PATH_LENGTH, "src/%s.c", archName);
-                entry->isSingle     = archIsSingle;
-                entry->isPersistent = archIsPersistent;
-                entry->uniformScale = archUniformScale;
+                entry->isSingle      = archIsSingle;
+                entry->isPersistent  = archIsPersistent;
+                entry->uniformScale  = archUniformScale;
+                entry->isBuffered    = archIsBuffered;
+                entry->poolCapacity  = (u32)archBufferSize;
                 entry->layout.name  = entry->name;
                 entry->layout.count = totalFields;
                 // Copy scanned fields for the registry
@@ -1351,19 +1493,65 @@ static void drawPrefabsWindow()
             ArchetypeFileEntry *entry = &g_archRegistry.entries[a];
             ImGui::PushID((int)a + 1000);
 
-            ImGui::BulletText("%s  (%u fields%s%s)",
+            ImGui::BulletText("%s  (%u fields%s%s%s)",
                 entry->name,
                 entry->layout.count,
                 entry->isSingle ? ", single" : "",
-                entry->isPersistent ? ", persistent" : "");
+                entry->isPersistent ? ", persistent" : "",
+                entry->isBuffered ? ", buffered" : "");
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Remove"))
+            {
+                // Unassign this archetype from all scene entities that reference it.
+                // Entities pointing at higher indices get their ID decremented to
+                // keep the registry compact.
+                if (archetypeIDs)
+                {
+                    for (u32 e = 0; e < entityCount; e++)
+                    {
+                        if (archetypeIDs[e] == a)
+                            archetypeIDs[e] = (u32)-1;
+                        else if (archetypeIDs[e] > a && archetypeIDs[e] != (u32)-1)
+                            archetypeIDs[e]--;
+                    }
+                }
+
+                // NOTE: layout.fields always points into g_scannedFields (a static
+                // array) — never heap-allocated — so do NOT call free() on it.
+                // Shift registry entries AND the parallel scanned-field arrays together
+                // so layout.fields pointers remain valid after the shift.
+                for (u32 r = a; r + 1 < g_archRegistry.count; r++)
+                {
+                    g_archRegistry.entries[r] = g_archRegistry.entries[r + 1];
+                    memcpy(g_scannedFields[r],     g_scannedFields[r + 1],     sizeof(g_scannedFields[0]));
+                    memcpy(g_scannedFieldNames[r], g_scannedFieldNames[r + 1], sizeof(g_scannedFieldNames[0]));
+                    // Fix layout.name (points into entry->name) and
+                    // layout.fields (points into the static row) after the copy.
+                    g_archRegistry.entries[r].layout.name   = g_archRegistry.entries[r].name;
+                    g_archRegistry.entries[r].layout.fields = g_scannedFields[r];
+                    for (u32 f = 0; f < g_archRegistry.entries[r].layout.count; f++)
+                        g_scannedFields[r][f].name = g_scannedFieldNames[r][f];
+                }
+                u32 last = g_archRegistry.count - 1;
+                memset(&g_archRegistry.entries[last], 0, sizeof(ArchetypeFileEntry));
+                memset(g_scannedFields[last],     0, sizeof(g_scannedFields[0]));
+                memset(g_scannedFieldNames[last], 0, sizeof(g_scannedFieldNames[0]));
+                g_archRegistry.count--;
+
+                ImGui::PopID();
+                break;  // iterator invalidated — exit the loop
+            }
 
             ImGui::SameLine();
             if (ImGui::SmallButton("Edit"))
             {
                 // Load this archetype into the designer fields
                 strncpy(archName, entry->name, sizeof(archName) - 1);
-                archIsSingle    = entry->isSingle;
+                archIsSingle     = entry->isSingle;
                 archIsPersistent = entry->isPersistent;
+                archIsBuffered   = entry->isBuffered;
+                archBufferSize   = entry->poolCapacity > 0 ? (i32)entry->poolCapacity : 100;
 
                 // We need to re-parse the actual field data from the .c file
                 // to populate fieldNames and fieldTypeIndex
@@ -1431,21 +1619,30 @@ static void drawPrefabsWindow()
                             }
                         }
 
-                        // Detect uniform scale from field[2] and strip
-                        // the first 3 transform fields from the designer.
+                        // Strip the auto-prepended transform fields (and the
+                        // leading Alive field for buffered archetypes) so the
+                        // designer only shows the user-defined extra fields.
                         archUniformScale = false;
                         u32 skipCount = 0;
-                        if (allFieldCount >= 3)
+                        u32 tfStart   = 0;
+
+                        // Buffered archetypes have Alive as field[0]
+                        if (allFieldCount >= 1 && strcmp(allFieldNames[0], "Alive") == 0)
+                            tfStart = 1;
+
+                        if (allFieldCount >= tfStart + 3
+                            && strcmp(allFieldNames[tfStart + 0], "Position") == 0
+                            && strcmp(allFieldNames[tfStart + 1], "Rotation") == 0
+                            && strcmp(allFieldNames[tfStart + 2], "Scale")    == 0)
                         {
-                            // Check first 3 match Position/Rotation/Scale
-                            if (strcmp(allFieldNames[0], "Position") == 0
-                                && strcmp(allFieldNames[1], "Rotation") == 0
-                                && strcmp(allFieldNames[2], "Scale") == 0)
-                            {
-                                skipCount = 3;
-                                // f32 index is 0 in typeNames[]
-                                archUniformScale = (allFieldTypeIdx[2] == 0);
-                            }
+                            skipCount    = tfStart + 3;
+                            // f32 is index 0 in typeNames[]
+                            archUniformScale = (allFieldTypeIdx[tfStart + 2] == 0);
+                        }
+                        else if (tfStart > 0)
+                        {
+                            // Buffered but transform block not found — skip Alive only
+                            skipCount = tfStart;
                         }
 
                         fieldCount = 0;
@@ -1493,12 +1690,14 @@ static void drawPrefabsWindow()
                         rFields[rgTfCount + i].size = typeSizes[fieldTypeIndex[i]];
                         rTypes[rgTfCount + i]       = typeNames[fieldTypeIndex[i]];
                     }
-                    if (generateArchetypeFiles(hubProjectDir, archName, rFields, rTypes, rgTotal, archIsSingle))
+                    if (generateArchetypeFiles(hubProjectDir, archName, rFields, rTypes, rgTotal, archIsSingle, archIsBuffered, (u32)archBufferSize))
                     {
-                        entry->layout.count = rgTotal;
-                        entry->isSingle     = archIsSingle;
-                        entry->isPersistent = archIsPersistent;
-                        entry->uniformScale = archUniformScale;
+                        entry->layout.count  = rgTotal;
+                        entry->isSingle      = archIsSingle;
+                        entry->isPersistent  = archIsPersistent;
+                        entry->uniformScale  = archUniformScale;
+                        entry->isBuffered    = archIsBuffered;
+                        entry->poolCapacity  = (u32)archBufferSize;
                         snprintf(resultMsg, sizeof(resultMsg), "Regenerated %s files.", archName);
                     }
                     else
@@ -1541,26 +1740,25 @@ static void drawProfilerWindow()
 
     ImGui::Begin("Profiler", &showProfiler);
 
-    f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 1.0));
+    f32 dt        = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 1.0));
     f32 currentFps = (f32)editor->fps;
+    f32 dtMs      = dt * 1000.0f;
 
-    // Update ring buffer
-    frameTimeHistory[profilerHistoryIndex] = dt * 1000.0f; // ms
-    fpsHistory[profilerHistoryIndex] = currentFps;
+    // ── Ring buffer update ──
+    frameTimeHistory[profilerHistoryIndex] = dtMs;
+    fpsHistory[profilerHistoryIndex]       = currentFps;
     profilerHistoryIndex = (profilerHistoryIndex + 1) % PROFILER_HISTORY_SIZE;
 
-    // Compute running stats
     profilerAccumulator += dt;
     profilerFrameCount++;
-    if (profilerAccumulator >= 0.5) // update every 0.5s
+    if (profilerAccumulator >= 0.5f)
     {
-        profilerAvgFps = (f32)(profilerFrameCount / profilerAccumulator);
+        profilerAvgFps       = (f32)(profilerFrameCount / profilerAccumulator);
         profilerAvgFrameTime = (f32)(profilerAccumulator / profilerFrameCount) * 1000.0f;
-        profilerAccumulator = 0.0;
-        profilerFrameCount = 0;
+        profilerAccumulator  = 0.0;
+        profilerFrameCount   = 0;
     }
 
-    // Min / Max over history
     profilerMinFrameTime = 9999.0f;
     profilerMaxFrameTime = 0.0f;
     for (u32 i = 0; i < PROFILER_HISTORY_SIZE; i++)
@@ -1572,58 +1770,427 @@ static void drawProfilerWindow()
         }
     }
 
-    // Header stats
-    ImGui::Text("FPS: %.1f", currentFps);
-    ImGui::SameLine();
-    ImGui::Text("  Avg: %.1f", profilerAvgFps);
-    ImGui::Text("Frame Time: %.2f ms", dt * 1000.0f);
-    ImGui::SameLine();
-    ImGui::Text("  Min: %.2f ms  Max: %.2f ms", profilerMinFrameTime, profilerMaxFrameTime);
+    // ── Header ──
+    ImGui::Text("FPS: %.1f  (avg %.1f)", currentFps, profilerAvgFps);
+    ImGui::Text("Frame: %.2f ms  |  min %.2f  max %.2f  avg %.2f",
+                dtMs, profilerMinFrameTime, profilerMaxFrameTime, profilerAvgFrameTime);
+
+    const ProfileFrame *prof = profileGetCurrentFrame();
 
     ImGui::Separator();
 
-    // Frame time graph
+    // ── Frame time graph ──
     {
-        // Build ordered array starting from oldest sample
         f32 ordered[PROFILER_HISTORY_SIZE];
         for (u32 i = 0; i < PROFILER_HISTORY_SIZE; i++)
             ordered[i] = frameTimeHistory[(profilerHistoryIndex + i) % PROFILER_HISTORY_SIZE];
-
-        c8 overlay[64];
-        snprintf(overlay, sizeof(overlay), "%.2f ms", dt * 1000.0f);
-        ImGui::PlotLines("Frame Time (ms)", ordered, PROFILER_HISTORY_SIZE, 0, overlay, 0.0f, profilerMaxFrameTime * 1.2f, ImVec2(0, 60));
+        c8 overlay[32];
+        snprintf(overlay, sizeof(overlay), "%.2f ms", dtMs);
+        ImGui::PlotLines("##FrameTime", ordered, PROFILER_HISTORY_SIZE, 0, overlay,
+                         0.0f, profilerMaxFrameTime * 1.2f, ImVec2(0, 50));
     }
-
-    // FPS graph
-    // {
-    //     f32 ordered[PROFILER_HISTORY_SIZE];
-    //     for (u32 i = 0; i < PROFILER_HISTORY_SIZE; i++)
-    //         ordered[i] = fpsHistory[(profilerHistoryIndex + i) % PROFILER_HISTORY_SIZE];
-
-    //     c8 overlay[64];
-    //     snprintf(overlay, sizeof(overlay), "%.0f FPS", currentFps);
-    //     ImGui::PlotLines("FPS", ordered, PROFILER_HISTORY_SIZE, 0, overlay, 0.0f, profilerAvgFps * 1.5f, ImVec2(0, 80));
-    // }
 
     ImGui::Separator();
 
-    // Rendering stats
-    ImGui::Text("-- Rendering --");
-    ImGui::Text("Entities: %u / %u", entityCount, entitySizeCache);
-    ImGui::Text("Viewport: %u x %u", viewportWidth, viewportHeight);
-    ImGui::Text("Active FBO: %u", activeFBO);
-    if (resources)
+    // ── Timing ──
+    if (ImGui::CollapsingHeader("Timing", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Text("Meshes: %u / %u", resources->meshUsed, resources->meshCount);
-        ImGui::Text("Textures: %u / %u", resources->textureUsed, resources->textureCount);
-        ImGui::Text("Shaders: %u / %u", resources->shaderUsed, resources->shaderCount);
-        ImGui::Text("Materials: %u / %u", resources->materialUsed, resources->materialCount);
-        ImGui::Text("Models: %u / %u", resources->modelUsed, resources->modelCount);
+        if (prof)
+        {
+            ImGui::Text("CPU Frame:  %.2f us  (%.3f ms)  [%llu cycles]",
+                        (f32)prof->frameTime_us,
+                        (f32)(prof->frameTime_us / 1000.0),
+                        (unsigned long long)prof->frameCycles);
+            ImGui::Text("GPU Frame:  %.2f us  (%.3f ms)",
+                        (f32)prof->gpuFrameTime_us,
+                        (f32)(prof->gpuFrameTime_us / 1000.0));
+            f64 cpuGpuRatio = (prof->gpuFrameTime_us > 0.0)
+                              ? prof->frameTime_us / prof->gpuFrameTime_us : 0.0;
+            ImGui::Text("CPU/GPU ratio: %.2fx", (f32)cpuGpuRatio);
+        }
+        else
+        {
+            ImGui::TextDisabled("(no data)");
+        }
+    }
+
+    ImGui::Separator();
+
+    // ── Geometry ──
+    if (ImGui::CollapsingHeader("Geometry", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (prof)
+        {
+            ImGui::Text("Draw Calls:   %u", prof->drawCalls);
+            ImGui::Text("Triangles:    %u  (%s)", prof->triangles,
+                        prof->triangles > 1000000 ? "HIGH" :
+                        prof->triangles > 100000  ? "MED"  : "LOW");
+            ImGui::Text("Vertices:     %u", prof->vertices);
+            ImGui::Text("Prims Gen:    %llu", (unsigned long long)prof->primitivesGenerated);
+            ImGui::Text("Entities:     %u", prof->entityCount);
+            // triangles per draw call
+            f32 triPerDC = prof->drawCalls > 0
+                           ? (f32)prof->triangles / (f32)prof->drawCalls : 0.0f;
+            ImGui::Text("Tri/Draw:     %.1f", triPerDC);
+        }
+        else
+        {
+            ImGui::TextDisabled("(no data)");
+        }
+    }
+
+    ImGui::Separator();
+
+    // ── GL State Changes ──
+    if (ImGui::CollapsingHeader("GL State Changes", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (prof)
+        {
+            if (ImGui::BeginTable("##glstate", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            {
+                ImGui::TableSetupColumn("Counter", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Count",   ImGuiTableColumnFlags_WidthFixed, 60.0f);
+                ImGui::TableHeadersRow();
+
+                auto row = [](const char *label, u32 val)
+                {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(label);
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%u", val);
+                };
+
+                row("Shader Binds",    prof->shaderBinds);
+                row("Texture Binds",   prof->textureBinds);
+                row("VAO Binds",       prof->vaoBinds);
+                row("Buffer Binds",    prof->bufferBinds);
+                row("Uniform Uploads", prof->uniformUploads);
+                row("FBO Binds",       prof->fboBinds);
+
+                ImGui::EndTable();
+            }
+
+            // buffer upload bandwidth
+            f32 uploadKB = (f32)prof->bufferUploadBytes / 1024.0f;
+            ImGui::Text("GPU Upload:  %u calls  %.1f KB/frame", prof->bufferUploadsCount, uploadKB);
+        }
+        else
+        {
+            ImGui::TextDisabled("(no data)");
+        }
+    }
+
+    ImGui::Separator();
+
+    // ── Memory ──
+    if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (prof)
+        {
+            ImGui::Text("Allocs/frame:   %u  (%.1f KB)",
+                        prof->heapAllocCount,
+                        (f32)prof->heapAllocBytes / 1024.0f);
+            ImGui::Text("Frees/frame:    %llu", (unsigned long long)prof->heapFreeCount);
+            ImGui::Text("Live heap:      %.2f MB",
+                        (f32)prof->heapLiveBytes / (1024.0f * 1024.0f));
+        }
+        else
+        {
+            ImGui::TextDisabled("(no data)");
+        }
+    }
+
+    ImGui::Separator();
+
+    // ── Per-scope breakdown ──
+    if (ImGui::CollapsingHeader("Scope Breakdown", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (prof && prof->count > 0)
+        {
+            f64 totalUs = 0.0;
+            for (u32 i = 0; i < prof->count; i++)
+                totalUs += prof->entries[i].elapsed_us;
+
+            if (ImGui::BeginTable("##scopes", 4,
+                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+            {
+                ImGui::TableSetupColumn("Scope",    ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("us",       ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                ImGui::TableSetupColumn("cycles",   ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableSetupColumn("%",        ImGuiTableColumnFlags_WidthFixed, 45.0f);
+                ImGui::TableHeadersRow();
+
+                for (u32 i = 0; i < prof->count; i++)
+                {
+                    const ProfileEntry *e = &prof->entries[i];
+                    f32 pct = (totalUs > 0.0) ? (f32)(e->elapsed_us / totalUs * 100.0) : 0.0f;
+
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(e->name);
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%.1f", (f32)e->elapsed_us);
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%llu", (unsigned long long)e->cycles);
+                    ImGui::TableSetColumnIndex(3);
+
+                    if      (pct >= 50.0f) ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "%.1f%%", pct);
+                    else if (pct >= 20.0f) ImGui::TextColored(ImVec4(1,1,0.2f,1),    "%.1f%%", pct);
+                    else                   ImGui::TextColored(ImVec4(0.4f,1,0.4f,1), "%.1f%%", pct);
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("TOTAL");
+                ImGui::TableSetColumnIndex(1); ImGui::TextDisabled("%.1f", (f32)totalUs);
+                ImGui::TableSetColumnIndex(2); ImGui::TextDisabled("—");
+                ImGui::TableSetColumnIndex(3); ImGui::TextDisabled("100%%");
+
+                ImGui::EndTable();
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("(no data — build with -DDRUID_PROFILE)");
+        }
+    }
+
+    ImGui::Separator();
+
+    // ── Resources ──
+    if (ImGui::CollapsingHeader("Resources"))
+    {
+        ImGui::Text("Entities: %u / %u  |  Viewport: %u x %u",
+                    entityCount, entitySizeCache, viewportWidth, viewportHeight);
+        if (resources)
+        {
+            ImGui::Text("Meshes %u/%u  Textures %u/%u  Shaders %u/%u",
+                        resources->meshUsed,    resources->meshCount,
+                        resources->textureUsed, resources->textureCount,
+                        resources->shaderUsed,  resources->shaderCount);
+            ImGui::Text("Materials %u/%u  Models %u/%u",
+                        resources->materialUsed, resources->materialCount,
+                        resources->modelUsed,    resources->modelCount);
+        }
     }
 
     ImGui::End();
 }
 static Vec3 EulerAnglesDegrees = v3Zero;
+
+// Helper: create a blank scene, resetting all editor state.
+static void createBlankScene(u32 capacity)
+{
+    destroyArchetype(&sceneArchetype);
+
+    entitySizeCache = capacity;
+    entitySize      = (i32)capacity;
+    entityCount     = 0;
+
+    if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype))
+    {
+        FATAL("Failed to create new scene archetype");
+        return;
+    }
+
+    rebindArchetypeFields();
+
+    // Reset camera to default position
+    sceneCam.pos         = {0.0f, 0.0f, 5.0f};
+    sceneCam.orientation = quatIdentity();
+
+    // Clear the current scene file path
+    scenePathBuffer[0] = '\0';
+
+    // Reset inspector
+    inspectorEntityID    = 0;
+    currentInspectorState = EMPTY_VIEW;
+    manipulateTransform  = false;
+
+    INFO("Created blank scene with capacity %u", entitySizeCache);
+}
+
+// Helper: load a scene file into the editor, replacing the current scene.
+static void editorLoadSceneFile(const c8 *filePath)
+{
+    SceneData sd = loadScene(filePath);
+    if (sd.archetypeCount > 0 && sd.archetypes)
+    {
+        destroyArchetype(&sceneArchetype);
+
+        sceneArchetype  = sd.archetypes[0];
+        free(sd.archetypes);
+        sd.archetypes = nullptr;
+        entitySizeCache = sceneArchetype.capacity;
+        entityCount     = sceneArchetype.arena[0].count;
+        entitySize      = (i32)entitySizeCache;
+
+        migrateSceneArchetypeIfNeeded();
+        rebindArchetypeFields();
+        applySceneCameraEntityToSceneCam();
+
+        if (sd.materialCount > 0 && sd.materials)
+        {
+            u32 count = sd.materialCount;
+            if (count > resources->materialCount)
+                count = resources->materialCount;
+            memcpy(resources->materialBuffer, sd.materials,
+                   sizeof(Material) * count);
+            resources->materialUsed = count;
+            free(sd.materials);
+        }
+
+        // Update the scene path buffer
+        strncpy(scenePathBuffer, filePath, sizeof(scenePathBuffer) - 1);
+        scenePathBuffer[sizeof(scenePathBuffer) - 1] = '\0';
+
+        // Reset inspector
+        inspectorEntityID    = 0;
+        currentInspectorState = EMPTY_VIEW;
+        manipulateTransform  = false;
+
+        INFO("Loaded scene from %s (%u entities)", filePath, entityCount);
+    }
+    else
+    {
+        ERROR("Failed to load scene from %s", filePath);
+    }
+}
+
+// Panel: list all .drsc files in the project scenes/ directory.
+static void drawScenesPanel()
+{
+    if (!showScenesPanel) return;
+
+    ImGui::Begin("Scenes", &showScenesPanel);
+
+    // Rescan when the panel first opens or when user requests
+    static c8 **sceneFiles = nullptr;
+    static u32 sceneFileCount = 0;
+    static b8 needsRescan = true;
+    static i32 selectedIndex = -1;
+
+    if (ImGui::Button("Refresh"))
+        needsRescan = true;
+
+    if (needsRescan)
+    {
+        // Free previous scan
+        if (sceneFiles)
+        {
+            for (u32 i = 0; i < sceneFileCount; i++)
+                free(sceneFiles[i]);
+            free(sceneFiles);
+            sceneFiles = nullptr;
+        }
+        sceneFileCount = 0;
+        selectedIndex = -1;
+
+        c8 scenesDir[512];
+        snprintf(scenesDir, sizeof(scenesDir), "%s/scenes", hubProjectDir);
+
+        u32 totalFiles = 0;
+        c8 **allFiles = listFilesInDirectory(scenesDir, &totalFiles);
+        if (allFiles && totalFiles > 0)
+        {
+            sceneFiles = (c8 **)malloc(sizeof(c8 *) * totalFiles);
+            for (u32 i = 0; i < totalFiles; i++)
+            {
+                u32 len = (u32)strlen(allFiles[i]);
+                if (len > 5 && strcmp(allFiles[i] + len - 5, ".drsc") == 0)
+                {
+                    sceneFiles[sceneFileCount] = allFiles[i];
+                    sceneFileCount++;
+                }
+                else
+                {
+                    free(allFiles[i]);
+                }
+            }
+            free(allFiles);
+        }
+        needsRescan = false;
+    }
+
+    ImGui::Separator();
+
+    // List .drsc files
+    if (sceneFileCount == 0)
+    {
+        ImGui::TextDisabled("No .drsc files in scenes/");
+    }
+    else
+    {
+        for (u32 i = 0; i < sceneFileCount; i++)
+        {
+            // Show just the filename
+            const c8 *name = sceneFiles[i];
+            const c8 *slash = strrchr(name, '/');
+            if (!slash) slash = strrchr(name, '\\');
+            const c8 *display = slash ? slash + 1 : name;
+
+            // Highlight the currently loaded scene
+            b8 isCurrent = (scenePathBuffer[0] != '\0'
+                            && strcmp(sceneFiles[i], scenePathBuffer) == 0);
+
+            if (isCurrent)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+
+            b8 isSelected = ((i32)i == selectedIndex);
+            if (ImGui::Selectable(display, isSelected))
+                selectedIndex = (i32)i;
+
+            // Double-click to load
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+            {
+                editorLoadSceneFile(sceneFiles[i]);
+                needsRescan = true;
+            }
+
+            if (isCurrent)
+                ImGui::PopStyleColor();
+        }
+    }
+
+    ImGui::Separator();
+
+    // Action buttons
+    b8 hasSelection = (selectedIndex >= 0 && (u32)selectedIndex < sceneFileCount);
+
+    if (ImGui::Button("Load") && hasSelection)
+    {
+        editorLoadSceneFile(sceneFiles[selectedIndex]);
+        needsRescan = true;
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("New Scene"))
+    {
+        createBlankScene(128);
+        needsRescan = true;
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Set as Startup") && hasSelection)
+    {
+        // Extract just the filename from the full path
+        const c8 *name = sceneFiles[selectedIndex];
+        const c8 *slash = strrchr(name, '/');
+        if (!slash) slash = strrchr(name, '\\');
+        const c8 *filename = slash ? slash + 1 : name;
+
+        c8 cfgPath[512];
+        snprintf(cfgPath, sizeof(cfgPath), "%s/startup_scene.txt", hubProjectDir);
+        FILE *cfg = fopen(cfgPath, "wb");
+        if (cfg)
+        {
+            fwrite(filename, 1, strlen(filename), cfg);
+            fclose(cfg);
+            INFO("Set startup scene to '%s'", filename);
+        }
+        else
+        {
+            ERROR("Failed to write startup_scene.txt");
+        }
+    }
+
+    ImGui::End();
+}
 
 static void drawSceneListWindow()
 {
@@ -1647,8 +2214,8 @@ static void drawSceneListWindow()
             entityMaterialIDs[entityCount] = (u32)-1; // no custom material
             shaderHandles[entityCount] = 0; // no custom shader
             archetypeIDs[entityCount] = (u32)-1; // no archetype assigned
-            if (sceneCameraFlags)
-                sceneCameraFlags[entityCount] = false;
+            if (ecsSlotIDs)      ecsSlotIDs[entityCount]      = (u32)-1;
+            if (sceneCameraFlags) sceneCameraFlags[entityCount] = false;
 
             // make the inital name this
             sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d", entityCount);
@@ -1688,6 +2255,96 @@ static void drawSceneListWindow()
     ImGui::End();
 }
 
+// Render an editable widget for a single SoA field of the selected entity.
+// Uses field size + name heuristics to pick the right ImGui widget.
+static void drawSoAField(const c8 *fieldName, u32 fieldSize, void *ptr)
+{
+    if (fieldSize == sizeof(b8))
+    {
+        bool v = *(b8 *)ptr;
+        if (ImGui::Checkbox(fieldName, &v))
+            *(b8 *)ptr = (b8)v;
+        return;
+    }
+
+    if (fieldSize >= 64)  // c8[] string buffer
+    {
+        ImGui::InputText(fieldName, (c8 *)ptr, (size_t)fieldSize);
+        return;
+    }
+
+    if (fieldSize == sizeof(Vec4))
+    {
+        ImGui::DragFloat4(fieldName, (f32 *)ptr, 0.001f);
+        return;
+    }
+
+    if (fieldSize == sizeof(Vec3))
+    {
+        ImGui::DragFloat3(fieldName, (f32 *)ptr, 0.01f);
+        return;
+    }
+
+    if (fieldSize == sizeof(Vec2))
+    {
+        ImGui::DragFloat2(fieldName, (f32 *)ptr, 0.01f);
+        return;
+    }
+
+    if (fieldSize == sizeof(u32))
+    {
+        // Heuristic: name ends in "ID", "id", "Handle", "Index", "Count" → treat as uint
+        u32 nameLen = (u32)strlen(fieldName);
+        bool isUint = (nameLen >= 2 && strcmp(fieldName + nameLen - 2, "ID") == 0)
+                   || (nameLen >= 2 && strcmp(fieldName + nameLen - 2, "id") == 0)
+                   || (nameLen >= 5 && strcmp(fieldName + nameLen - 5, "Index") == 0)
+                   || (nameLen >= 5 && strcmp(fieldName + nameLen - 5, "Count") == 0)
+                   || (nameLen >= 6 && strcmp(fieldName + nameLen - 6, "Handle") == 0)
+                   || strstr(fieldName, "Shader") != nullptr;
+        if (isUint)
+        {
+            i32 v = (i32)*(u32 *)ptr;
+            if (ImGui::InputInt(fieldName, &v))
+                *(u32 *)ptr = (u32)(v < 0 ? 0 : v);
+        }
+        else
+        {
+            ImGui::DragFloat(fieldName, (f32 *)ptr, 0.01f);
+        }
+        return;
+    }
+
+    // Fallback — show as hex dump
+    ImGui::TextDisabled("%s  (%u bytes)", fieldName, fieldSize);
+}
+
+// Collapsible section showing all SoA fields of the sceneArchetype for one entity.
+static void drawSoAEditorSection(u32 entityID)
+{
+    void **fields = getArchetypeFields(&sceneArchetype, 0);
+    StructLayout *layout = sceneArchetype.layout;
+    if (!fields || !layout || entityID >= sceneArchetype.arena[0].count)
+        return;
+
+    if (!ImGui::CollapsingHeader("SoA Raw Fields"))
+        return;
+
+    ImGui::PushID((int)entityID + 10000);
+
+    for (u32 f = 0; f < layout->count; f++)
+    {
+        const c8 *fname = layout->fields[f].name;
+        u32       fsize = layout->fields[f].size;
+        void     *ptr   = (u8 *)fields[f] + (u64)fsize * entityID;
+
+        ImGui::PushID((int)f);
+        drawSoAField(fname, fsize, ptr);
+        ImGui::PopID();
+    }
+
+    ImGui::PopID();
+}
+
 static void drawInspectorWindow()
 {
     ImGui::Begin("Inspector");
@@ -1697,30 +2354,51 @@ static void drawInspectorWindow()
     case InspectorState::EMPTY_VIEW:
         ImGui::Text("Nowt to see here");
         break;
+    case InspectorState::SKYBOX_VIEW:
+        ImGui::Text("Skybox Settings");
+        ImGui::Separator();
+        if (ImGui::Button("Edit Skybox Textures"))
+            showSkyboxSettings = true;
+        break;
     case InspectorState::ENTITY_VIEW:
-        // Add bounds checking for inspector entity access
-        if (inspectorEntityID >= entitySizeCache) {
-            ImGui::Text("Invalid entity ID: %u (max: %u)", inspectorEntityID, entitySizeCache);
+        if (!positions || !rotations || !scales || !isActive || !names
+            || !modelIDs || inspectorEntityID >= entityCount) {
+            ImGui::Text("No entity selected or scene not loaded.");
             break;
         }
-        
+
+        // Sync euler display whenever a different entity is selected
+        // (covers both viewport picks and scene-list clicks)
+        {
+            static u32 lastInspectorID = (u32)-1;
+            if (inspectorEntityID != lastInspectorID)
+            {
+                lastInspectorID = inspectorEntityID;
+                Vec3 r = eulerFromQuat(rotations[inspectorEntityID]);
+                EulerAnglesDegrees.x = degrees(r.x);
+                EulerAnglesDegrees.y = degrees(r.y);
+                EulerAnglesDegrees.z = degrees(r.z);
+            }
+        }
+
         ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE],
                          MAX_NAME_SIZE);
         // draw the scene entity basic data
-        b8 positionChanged = ImGui::InputFloat3("position", (f32 *)&positions[inspectorEntityID]);
+        ImGui::DragFloat3("position", (f32 *)&positions[inspectorEntityID], 0.01f);
 
-        b8 rotationChanged = false;
-        if (ImGui::InputFloat3("rotation", (f32 *)&EulerAnglesDegrees))
+        if (ImGui::DragFloat3("rotation", (f32 *)&EulerAnglesDegrees, 0.5f))
         {
             Vec3 eulerRadians;
             eulerRadians.x = radians(EulerAnglesDegrees.x);
             eulerRadians.y = radians(EulerAnglesDegrees.y);
             eulerRadians.z = radians(EulerAnglesDegrees.z);
-            // set the rotation element
             rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
-            rotationChanged = true;
         }
-        ImGui::InputFloat3("scale", (f32 *)&scales[inspectorEntityID]);
+        ImGui::DragFloat3("scale", (f32 *)&scales[inspectorEntityID], 0.01f);
+
+        ImGui::Separator();
+        drawSoAEditorSection(inspectorEntityID);
+        ImGui::Separator();
 
         if (sceneCameraFlags)
         {
@@ -1748,9 +2426,6 @@ static void drawInspectorWindow()
                     positions[inspectorEntityID] = sceneCam.pos;
                     rotations[inspectorEntityID] = sceneCam.orientation;
                 }
-
-                if (positionChanged || rotationChanged)
-                    applySceneCameraEntityToSceneCam();
             }
         }
 
@@ -2185,6 +2860,13 @@ static void drawSkyboxSettingsWindow()
     }
 
     ImGui::Separator();
+
+    // Show error feedback from last load attempt
+    if (g_skyboxError[0] != '\0')
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", g_skyboxError);
+    }
+
     ImGui::Text("Cubemap Texture ID: %u", cubeMapTexture);
 
     ImGui::End();
@@ -2243,6 +2925,8 @@ static void restoreSnapshot()
     {
         destroyArchetype(&sceneArchetype);
         sceneArchetype  = sd.archetypes[0];
+        free(sd.archetypes); // free outer array; arena/layout now owned by sceneArchetype
+        sd.archetypes = nullptr;
         entitySizeCache = sceneArchetype.capacity;
         entityCount     = sceneArchetype.arena[0].count;
         entitySize      = (i32)entitySizeCache;
@@ -2461,6 +3145,10 @@ void drawDockspaceAndPanels()
             {
                 showBuildLog = !showBuildLog;
             }
+            if (ImGui::MenuItem("Scenes", NULL, showScenesPanel))
+            {
+                showScenesPanel = !showScenesPanel;
+            }
             ImGui::EndMenu();
         }
 
@@ -2494,7 +3182,7 @@ void drawDockspaceAndPanels()
                 if (updateProject(hubProjectDir, g_buildLog, sizeof(g_buildLog)))
                     INFO("Engine files updated in project.");
                 else
-                    ERROR("Failed to update engine files.");
+                    ERROR("Failed to update engine files. Check Build Log for details.");
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Build Game (Standalone)"))
@@ -2553,6 +3241,7 @@ void drawDockspaceAndPanels()
         ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
         ImGui::DockBuilderDockWindow("Scene List", dock_id_prefabs);
         ImGui::DockBuilderDockWindow("Prefabs", dock_id_middle);
+        ImGui::DockBuilderDockWindow("Scenes", dock_id_middle);
         ImGui::DockBuilderDockWindow("Profiler", dock_id_bottom);
         ImGui::DockBuilderDockWindow("Build Log", dock_id_bottom);
         ImGui::DockBuilderFinish(dockspace_id);
@@ -2562,6 +3251,7 @@ void drawDockspaceAndPanels()
     drawViewportWindow();
     drawDebugWindow();
     drawPrefabsWindow();
+    drawScenesPanel();
     drawSceneListWindow();
     drawInspectorWindow();
     drawProfilerWindow();
@@ -2576,11 +3266,16 @@ void drawDockspaceAndPanels()
         g_gameDLL.plugin.update(dt);
 
         // Run ECS system update callbacks on per-system archetypes
+        {
+        PROFILE_SCOPE("ECS Update");
         for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
         {
-            if (g_ecsSystemLoaded[a] && g_ecsSystems[a].update && g_ecsArchEntityCount[a] > 0)
+            if (!g_ecsSystemLoaded[a] || !g_ecsSystems[a].update) continue;
+            // Buffered archetypes always tick (pool spawn can add entities at runtime)
+            if (g_ecsArchEntityCount[a] > 0 || g_ecsArchetypes[a].isBuffered)
                 g_ecsSystems[a].update(&g_ecsArchetypes[a], dt);
         }
+        } // PROFILE_SCOPE("ECS Update")
 
         // Sync ECS-updated data (position, rotation, …) back to the scene
         // archetype so the editor renderer draws entities correctly.
@@ -2723,49 +3418,8 @@ void drawDockspaceAndPanels()
         ImGui::InputText("Path", scenePathBuffer, sizeof(scenePathBuffer));
         if (ImGui::Button("Load"))
         {
-            SceneData sd = loadScene(scenePathBuffer);
-            if (sd.archetypeCount > 0 && sd.archetypes)
-            {
-                // Tear down the current archetype
-                destroyArchetype(&sceneArchetype);
-
-                // Adopt the loaded archetype
-                sceneArchetype = sd.archetypes[0];
-                entitySizeCache = sceneArchetype.capacity;
-                entityCount     = sceneArchetype.arena[0].count;
-                entitySize      = (i32)entitySizeCache;
-
-                // Migrate old scenes that lack newer fields (e.g. archetypeID)
-                migrateSceneArchetypeIfNeeded();
-
-                // Rebind all field pointers
-                rebindArchetypeFields();
-                applySceneCameraEntityToSceneCam();
-
-                // Apply loaded materials
-                if (sd.materialCount > 0 && sd.materials)
-                {
-                    u32 count = sd.materialCount;
-                    if (count > resources->materialCount)
-                        count = resources->materialCount; // clamp to buffer capacity
-                    memcpy(resources->materialBuffer, sd.materials,
-                           sizeof(Material) * count);
-                    resources->materialUsed = count;
-                    free(sd.materials);
-                }
-
-                // Reset inspector state
-                inspectorEntityID    = 0;
-                currentInspectorState = EMPTY_VIEW;
-                manipulateTransform  = false;
-
-                INFO("Loaded scene from %s (%u entities)", scenePathBuffer, entityCount);
-            }
-            else
-            {
-                ERROR("Failed to load scene from %s", scenePathBuffer);
-            }
-            needsScan = true; // rescan next time
+            editorLoadSceneFile(scenePathBuffer);
+            needsScan = true;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -2780,31 +3434,12 @@ void drawDockspaceAndPanels()
     }
     if (ImGui::BeginPopupModal("New Scene", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        // For new scene we only need capacity for now
         static i32 newCapacity = 128;
         ImGui::InputInt("Initial Capacity", &newCapacity);
         if (newCapacity < 1) newCapacity = 1;
         if (ImGui::Button("Create"))
         {
-            // Destroy old archetype and create a fresh empty one
-            destroyArchetype(&sceneArchetype);
-
-            entitySizeCache = (u32)newCapacity;
-            entitySize      = newCapacity;
-            entityCount     = 0;
-
-            if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype))
-            {
-                FATAL("Failed to create new scene archetype");
-            }
-            else
-            {
-                rebindArchetypeFields();
-                inspectorEntityID    = 0;
-                currentInspectorState = EMPTY_VIEW;
-                manipulateTransform  = false;
-                INFO("Created new scene with capacity %u", entitySizeCache);
-            }
+            createBlankScene((u32)newCapacity);
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();

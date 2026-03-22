@@ -60,12 +60,16 @@ void renderIDPass()
 
         if (index == (u32)-1)
         {
+            // Render a small cube marker so ALL entities are pickable, not just
+            // those with models.  Camera entities get a slightly different shape.
+            f32 sx = 0.2f, sy = 0.2f, sz = 0.2f;
             if (sceneCameraFlags && sceneCameraFlags[i])
             {
-                Transform marker = {positions[i], rotations[i], {0.2f, 0.2f, 0.35f}};
-                updateShaderModel(idShader, marker);
-                drawMeshIDPass(cubeMesh);
+                sx = 0.2f; sy = 0.2f; sz = 0.35f;
             }
+            Transform marker = {positions[i], rotations[i], {sx, sy, sz}};
+            updateShaderModel(idShader, marker);
+            drawMeshIDPass(cubeMesh);
             continue;
         }
         if (index < resources->modelUsed)
@@ -104,36 +108,71 @@ void renderIDPass()
         }
     }
 
+    // Render skybox to ID pass
+    if (skyboxMesh)
+    {
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(GL_FALSE);
+        glUseProgram(idShader);
+        
+        u32 skyboxID = ID_TYPE_SKYBOX;
+        f32 r = ((skyboxID >> 16) & 0xFF) / 255.0f;
+        f32 g = ((skyboxID >> 8) & 0xFF) / 255.0f;
+        f32 b = (skyboxID & 0xFF) / 255.0f;
+        glUniform3f(idLocation, r, g, b);
+        
+        Transform identity = {0};
+        updateShaderModel(idShader, identity);
+        glBindVertexArray(skyboxMesh->vao);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glBindVertexArray(0);
+        
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+    }
+
     if (manipulateTransform)
     {
         Vec3 pos = positions[inspectorEntityID];
-        const f32 scaleSize = 0.1f;
-        const f32 scaleLength = 1.1f;
 
-        // glBindFramebuffer(GL_FRAMEBUFFER, idFBO);
+        // Match the visual gizmo distance-based scaling, but much larger for easier picking
+        f32 dist = v3Mag(v3Sub(pos, sceneCam.pos));
+        if (dist < 1.0f) dist = 1.0f;
+        f32 gizmoScale = dist * 0.12f;
 
-        Transform X = {v3Add(pos, v3Right), quatIdentity(),
-                       {scaleLength, scaleSize, scaleSize}};
-        Transform Y = {v3Add(pos, v3Up), quatIdentity(),
-                       {scaleSize, scaleLength, scaleSize}};
+        const f32 scaleSize   = 0.18f * gizmoScale;   // 3x visual thickness for reliable clicking
+        const f32 scaleLength = 1.2f  * gizmoScale;
+        const f32 offset      = 0.5f  * gizmoScale;
 
-        Transform Z = {v3Add(pos, v3Back), quatIdentity(),
-                       {scaleSize, scaleSize, scaleLength}};
+        Vec3 offX = {offset, 0.0f,    0.0f};
+        Vec3 offY = {0.0f,   offset,  0.0f};
+        Vec3 offZ = {0.0f,   0.0f,   -offset};
+        Transform X = {v3Add(pos, offX), quatIdentity(), {scaleLength, scaleSize, scaleSize}};
+        Transform Y = {v3Add(pos, offY), quatIdentity(), {scaleSize, scaleLength, scaleSize}};
+        Transform Z = {v3Add(pos, offZ), quatIdentity(), {scaleSize, scaleSize, scaleLength}};
 
-        updateShaderModel(idShader, X);  // Only set model matrix
-        glUniform3f(idLocation, 1.0f / 255.0f, 0.0f,
-                    0.0f); // ID_TYPE_GIZMO_X = 0x010000
+        // Disable depth test so gizmos always win over entity meshes in the ID buffer
+        // Disable face culling so all faces of the stretched cube are drawn
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+
+        // Explicitly rebind ID shader to prevent stale program state
+        glUseProgram(idShader);
+
+        updateShaderModel(idShader, X);
+        glUniform3f(idLocation, 1.0f / 255.0f, 0.0f, 0.0f);
         drawMeshIDPass(cubeMesh);
 
         updateShaderModel(idShader, Y);
-        glUniform3f(idLocation, 2.0f / 255.0f, 0.0f,
-                    0.0f); // ID_TYPE_GIZMO_Y = 0x020000
+        glUniform3f(idLocation, 2.0f / 255.0f, 0.0f, 0.0f);
         drawMeshIDPass(cubeMesh);
 
-        updateShaderModel(idShader, Z);  // Only set model matrix
-        glUniform3f(idLocation, 3.0f / 255.0f, 0.0f,
-                    0.0f); // ID_TYPE_GIZMO_Z = 0x030000
+        updateShaderModel(idShader, Z);
+        glUniform3f(idLocation, 3.0f / 255.0f, 0.0f, 0.0f);
         drawMeshIDPass(cubeMesh);
+
+        glEnable(GL_CULL_FACE);
+        glEnable(GL_DEPTH_TEST);
     }
 
     unbindFramebuffer();
@@ -164,11 +203,12 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
 
     // reconstruct ID
     u32 id = (pixel[0] << 16) | (pixel[1] << 8) | (pixel[2]);
-    
-    // Debug output
-    DEBUG("Mouse pick at (%d, %d) -> pixel RGB(%d, %d, %d) -> ID: 0x%06X", 
-          relativeX, flippedY, pixel[0], pixel[1], pixel[2], id);
-    
+
+    DEBUG("PICK: mouse(%.0f,%.0f) vp(%.0f,%.0f) rel(%u,%u) flip(%u) px(%u,%u,%u) id=0x%06X vw=%u vh=%u",
+          mouse.x, mouse.y, viewportTopLeft.x, viewportTopLeft.y,
+          relativeX, relativeY, flippedY, pixel[0], pixel[1], pixel[2], id,
+          viewportWidth, viewportHeight);
+
     PickResult result;
     if (id == 0)
     {
@@ -196,13 +236,13 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     case ID_TYPE_GIZMO_Z:
         result.type = PICK_GIZMO_Z;
         break;
+    case ID_TYPE_SKYBOX:
+        result.type = PICK_SKYBOX;
+        break;
     default:
         result.type = PICK_NONE;
         break;
     }
-
-    INFO("Decoded id: %d to %f %f %f\n", realID, (f32)pixel[0], (f32)pixel[1],
-         (f32)pixel[2]);
 
     return result;
 }
@@ -214,25 +254,37 @@ void drawMeshIDPass(Mesh *mesh)
         ERROR("drawMeshIDPass: mesh is NULL");
         return;
     }
-    
+
     if (mesh->vao == 0)
     {
         ERROR("drawMeshIDPass: mesh VAO is 0 (uninitialized)");
         return;
     }
-    
-    // bind the mesh
+    if (mesh->drawCount == 0) return;
+
     glBindVertexArray(mesh->vao);
-    // draw the mesh: prefer elements if an EBO is bound, otherwise arrays
-    if (mesh->drawCount > 0) {
+
+    // Buffered meshes live in the shared GeometryBuffer and need
+    // baseVertex / firstIndex offsets — same draw call as drawMesh().
+    if (mesh->buffered)
+    {
+        glDrawElementsBaseVertex(
+            GL_TRIANGLES,
+            (GLsizei)mesh->drawCount,
+            GL_UNSIGNED_INT,
+            (void *)(uintptr_t)((u64)mesh->firstIndex * sizeof(u32)),
+            (GLint)mesh->baseVertex);
+    }
+    else
+    {
         GLint eboBound = 0;
         glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eboBound);
-        if (eboBound != 0) {
+        if (eboBound != 0)
             glDrawElements(GL_TRIANGLES, mesh->drawCount, GL_UNSIGNED_INT, 0);
-        } else {
+        else
             glDrawArrays(GL_TRIANGLES, 0, mesh->drawCount);
-        }
     }
+
     glBindVertexArray(0);
 }
 

@@ -130,10 +130,9 @@ void processInput(void *appData)
     ImGuiIO &io = ImGui::GetIO();
     b8 capture = (b8)(io.WantCaptureMouse || io.WantCaptureKeyboard);
 
-    // During play mode, let gameplay input through when the viewport is hovered.
-    // This prevents UI panels from triggering gameplay actions, while allowing
-    // controller/mouse input to drive the game in the viewport.
-    if (g_gameRunning && canMoveViewPort)
+    // Let input through whenever the viewport is hovered so camera WASD/mouse
+    // and gizmo dragging work in both edit and play mode.
+    if (canMoveViewPort)
         capture = false;
 
     setInputCaptureState(capture);
@@ -163,6 +162,7 @@ void rebindArchetypeFields()
     entityMaterialIDs = (u32 *)fields[7];
     archetypeIDs      = (fieldCount > 8) ? (u32 *)fields[8] : nullptr;
     sceneCameraFlags  = (fieldCount > 9) ? (b8 *)fields[9] : nullptr;
+    ecsSlotIDs        = (fieldCount > 10) ? (u32 *)fields[10] : nullptr;
 }
 
 // After loading an old scene whose layout has fewer fields than the current
@@ -280,6 +280,7 @@ u32 *modelIDs = nullptr;
 u32 *shaderHandles = nullptr;
 u32 *entityMaterialIDs = nullptr;
 u32 *archetypeIDs = nullptr;
+u32 *ecsSlotIDs = nullptr;
 Material *materials = nullptr;
 
 void init()
@@ -360,6 +361,14 @@ void init()
     if (fboShader == 0)
     {
         WARN("Failed to load FBO shader - post-processing effects disabled");
+    }
+
+    // Load deferred lighting shader
+    deferredLightingShader =
+        createGraphicsProgram("../res/deferred_lighting.vert", "../res/deferred_lighting.frag");
+    if (deferredLightingShader == 0)
+    {
+        WARN("Failed to load deferred lighting shader — deferred rendering disabled");
     }
 
     // ---- Create the global Renderer so ECS systems can acquire GBuffers/InstanceBuffers ----
@@ -491,33 +500,74 @@ void update(f32 dt)
         entitySizeCache = entitySize;
     }
 
+    // Gizmo drag/release must run regardless of viewport hover so that dragging
+    // the mouse outside the viewport doesn't cancel the operation mid-drag.
+    ImVec2 mousePos = ImGui::GetMousePos();
+    Vec2 mPos = {mousePos.x, mousePos.y};
+
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        canMoveAxis = false;
+
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && canMoveAxis
+        && inspectorEntityID < entitySizeCache)
+    {
+        Vec2 delta = v2Sub(mPos, cacheMouse);
+        cacheMouse = mPos;
+
+        // Project the world axis into screen space so drag direction is
+        // correct regardless of camera angle.
+        f32 mag = 0.0f;
+        {
+            Mat4 view      = getView(&sceneCam, false);
+            Mat4 vp        = mat4Mul(sceneCam.projection, view);
+            Vec3 entityPos = positions[inspectorEntityID];
+            Vec4 wp0       = {entityPos.x, entityPos.y, entityPos.z, 1.0f};
+            Vec4 p0        = mat4TransformVec4(vp, wp0);
+            Vec3 ep1       = v3Add(entityPos, manipulateAxis);
+            Vec4 wp1       = {ep1.x, ep1.y, ep1.z, 1.0f};
+            Vec4 p1        = mat4TransformVec4(vp, wp1);
+            if (p0.w > 0.0001f && p1.w > 0.0001f)
+            {
+                Vec2 screenAxis = {
+                    (p1.x / p1.w - p0.x / p0.w) * (f32)viewportWidth  * 0.5f,
+                    -(p1.y / p1.w - p0.y / p0.w) * (f32)viewportHeight * 0.5f
+                };
+                f32 axisLen = v2Mag(screenAxis);
+                if (axisLen > 0.001f)
+                    mag = v2Dot(delta, v2Scale(screenAxis, 1.0f / axisLen));
+            }
+        }
+
+        switch (manipulateState)
+        {
+        case MANIPULATE_POSITION:
+            positions[inspectorEntityID] = v3Add(positions[inspectorEntityID],
+                                                 v3Scale(manipulateAxis, mag * 0.01f));
+            break;
+        case MANIPULATE_ROTATION:
+        {
+            Vec4 dq = quatFromAxisAngle(manipulateAxis, mag * 0.01f);
+            rotations[inspectorEntityID] = quatMul(dq, rotations[inspectorEntityID]);
+            break;
+        }
+        case MANIPULATE_SCALE:
+            scales[inspectorEntityID] = v3Add(scales[inspectorEntityID],
+                                              v3Scale(manipulateAxis, mag * 0.01f));
+            break;
+        default: break;
+        }
+    }
+
     if (canMoveViewPort && !g_gameRunning)
     {
         moveViewPortCamera(dt);
 
-        ImVec2 mousePos = ImGui::GetMousePos();
-        Vec2 mPos = {mousePos.x, mousePos.y};
-
-        if (isKeyDown(KEY_E))
-        {
-            manipulateState = MANIPULATE_POSITION;
-        }
-        else if (isKeyDown(KEY_R))
-        {
-            manipulateState = MANIPULATE_ROTATION;
-        }
-        else if (isKeyDown(KEY_T))
-        {
-            manipulateState = MANIPULATE_SCALE;
-        }
+        if (isKeyDown(KEY_E))      manipulateState = MANIPULATE_POSITION;
+        else if (isKeyDown(KEY_R)) manipulateState = MANIPULATE_ROTATION;
+        else if (isKeyDown(KEY_T)) manipulateState = MANIPULATE_SCALE;
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
-            // Debug print
-            // DEBUG("Mouse Screen Pos: (%.2f, %.2f)\n", mousePos.x,
-            // mousePos.y); DEBUG("Mouse Relative to Image: (%.2f, %.2f)\n",
-            // relativeX, relativeY);
-
             result = getEntityAtMouse(mousePos, g_viewportScreenPos);
 
             if (result.type == PICK_ENTITY)
@@ -528,156 +578,31 @@ void update(f32 dt)
                     u32 selectedEntity = id - 1;
                     inspectorEntityID = selectedEntity;
                     currentInspectorState = ENTITY_VIEW;
-                    INFO("Selected Entity %d: %s (Model ID: %d)\n",
-                         selectedEntity, &names[selectedEntity * MAX_NAME_SIZE],
-                         modelIDs[selectedEntity]);
-
-                    // engage the transform manipulation tools
                     manipulateTransform = true;
                 }
                 else
                 {
                     manipulateTransform = false;
-                    // INFO("No entity selected (ID=%u)\n", id);
                 }
             }
-
-            if (result.type == PICK_GIZMO_X || result.type == PICK_GIZMO_Y ||
-                result.type == PICK_GIZMO_Z)
+            else if (result.type == PICK_GIZMO_X || result.type == PICK_GIZMO_Y ||
+                     result.type == PICK_GIZMO_Z)
             {
                 canMoveAxis = true;
-                cacheMouse = mPos; // seed so first drag delta is zero
-
+                cacheMouse  = mPos;
                 switch (result.type)
                 {
-                case PICK_GIZMO_X:
-                    manipulateAxis = v3Right; // (1,0,0)
-                    break;
-                case PICK_GIZMO_Y:
-                    manipulateAxis = v3Up; // (0,1,0)
-                    break;
-                case PICK_GIZMO_Z:
-                    manipulateAxis = v3Forward; // (0,0,1) or v3Back if you're
-                                                // using -Z forward
-                    break;
-                default:
-                    manipulateAxis = v3Zero; // fallback
-                    break;
+                case PICK_GIZMO_X: manipulateAxis = v3Right;   break;
+                case PICK_GIZMO_Y: manipulateAxis = v3Up;      break;
+                case PICK_GIZMO_Z: manipulateAxis = v3Forward; break;
+                default:           manipulateAxis = v3Zero;    break;
                 }
             }
-
-            if (result.type == PICK_NONE)
+            else if (result.type == PICK_NONE)
             {
                 manipulateTransform = false;
                 canMoveAxis = false;
             }
-        }
-
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && canMoveAxis)
-        {
-            // Add bounds checking for entity access
-            if (inspectorEntityID >= entitySizeCache)
-            {
-                WARN("Inspector entity ID %u out of bounds (max: %u)",
-                     inspectorEntityID, entitySizeCache);
-                return;
-            }
-
-            Vec2 delta = v2Sub(mPos, cacheMouse); // Correct delta direction
-            cacheMouse = mPos;                    // Cache after delta is used
-
-            f32 speed = 1.0f;
-            f32 mag = 0.0f;
-
-            // // determine direction of movement
-            // if (result.type == PICK_GIZMO_X)
-            // {
-            //     mag = delta.x * speed;
-            // }
-            // else if (result.type == PICK_GIZMO_Y)
-            // {
-            //     // flip the y
-            //     mag = -(delta.y * speed);
-            // }
-            // else if (result.type == PICK_GIZMO_Z)
-            // {
-            //     mag = -(delta.y * speed);
-            // }
-
-
-            // Project the manipulate axis into screen space to determine
-            // how mouse movement maps to world-axis movement regardless
-            // of camera angle.
-            {
-                Mat4 view = getView(&sceneCam, false);
-                Mat4 vp   = mat4Mul(sceneCam.projection, view);
-
-                Vec3 entityPos = positions[inspectorEntityID];
-                // project entity position and entity position + axis into screen space
-                Vec4 clipA = mat4TransformVec4(vp, {entityPos.x, entityPos.y, entityPos.z, 1.0f});
-                Vec3 offsetPos = v3Add(entityPos, manipulateAxis);
-                Vec4 clipB = mat4TransformVec4(vp, {offsetPos.x, offsetPos.y, offsetPos.z, 1.0f});
-
-                // perspective divide to NDC
-                Vec2 ndcA = {clipA.x / clipA.w, clipA.y / clipA.w};
-                Vec2 ndcB = {clipB.x / clipB.w, clipB.y / clipB.w};
-
-                // screen-space direction of the axis (in pixels)
-                Vec2 screenAxis = {
-                    (ndcB.x - ndcA.x) * viewportWidth  * 0.5f,
-                    -(ndcB.y - ndcA.y) * viewportHeight * 0.5f   // flip Y (screen Y is down)
-                };
-
-                f32 axisLen = v2Mag(screenAxis);
-                if (axisLen > 0.001f)
-                {
-                    // normalize the screen axis direction
-                    screenAxis = v2Scale(screenAxis, 1.0f / axisLen);
-                    // dot mouse delta with screen axis to get signed magnitude
-                    mag = v2Dot(delta, screenAxis) * speed;
-                }
-            }
-
-            switch (manipulateState)
-            {
-            case MANIPULATE_POSITION:
-            {
-                // work out the transformation
-                Vec3 transformation = v3Scale(manipulateAxis, mag * 0.01f);
-
-                Vec3 *pos = &positions[inspectorEntityID];
-                // apply movement along axis
-                *pos = v3Add(*pos, transformation);
-
-                break;
-            }
-            case MANIPULATE_ROTATION:
-            {
-                // convert drag magnitude into radians
-                f32 angle = mag * 0.01f;
-                Vec4 *rotation = &rotations[inspectorEntityID];
-
-                Vec4 deltaRotation = quatFromAxisAngle(manipulateAxis, angle);
-
-                *rotation = quatMul(deltaRotation, *rotation);
-                break;
-            }
-            case MANIPULATE_SCALE:
-            {
-                // edit the scale
-                Vec3 transformation = v3Scale(manipulateAxis, mag * 0.01f);
-                Vec3 *scale = &scales[inspectorEntityID];
-
-                *scale = v3Add(*scale, transformation);
-
-                break;
-            }
-            }
-        }
-
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && canMoveAxis)
-        {
-            canMoveAxis = false;
         }
     }
 

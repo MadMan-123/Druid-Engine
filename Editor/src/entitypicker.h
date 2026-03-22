@@ -8,6 +8,7 @@
 #define ID_TYPE_GIZMO_X    (1 << 16) // 0x010000
 #define ID_TYPE_GIZMO_Y    (2 << 16) // 0x020000
 #define ID_TYPE_GIZMO_Z    (3 << 16) // 0x030000
+#define ID_TYPE_SKYBOX     (4 << 16) // 0x040000 — special ID for skybox
 
 #define ID_MASK_TYPE       0xFF0000
 #define ID_MASK_ENTITY     0x00FFFF
@@ -22,7 +23,8 @@ typedef enum
     PICK_ENTITY,
     PICK_GIZMO_X,
     PICK_GIZMO_Y,
-    PICK_GIZMO_Z
+    PICK_GIZMO_Z,
+    PICK_SKYBOX
 } PickType;
 
 enum AxisType

@@ -53,6 +53,7 @@ extern u32 *modelIDs;
 extern u32 *shaderHandles;
 extern u32 *entityMaterialIDs;
 extern u32 *archetypeIDs;
+extern u32 *ecsSlotIDs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 
@@ -71,7 +72,9 @@ extern Mesh* cubeMesh;
 extern u32 arrowShader;
 extern u32 colourLocation;
 extern u32 fboShader;
+extern u32 deferredLightingShader;
 extern b8 canMoveAxis;
+extern b8 showSkyboxSettings;
 extern Vec3 manipulateAxis;
 
 extern c8 scenePathBuffer[512];
@@ -88,6 +91,7 @@ typedef enum{
 enum InspectorState{
     EMPTY_VIEW = -1,
     ENTITY_VIEW = 0,  //view entities component data
+    SKYBOX_VIEW = 1,  //view skybox settings
     MAX_STATE
 };
 extern InspectorState currentInspectorState; 
