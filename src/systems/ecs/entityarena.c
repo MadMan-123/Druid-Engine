@@ -20,7 +20,65 @@ u32 getEntitySize(StructLayout* layout)
 }
 
 
-//create Entity Arena
+//=====================================================================================================================
+// Chunked allocation - create a single fixed-size chunk
+//=====================================================================================================================
+
+EntityArena createEntityArenaChunk(StructLayout *layout, u32 chunkCapacity)
+{
+    EntityArena ea = {0};
+    ea.entityCount = chunkCapacity;
+    ea.count = 0;
+    ea.layout = layout;
+    ea.ownsData = true;
+
+    u32 entitySize = getEntitySize(layout);
+    ea.entitySize = entitySize;
+    ea.fieldCount = layout->count;
+    u32 total = entitySize * chunkCapacity;
+
+    ea.fields = (void **)dalloc(sizeof(void *) * layout->count, MEM_TAG_ARCHETYPE);
+    ea.data = dalloc(total, MEM_TAG_ARCHETYPE);
+
+    u8 *base = (u8 *)ea.data;
+    u32 offset = 0;
+    for (u32 i = 0; i < layout->count; i++)
+    {
+        ea.fields[i] = base + offset;
+        offset += layout->fields[i].size * chunkCapacity;
+    }
+
+    return ea;
+}
+
+void freeEntityArenaChunk(EntityArena *chunk)
+{
+    if (!chunk) return;
+
+    u32 entitySize = chunk->entitySize;
+    u32 fieldCount = chunk->fieldCount;
+    if (entitySize == 0 || fieldCount == 0) return;
+
+    // free fields pointer array
+    if (chunk->fields)
+    {
+        dfree(chunk->fields, sizeof(void *) * fieldCount, MEM_TAG_ARCHETYPE);
+        chunk->fields = NULL;
+    }
+
+    // only free data if chunk owns it
+    if (chunk->ownsData && chunk->data)
+    {
+        u32 total = entitySize * chunk->entityCount;
+        dfree(chunk->data, total, MEM_TAG_ARCHETYPE);
+        chunk->data = NULL;
+    }
+}
+
+//=====================================================================================================================
+// Legacy - create Entity Arena (single big allocation, splits if > 64MB)
+//=====================================================================================================================
+
 EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outArenas)
 {
 	const u32 ARENA_MAX_SIZE = 67108864; // 64MB max for now
@@ -35,20 +93,23 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 	{
 		f32 arenasNeeded = total / ARENA_MAX_SIZE;
 		DEBUG("Entity Arena requested size %d exceeds max of %d\nnow allocating %d arenas", total, ARENA_MAX_SIZE, (u32)arenasNeeded);
-		
-		arena = (EntityArena*)malloc(sizeof(EntityArena) * (u32)arenasNeeded);
+
+		arena = (EntityArena*)dalloc(sizeof(EntityArena) * (u32)arenasNeeded, MEM_TAG_ARCHETYPE);
 		//initialize each arena
 		for(u32 i = 0; i < (u32)arenasNeeded; i++)
 		{
 			arena[i].entityCount = entityCount;
 			arena[i].count = 0;
+			arena[i].entitySize = entitySize;
+			arena[i].fieldCount = layout->count;
 			arena[i].layout = layout;
+			arena[i].ownsData = true;
 
 			//allocate the field pointers
-			arena[i].fields = (void**)malloc(sizeof(void*) * layout->count);
+			arena[i].fields = (void**)dalloc(sizeof(void*) * layout->count, MEM_TAG_ARCHETYPE);
 
 			//allocate memory (zero-init so inactive entities have sane defaults)
-			arena[i].data = malloc(ARENA_MAX_SIZE);
+			arena[i].data = dalloc(ARENA_MAX_SIZE, MEM_TAG_ARCHETYPE);
 			memset(arena[i].data, 0, ARENA_MAX_SIZE);
 
 			//base of memory arena
@@ -59,26 +120,29 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 			for(u32 j = 0; j < layout->count; j++)
 			{
 				arena[i].fields[j] = base + offset;
-				offset += layout->fields[j].size * entityCount; 	
+				offset += layout->fields[j].size * entityCount;
 			}
 		}
 
 		*outArenas = (u32)arenasNeeded;
 	}
-	else 
+	else
 	{
 		DEBUG("Entity Arena requested size %d is within max of %d\n", total, ARENA_MAX_SIZE);
-		arena = (EntityArena*)malloc(sizeof(EntityArena));
-		
+		arena = (EntityArena*)dalloc(sizeof(EntityArena), MEM_TAG_ARCHETYPE);
+
 		arena->entityCount = entityCount;
 		arena->count = 0;
+		arena->entitySize = entitySize;
+		arena->fieldCount = layout->count;
 		arena->layout = layout;
-	
+		arena->ownsData = true;
+
 		//allocate the field pointers
-		arena->fields = (void**)malloc(sizeof(void*) * layout->count);
+		arena->fields = (void**)dalloc(sizeof(void*) * layout->count, MEM_TAG_ARCHETYPE);
 
 		//allocate memory (zero-init so inactive entities have sane defaults)
-		arena->data = malloc(total);
+		arena->data = dalloc(total, MEM_TAG_ARCHETYPE);
 		memset(arena->data, 0, total);
 		//base of memory arena
 		u8* base = (u8*)arena->data;
@@ -89,7 +153,7 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 		for(u32 i = 0; i < layout->count; i++)
 		{
 			arena->fields[i] = base + offset;
-			offset += layout->fields[i].size * entityCount; 	
+			offset += layout->fields[i].size * entityCount;
 		}
 
 		*outArenas = 1;
@@ -97,7 +161,7 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 
 
 	return arena;
-	
+
 }
 
 //free the arena
@@ -106,17 +170,18 @@ b8 freeEntityArena(EntityArena* arena, u32 arenaCount)
 	//free each arena if there are multiple
 	for(u32 i = 0; i < arenaCount; i++)
 	{
-		free(arena[i].fields);
-		//free the whole thing
-		free(arena[i].data);
+		u32 entitySize = arena[i].entitySize;
+		u32 total = entitySize * arena[i].entityCount;
+		dfree(arena[i].fields, sizeof(void*) * arena[i].fieldCount, MEM_TAG_ARCHETYPE);
+		dfree(arena[i].data, total, MEM_TAG_ARCHETYPE);
 	}
 
 	//free the entity arena itself
-	free(arena);
+	dfree(arena, sizeof(EntityArena) * arenaCount, MEM_TAG_ARCHETYPE);
 	return true;
 }
 
-//allocate an entity — returns 0-based index, or (u32)-1 on failure
+// allocate an entity, returns 0-based index or (u32)-1 on failure
 u32 createEntity(EntityArena* arena)
 {
 	if(arena->count >= arena->entityCount)

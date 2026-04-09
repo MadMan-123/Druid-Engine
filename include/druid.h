@@ -326,8 +326,10 @@ extern "C"
     DAPI f32 radians(f32 degrees);
 
     DAPI f32 lerp(f32 a, f32 b, f32 t);
-// constants
-#define PI 3.14159265358979323846f
+    // constants
+    #define PI 3.14159265358979323846f
+    #define PI_HALFRES 3.14159265f
+    #define PI_QUATERRES 3.14f
     static const Vec3 v3Zero = {0.0f, 0.0f, 0.0f};
     static const Vec3 v3One = {1.0f, 1.0f, 1.0f};
 
@@ -339,6 +341,42 @@ extern "C"
 
     static const Vec3 v3Forward = {0.0f, 0.0f, -1.0f};
     static const Vec3 v3Back = {0.0f, 0.0f, 1.0f};
+
+    //=====================================================================================================================
+    // SIMD — generic SoA f32 array operations. Out may alias in. SSE2 internally.
+
+    DAPI void simdAdd(const f32 *a, const f32 *b, f32 *out, u32 count);
+    DAPI void simdSub(const f32 *a, const f32 *b, f32 *out, u32 count);
+    DAPI void simdMul(const f32 *a, const f32 *b, f32 *out, u32 count);
+    DAPI void simdDiv(const f32 *a, const f32 *b, f32 *out, u32 count);
+    DAPI void simdMadd(const f32 *a, const f32 *b, const f32 *c, f32 *out, u32 count);
+    DAPI void simdNeg(const f32 *a, f32 *out, u32 count);
+    DAPI void simdAbs(const f32 *a, f32 *out, u32 count);
+    DAPI void simdMin(const f32 *a, const f32 *b, f32 *out, u32 count);
+    DAPI void simdMax(const f32 *a, const f32 *b, f32 *out, u32 count);
+    DAPI void simdSqrt(const f32 *a, f32 *out, u32 count);
+    DAPI void simdRsqrt(const f32 *a, f32 *out, u32 count);
+    DAPI void simdRcp(const f32 *a, f32 *out, u32 count);
+
+    DAPI void simdAddScalar(const f32 *a, f32 s, f32 *out, u32 count);
+    DAPI void simdMulScalar(const f32 *a, f32 s, f32 *out, u32 count);
+    DAPI void simdClampScalar(const f32 *a, f32 lo, f32 hi, f32 *out, u32 count);
+    DAPI void simdLerp(const f32 *a, const f32 *b, f32 t, f32 *out, u32 count);
+
+    DAPI void simdDot3(const f32 *ax, const f32 *ay, const f32 *az,
+                       const f32 *bx, const f32 *by, const f32 *bz, f32 *out, u32 count);
+    DAPI void simdCross3(const f32 *ax, const f32 *ay, const f32 *az,
+                         const f32 *bx, const f32 *by, const f32 *bz,
+                         f32 *outX, f32 *outY, f32 *outZ, u32 count);
+    DAPI void simdNormalize3(const f32 *inX, const f32 *inY, const f32 *inZ,
+                             f32 *outX, f32 *outY, f32 *outZ, u32 count);
+    DAPI void simdLengthSq3(const f32 *ax, const f32 *ay, const f32 *az, f32 *out, u32 count);
+    DAPI void simdLength3(const f32 *ax, const f32 *ay, const f32 *az, f32 *out, u32 count);
+
+    DAPI f32 simdSum(const f32 *a, u32 count);
+    DAPI f32 simdMinReduce(const f32 *a, u32 count);
+    DAPI f32 simdMaxReduce(const f32 *a, u32 count);
+
     //=====================================================================================================================
     // File IO
     #define MAX_PATH_LENGTH 512
@@ -409,13 +447,116 @@ extern "C"
     typedef struct
     {
         void *data;
-        u32 size;
-        u32 used;
+        u64 size;
+        u64 used;
     } Arena;
 
-    DAPI b8 arenaCreate(Arena *arena, u32 maxSize);
-    DAPI void *aalloc(Arena *arena, u32 size);
+    DAPI b8 arenaCreate(Arena *arena, u64 maxSize);
+    DAPI void *aalloc(Arena *arena, u64 size);
     DAPI void arenaDestroy(Arena *arena);
+
+    //=====================================================================================================================
+    // Memory System
+    //
+    // Single OS allocation (VirtualAlloc/mmap) at startup, split into arenas.
+    // Each subsystem gets its own bump arena carved from the one block.
+    // Per-tag byte tracking for editor visibility.
+
+    typedef enum
+    {
+        MEM_TAG_UNKNOWN,
+        MEM_TAG_ARRAY,
+        MEM_TAG_ARENA,
+        MEM_TAG_BUFFER,
+        MEM_TAG_STRING,
+        MEM_TAG_ECS,
+        MEM_TAG_ARCHETYPE,
+        MEM_TAG_SCENE,
+        MEM_TAG_RENDERER,
+        MEM_TAG_TEXTURE,
+        MEM_TAG_MESH,
+        MEM_TAG_SHADER,
+        MEM_TAG_MATERIAL,
+        MEM_TAG_PHYSICS,
+        MEM_TAG_TEMP,
+        MEM_TAG_EDITOR,
+        MEM_TAG_GAME,
+        MEM_TAG_MODEL,
+        MEM_TAG_GEOMETRY_BUFFER,
+        MEM_TAG_MAX
+    } MemTag;
+
+    // Top-level arena identifiers — each is a bump region in the single mmap
+    typedef enum
+    {
+        MEM_ARENA_GENERAL,    // unknown, array, arena, buffer, string, temp, editor, game
+        MEM_ARENA_ECS,        // ecs, archetype, scene
+        MEM_ARENA_RENDERER,   // renderer, texture, mesh, shader, material
+        MEM_ARENA_PHYSICS,    // physics
+        MEM_ARENA_FRAME,      // scratch — reset every frame
+        MEM_ARENA_COUNT
+    } MemArenaID;
+
+    #define MEM_ALIGNMENT 16
+
+    // Configurable arena sizes — saved/loaded from project config
+    typedef struct
+    {
+        u64 totalMB;
+        u64 arenaMB[MEM_ARENA_COUNT];
+    } MemoryConfig;
+
+    typedef struct
+    {
+        u64    totalSize;          // total OS allocation
+        void  *block;              // base pointer (VirtualAlloc/mmap)
+        Arena  arenas[MEM_ARENA_COUNT];
+
+        // Per-tag stats
+        u64 taggedAllocs[MEM_TAG_MAX];
+        u64 taggedAllocsFrame[MEM_TAG_MAX];
+        u64 taggedFreesFrame[MEM_TAG_MAX];
+        u64 totalAllocated;
+        u32 allocCount;
+    } MemorySystem;
+
+    // Lifecycle
+    DAPI MemoryConfig memDefaultConfig(void);
+    DAPI b8   memorySystemInit(MemoryConfig *config);
+    DAPI void memorySystemShutdown(void);
+    DAPI void memorySystemReset(void);            // zero all arenas — all prior pointers become invalid
+    DAPI void memArenaReset(MemArenaID arena);    // zero one arena's bump pointer (all prior pointers in that arena become invalid)
+
+    // Allocator — routes to the arena mapped by tag
+    DAPI void *dalloc(u64 size, MemTag tag);
+    DAPI void  dfree(void *block, u64 size, MemTag tag);
+
+    // Frame allocator (linear bump, reset per frame)
+    DAPI void *frameAlloc(u64 size);
+    DAPI void  frameReset(void);
+
+    // Convenience macros
+    #define DALLOC_TYPE(type, tag)             (type *)dalloc(sizeof(type), tag)
+    #define DFREE_TYPE(ptr, type, tag)         dfree(ptr, sizeof(type), tag)
+    #define DALLOC_ARRAY(type, count, tag)     (type *)dalloc(sizeof(type) * (count), tag)
+    #define DFREE_ARRAY(ptr, type, count, tag) dfree(ptr, sizeof(type) * (count), tag)
+
+    // Stats / editor queries
+    DAPI const c8 *memGetTagName(MemTag tag);
+    DAPI const c8 *memGetArenaName(MemArenaID arena);
+    DAPI u64  memGetTagUsage(MemTag tag);
+    DAPI u64  memGetArenaUsed(MemArenaID arena);
+    DAPI u64  memGetArenaSize(MemArenaID arena);
+    DAPI u64  memGetTotalUsed(void);
+    DAPI u64  memGetTotalSize(void);
+    DAPI u32  memGetAllocCount(void);
+    DAPI void memResetFrameStats(void);
+
+    // Config file (simple key=value text)
+    DAPI b8 memSaveConfig(const c8 *path, const MemoryConfig *cfg);
+    DAPI b8 memLoadConfig(const c8 *path, MemoryConfig *cfg);
+
+    DAPI extern MemorySystem *g_memory;
 
     //=====================================================================================================================
     // Hash Map
@@ -456,10 +597,17 @@ extern "C"
 
     //=====================================================================================================================
     // SOA ECS
+    typedef enum
+    {
+        FIELD_TEMP_COLD = 0,   // default — not accessed in hot loops
+        FIELD_TEMP_HOT  = 1,   // accessed every frame in inner loops (physics, transforms)
+    } FieldTemperature;
+
     typedef struct
     {
         const c8 *name;
         u32 size;
+        FieldTemperature temperature;   // hot/cold classification for cache-aware layout
     } FieldInfo;
 
     typedef struct
@@ -473,10 +621,21 @@ extern "C"
     {
         u32 count;
         u32 entityCount;
+        u32 entitySize;     // cached entity size to avoid layout dependency on destroy
+        u32 fieldCount;     // cached layout->count so freeEntityArenaChunk doesn't need layout
         StructLayout *layout;
         void *data;
         void **fields;
+        b8   ownsData;      // false when chunk is a view into archetype block
     } EntityArena;
+
+    // Chunk system constants
+    #define CHUNK_SIMD_ALIGN 4
+    #define CHUNK_DEFAULT_SIZE (128 * 1024)  // 128 KB default chunk size
+
+    // Chunked entity arena functions
+    DAPI EntityArena createEntityArenaChunk(StructLayout *layout, u32 chunkCapacity);
+    DAPI void freeEntityArenaChunk(EntityArena *chunk);
 
     // create Entity Arena
     DAPI EntityArena *createEntityArena(StructLayout *layout, u32 entityCount,
@@ -495,28 +654,52 @@ extern "C"
     // calculate Entity Size based of a struct layout
     DAPI u32 getEntitySize(StructLayout *layout);
 
+    // Entity handle packing macro (archetype_id | chunk_id | local_index)
+    #define ENTITY_PACK(archId, chunkId, idx) \
+        (((u64)(archId) << 32) | ((u64)(chunkId) << 16) | (u64)(idx))
+
 #define FIELD_OF(Type, field)                                                  \
     {                                                                          \
-        #field, sizeof(((Type *)0)->field)                                     \
+        #field, sizeof(((Type *)0)->field), FIELD_TEMP_COLD                    \
     }
 
 #define FIELD(type, name)                                                      \
     {                                                                          \
-        #name, sizeof(type)                                                    \
+        #name, sizeof(type), FIELD_TEMP_COLD                                   \
+    }
+
+// Hot/cold explicit macros - use HOT for fields accessed in inner loops
+#define FIELD_HOT(type, name)                                                  \
+    {                                                                          \
+        #name, sizeof(type), FIELD_TEMP_HOT                                    \
+    }
+
+#define FIELD_COLD(type, name)                                                 \
+    {                                                                          \
+        #name, sizeof(type), FIELD_TEMP_COLD                                   \
     }
 
 #define VEC3_FIELDS(name)                                                      \
-    {#name "X", sizeof(f32)}, {#name "Y", sizeof(f32)},                    \
-    {                                                                          \
-        #name "Z", sizeof(f32)                                               \
-    }
+    {#name "X", sizeof(f32), FIELD_TEMP_COLD},                                 \
+    {#name "Y", sizeof(f32), FIELD_TEMP_COLD},                                 \
+    {#name "Z", sizeof(f32), FIELD_TEMP_COLD}
+
+#define VEC3_FIELDS_HOT(name)                                                  \
+    {#name "X", sizeof(f32), FIELD_TEMP_HOT},                                  \
+    {#name "Y", sizeof(f32), FIELD_TEMP_HOT},                                  \
+    {#name "Z", sizeof(f32), FIELD_TEMP_HOT}
 
 #define VEC4_FIELDS(name)                                                      \
-    {#name "X", sizeof(f32)}, {#name "Y", sizeof(f32)},                    \
-        {#name "Z", sizeof(f32)},                                            \
-    {                                                                          \
-        #name "W", sizeof(f32)                                               \
-    }
+    {#name "X", sizeof(f32), FIELD_TEMP_COLD},                                 \
+    {#name "Y", sizeof(f32), FIELD_TEMP_COLD},                                 \
+    {#name "Z", sizeof(f32), FIELD_TEMP_COLD},                                 \
+    {#name "W", sizeof(f32), FIELD_TEMP_COLD}
+
+#define VEC4_FIELDS_HOT(name)                                                  \
+    {#name "X", sizeof(f32), FIELD_TEMP_HOT},                                  \
+    {#name "Y", sizeof(f32), FIELD_TEMP_HOT},                                  \
+    {#name "Z", sizeof(f32), FIELD_TEMP_HOT},                                  \
+    {#name "W", sizeof(f32), FIELD_TEMP_HOT}
 
 #ifdef DRUID_H
 #define DEFINE_ARCHETYPE(name, ...)                                            \
@@ -532,17 +715,34 @@ extern "C"
     //=====================================================================================================================
     // Archetypes
 
-    typedef struct Archetype
+    typedef struct PhysicsWorld PhysicsWorld;
+
+    // Archetype flags (stored in Archetype.flags as a b8 bitfield)
+    #define ARCH_SINGLE       0  // holds exactly one entity (e.g. Player)
+    #define ARCH_PERSISTENT   1  // survives scene switches
+    #define ARCH_BUFFERED     2  // pool semantics, Alive field at index 0
+    #define ARCH_PHYSICS_BODY 3  // engine tracks this archetype for physics simulation
+    #define ARCH_NO_SPLIT     4  // all fields in one contiguous block (no hot/cold separation)
+
+    typedef struct
     {
-        u32 id;
         StructLayout *layout;
-        EntityArena *arena;
+        EntityArena  *arena;
+        void         *hotData;      // contiguous block for all hot field data
+        void         *coldData;     // contiguous block for all cold field data
+        u32 id;
         u32 arenaCount;
+        u32 hotEntitySize;          // bytes per entity for hot fields
+        u32 coldEntitySize;         // bytes per entity for cold fields
         u32 capacity;
-        b8 isSingle;    // when true, archetype holds exactly one entity (e.g. Player)
-        b8 isPersistent; // when true, archetype survives scene switches
-        b8 isBuffered;     // uses pool semantics — Alive field at index 0
-        u32 poolCapacity;  // max pool size (0 = unlimited growth)
+        u32 poolCapacity;           // 0 = unlimited growth
+        u32 activeChunkCount;
+        u32 chunkCapacity;          // entities per chunk (SIMD-aligned)
+        u32 chunkSizeBytes;
+        u32 *deadIndices;           // BUFFERED only: dead index stack
+        u32 deadCount;
+        u32 cachedEntityCount;
+        u8  flags;
     } Archetype;
 
     // Archetype API (declarations only) - implementations live in systems/ecs
@@ -566,6 +766,17 @@ extern "C"
     DAPI u32  archetypePoolSpawn(Archetype *arch);
     DAPI void archetypePoolDespawn(Archetype *arch, u32 index);
     DAPI b8   archetypePoolIsAlive(Archetype *arch, u32 index);
+
+    // Chunk query helpers
+    DAPI u32 archetypeEntityCount(Archetype *arch);
+    DAPI u32 archetypeChunkCount(Archetype *arch);
+    DAPI void archetypeSetChunkSize(Archetype *arch, u32 sizeBytes);
+
+    // Hot/Cold contiguous data accessors
+    DAPI void *archetypeGetHotData(Archetype *arch);
+    DAPI void *archetypeGetColdData(Archetype *arch);
+    DAPI u32   archetypeGetHotEntitySize(Archetype *arch);
+    DAPI u32   archetypeGetColdEntitySize(Archetype *arch);
 
     //=====================================================================================================================
 
@@ -625,17 +836,18 @@ extern "C"
 
     #define MAX_ARCHETYPE_SYSTEMS 32
 
+    // ArchetypeFileEntry flags (stored in ArchetypeFileEntry.flags)
+    // Reuses ARCH_SINGLE(0), ARCH_PERSISTENT(1), ARCH_BUFFERED(2), ARCH_PHYSICS_BODY(3)
+    #define ARCH_FILE_UNIFORM_SCALE 4  // Scale is f32 instead of Vec3
+
     typedef struct
     {
         c8 name[MAX_SCENE_NAME];           // archetype name (e.g. "Enemy")
         c8 headerPath[MAX_PATH_LENGTH];    // project-relative .h path
         c8 sourcePath[MAX_PATH_LENGTH];    // project-relative .c path
         StructLayout layout;               // field layout
-        b8 isSingle;                       // single-instance archetype
-        b8 isPersistent;                   // survives scene switches
-        b8 uniformScale;                   // Scale is f32 instead of Vec3
-        b8 isBuffered;                     // true = archetype uses instance pooling (e.g. bullets)
         u32 poolCapacity;                  // max pool size for buffered archetypes (0 = unlimited)
+        u8  flags;                         // ARCH_SINGLE | ARCH_PERSISTENT | ARCH_BUFFERED | ARCH_PHYSICS_BODY | ARCH_FILE_UNIFORM_SCALE
     } ArchetypeFileEntry;
 
     typedef struct
@@ -644,9 +856,10 @@ extern "C"
         u32 count;
     } ArchetypeRegistry;
 
-    // write the .h / .c files for a given archetype into the project.
+    // write the .h / .c (or .cpp) files for a given archetype into the project.
     // typeNames is a parallel array of C type strings (e.g. "Vec3", "f32").
     // When isBuffered is true, an automatic "Alive" field is added for instance pooling.
+    // When useCpp is true, generates a .cpp file instead of .c (default is false for C files).
     DAPI b8 generateArchetypeFiles(const c8 *projectDir,
                                     const c8 *archetypeName,
                                     const FieldInfo *fields,
@@ -654,7 +867,9 @@ extern "C"
                                     u32 fieldCount,
                                     b8 isSingle,
                                     b8 isBuffered,
-                                    u32 poolCapacity);
+                                    u32 poolCapacity,
+                                    b8 isPhysicsBody,
+                                    b8 useCpp);
 
     // compile all archetype system DLLs in the project
     DAPI b8 buildArchetypeSystems(const c8 *projectDir, c8 *outLog, u32 logSize);
@@ -668,13 +883,18 @@ extern "C"
         HashMap indexMap;
     } EntityManager;
 
-    // ------------------------------------------------------------------
+    //=====================================================================================================================
     // Scenes
 
 #define MAX_SCENE_ARCHETYPES 32
 #define MAX_FIELD_NAME 64
 #define SCENE_MAGIC 0x43535244 // "DRSC"
-#define SCENE_VERSION 3
+#define SCENE_VERSION 5
+
+// Define an editor-visible name size constant if not present elsewhere
+#ifndef MAX_NAME_SIZE
+#define MAX_NAME_SIZE 256
+#endif
 
     typedef struct
     {
@@ -692,6 +912,10 @@ extern "C"
         // Material data (shared across the scene)
         u32 materialCount;
         Material *materials;
+        // Optional per-entity model name refs (archetype 0, chunk-linear order)
+        // Used to remap modelID indices when resource load order differs.
+        u32 modelRefCount;
+        c8 (*modelRefs)[MAX_NAME_SIZE];
     } SceneData;
 
     typedef struct
@@ -717,12 +941,8 @@ extern "C"
     } SceneManager;
 
     DAPI extern SceneManager *sceneManager;
-// Define an editor-visible name size constant if not present elsewhere
-#ifndef MAX_NAME_SIZE
-#define MAX_NAME_SIZE 256
-#endif
 
-    // ------------------------------------------------------------------
+    //=====================================================================================================================
     // SceneRuntime — engine-managed active scene for standalone play.
     //
     // Call sceneRuntimeInit(projectDir) once in your game's init function.
@@ -772,7 +992,7 @@ extern "C"
     DAPI void sceneRuntimeSetCallbacks(SceneTransitionFn onBeforeUnload,
                                        SceneTransitionFn onAfterLoad,
                                        void *userData);
-    // ------------------------------------------------------------------
+    //=====================================================================================================================
 
     // Scene manager API
     DAPI SceneManager *createSceneManager(u32 sceneCapacity);
@@ -784,8 +1004,11 @@ extern "C"
     // Persist/load SceneData to disk (binary format)
     DAPI b8 saveScene(const c8 *filePath, SceneData *data);
     DAPI SceneData loadScene(const c8 *filePath);
+    // Remap SceneEntity modelID values from saved modelRefs using ResourceManager.modelIDs.
+    // Returns number of entities whose modelID changed.
+    DAPI u32 sceneRemapModelIDs(SceneData *data);
     DAPI SceneData bakeScene(Scene *scene);
-    // ------------------------------------------------------------------
+    //=====================================================================================================================
 
     //=====================================================================================================================
 
@@ -909,6 +1132,8 @@ extern "C"
         u32   elemSize;      // sizeof one element
         u32   capacity;      // total slots allocated
         u32   count;         // slots currently in use
+        u32  *freeStack;     // stack of free indices
+        u32   freeCount;     // top-of-stack pointer (number of free slots)
     } Buffer;
 
     // Create a buffer with `capacity` slots of `elemSize` bytes each
@@ -925,7 +1150,28 @@ extern "C"
     // Destroy the buffer and free heap memory
     DAPI void bufferDestroy(Buffer *buf);
 
-    // Display
+    //=====================================================================================================================
+    // ModelSSBO — persistently mapped per-draw model matrix SSBO (binding point 2)
+
+    typedef struct
+    {
+        Mat4 *data;
+        u32   buffer;
+        u32   capacity;
+        u32   count;
+    } ModelSSBO;
+
+    DAPI ModelSSBO *modelSSBOCreate(u32 capacity);
+    DAPI void       modelSSBODestroy(ModelSSBO *ssbo);
+    DAPI void       modelSSBOBeginFrame(ModelSSBO *ssbo);
+    DAPI u32        modelSSBOWrite(ModelSSBO *ssbo, const Transform *t); // returns slot index for u_modelIndex
+    DAPI void       modelSSBOUpload(ModelSSBO *ssbo);
+    DAPI void       modelSSBOEndFrame(ModelSSBO *ssbo);  // Flushes buffered writes (GL_MAP_FLUSH_EXPLICIT_BIT)
+    DAPI void       modelSSBOBind(ModelSSBO *ssbo, u32 bindingPoint);
+
+    //=====================================================================================================================
+    // Display — SDL window + OpenGL context wrapper (owned by Renderer)
+
     typedef struct
     {
         // open gl context (using SDL)
@@ -938,33 +1184,13 @@ extern "C"
     } Display;
 
     // Display functions
-
     DAPI void initDisplay(const c8* title, Display *display, f32 width, f32 height);
     DAPI void swapBuffer(const Display *display);
     DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
-
     DAPI void returnError(const c8 *errorString);
     DAPI void onDestroy(Display *display);
     // VSync: 0 = off, 1 = on, -1 = adaptive (if supported)
     DAPI void setVSync(i32 interval);
-
-    //=====================================================================================================================
-    // ModelSSBO — persistently mapped per-draw model matrix SSBO (binding point 2)
-
-    typedef struct
-    {
-        u32   buffer;
-        Mat4 *data;
-        u32   capacity;
-        u32   count;
-    } ModelSSBO;
-
-    DAPI ModelSSBO *modelSSBOCreate(u32 capacity);
-    DAPI void       modelSSBODestroy(ModelSSBO *ssbo);
-    DAPI void       modelSSBOBeginFrame(ModelSSBO *ssbo);
-    DAPI u32        modelSSBOWrite(ModelSSBO *ssbo, const Transform *t); // returns slot index for u_modelIndex
-    DAPI void       modelSSBOUpload(ModelSSBO *ssbo);
-    DAPI void       modelSSBOBind(ModelSSBO *ssbo, u32 bindingPoint);
 
     //=====================================================================================================================
     // Renderer
@@ -973,33 +1199,76 @@ extern "C"
     // individual slots are acquired/released through the convenience helpers
     // below, which delegate to the underlying Buffer.
 
-    #define RENDERER_MAX_INSTANCE  4096
+    //=====================================================================================================================
+    // IndirectBuffer — multi-draw indirect rendering (glMultiDrawElementsIndirect)
+    //
+    // Pre-built command buffer containing all draw commands. Reduces GPU submission overhead
+    // from N individual draw calls to 1 indirect dispatch.
+    //
+    // GL indirect command layout (5 u32s per command, 20 bytes total):
+    //   count:         indices per draw (typically vertices * 3 for triangles)
+    //   instanceCount: number of instances per draw (typically 1, but can be >1)
+    //   firstIndex:    byte offset into the index buffer
+    //   baseVertex:    vertex array offset (signed i32)
+    //   baseInstance:  gl_BaseInstance for model matrix SSBO indexing
+    //
+    // Usage: Build commands incrementally, upload to GPU, dispatch once per frame.
+    // This single glMultiDrawElementsIndirect call replaces N individual glDrawElements calls.
+
+    typedef struct
+    {
+        u32 count;
+        u32 instanceCount;
+        u32 firstIndex;
+        i32 baseVertex;
+        u32 baseInstance;
+    } IndirectCommand;
+
+    typedef struct
+    {
+        u32 buffer;            // GL buffer object for indirect commands
+        IndirectCommand *commands;  // CPU-side command staging area
+        u32 commandCount;      // number of commands built this frame
+        u32 maxCommands;       // allocated capacity
+    } IndirectBuffer;
+
+    #define RENDERER_MAX_INSTANCE  1048576   // 1M entities @ 64B each = 64 MB SSBO
+
+    // Frustum culling — Gribb-Hartmann plane extraction (cached per frame)
+    typedef struct { f32 a, b, c, d; } FrustumPlane;
+    typedef struct { FrustumPlane p[6]; } Frustum;
 
     typedef struct Renderer
     {
-        Display *display;
+        // pointers (8-byte aligned)
+        Display     *display;
+        ModelSSBO   *modelSSBO;
+        IndirectBuffer *indirectBuffer;
 
-        Buffer cameras;          // Buffer of Camera
-        u32  activeCamera;     // index used by rendererBeginFrame
+        // Buffers (8-byte aligned, 32 bytes each)
+        Buffer cameras;
+        Buffer instanceBuffers;
+        Buffer gBuffers;
 
-        Buffer instanceBuffers;  // Buffer of InstanceBuffer
+        // Cached frustum (extracted once per frame in rendererBeginFrame)
+        Frustum frustum;
+        b8      hasFrustum;
 
-        Buffer gBuffers;         // Buffer of GBuffer
-        u32 activeGBuffer;        // slot index in gBuffers, or (u32)-1 for forward rendering
-        b8  useDeferredRendering; // when true, default render writes to GBuffer
-
-        // core UBO shared across all shaders (view, projection, time, camPos)
+        // 4-byte fields (packed tightly)
+        u32 activeCamera;
+        u32 activeGBuffer;      // slot index in gBuffers, or (u32)-1 for forward
+        u32 defaultIBuffer;     // slot index of default instance buffer
         u32 coreUBO;
-
-        // default shader used when no override is set
         u32 defaultShader;
-
-        // batched model-matrix SSBO — written once per draw, reset each frame
-        // bound to GL_SHADER_STORAGE_BUFFER binding point 2
-        ModelSSBO *modelSSBO;
-
-        // timing
+        u32 envMapTex;
         f32 time;
+
+        // 1-byte fields
+        b8  useDeferredRendering;
+
+        // per-entity visibility from last frustum cull, frame-allocated
+        b8     *frameVisible;
+        u32     frameVisibleCount;
     } Renderer;
 
     DAPI extern Renderer *renderer;
@@ -1019,7 +1288,18 @@ extern "C"
     // optionally skips dead entities via an Alive (b8) field.
     DAPI void rendererDefaultArchetypeRender(Archetype *arch, Renderer *r);
 
-    // ---- convenience acquire / release wrappers ----
+    // Direct instanced mesh submission — use for models you know will be drawn many times
+    // (particles, asteroids, foliage, etc.) without needing a full archetype.
+    //
+    //   rendererSubmitInstance(r, modelID, &transform);   // call once per entity
+    //   rendererFlushInstancedModels(r);                  // call once per frame to issue draw
+    //
+    // Internally groups submissions by modelID and issues one glDrawElementsInstanced
+    // per unique model, so order of submission doesn't matter.
+    DAPI void rendererSubmitInstance(Renderer *r, u32 modelID, const Transform *t);
+    DAPI void rendererFlushInstancedModels(Renderer *r);
+
+    // convenience acquire / release wrappers
     // Each returns an index into the buffer, or (u32)-1 on failure.
 
     // cameras
@@ -1129,6 +1409,7 @@ extern "C"
         u32 metallic;
         u32 transparency;
         u32 colour;
+        u32 emissive;
     } MaterialUniforms;
 
     typedef struct Material
@@ -1141,6 +1422,7 @@ extern "C"
         f32 metallic;
         f32 transparency;
         Vec3 colour;
+        f32 emissive;
     } Material;
 
     //=====================================================================================================================
@@ -1217,21 +1499,44 @@ extern "C"
     DAPI Mesh *createTerrainMesh(u32 cellsX, u32 cellsZ,
                                  f32 cellSize);
     DAPI Mesh *createBoxMesh();
+    DAPI Mesh *createPlaneMesh();
+    DAPI Mesh *createSphereMesh();
     DAPI Mesh *createSkyboxMesh();
     DAPI Mesh *createQuadMesh();
 
 
+    // Double-buffered instance SSBO: CPU writes to one buffer while GPU reads
+    // from the other.  glFenceSync prevents overwriting data the GPU still needs.
+    #define INST_BUF_COUNT 2
     typedef struct
     {
-        u32   buffer;       // GL buffer object (bound as GL_SHADER_STORAGE_BUFFER)
-        Mat4* data;      // permanently mapped CPU->GPU memory — write directly, GPU reads
+        Mat4 *data;      // points to maps[writeIdx] — write here each frame
+        u32   buffer[INST_BUF_COUNT];   // two GL buffer objects
+        Mat4 *maps[INST_BUF_COUNT];     // persistent mappings per buffer
+        void *fences[INST_BUF_COUNT];   // GLsync fences (void* to avoid GL header here)
         u32   capacity;  // fixed at creation (MAX_ENTITY)
         u32   count;     // instances written this frame; reset to 0 before writing
-        b8  ready;
-    }InstanceBuffer;
+        u32   writeIdx;  // 0 or 1: which buffer the CPU writes to this frame
+        b8    ready;
+    } InstanceBuffer;
 
-    DAPI void instanceBufferCreate (InstanceBuffer* buf, u32 capacity);
-    DAPI void instanceBufferDestroy(InstanceBuffer* buf);
+    DAPI void instanceBufferCreate    (InstanceBuffer* buf, u32 capacity);
+    DAPI void instanceBufferDestroy   (InstanceBuffer* buf);
+    DAPI void instanceBufferFlushRange(InstanceBuffer* buf, u32 offset, u32 count);
+    DAPI void instanceBufferAdvance   (InstanceBuffer* buf);  // rotate to next buffer + wait on fence
+
+    //=====================================================================================================================
+    // Indirect rendering API — continued from struct definition above (see IndirectBuffer near Renderer)
+    //=====================================================================================================================
+
+    DAPI IndirectBuffer *indirectBufferCreate(u32 maxCommands);
+    DAPI void           indirectBufferDestroy(IndirectBuffer *buf);
+    DAPI void           indirectBufferReset(IndirectBuffer *buf);  // clear for next frame
+    DAPI b8             indirectBufferAddCommand(IndirectBuffer *buf, u32 modelID,
+                                                  u32 firstIndex, u32 indexCount,
+                                                  u32 baseVertex, u32 baseInstance);
+    DAPI void           indirectBufferUpload(IndirectBuffer *buf);  // push CPU data to GPU
+    DAPI void           indirectBufferDispatch(IndirectBuffer *buf, u32 shaderProgram);  // issue draw
 
     //=====================================================================================================================
     // GeometryBuffer — single GPU VBO+EBO mega-buffer for all static mesh geometry
@@ -1301,6 +1606,8 @@ extern "C"
         u32 normalTex;
         u32 albedoSpecTex;
         u32 depthTex;
+        u32 width;
+        u32 height;
     } GBuffer;
   
     DAPI GBuffer createGBuffer(u32 width, u32 height);
@@ -1312,6 +1619,7 @@ extern "C"
         u32 *materialIndices; // materials to use for the mesh
         u32 meshCount;        // how many meshes are in the buffer
         u32 materialCount;    // how many materials are in the buffer
+        f32 boundingRadius;   // bounding sphere radius at scale=1 (for frustum culling)
     } Model;
     DAPI void draw(Model *model, u32 shader, b8 shouldUpdateMaterials);
 
@@ -1354,9 +1662,9 @@ extern "C"
                                                 u32 modelCount,
                                                 u32 shaderCount);
     void cleanUpResourceManager(ResourceManager *manager);
-    void readResources(ResourceManager *manager, const c8 *filename);
+    DAPI void readResources(ResourceManager *manager, const c8 *filename);
 
-    // ---- typed resource getters ----
+    // typed resource getters
     // Bounds-checked access into the resource manager buffers.
     // Return NULL / 0 when the index is out of range.
     DAPI Mesh     *resGetMesh(u32 index);
@@ -1378,6 +1686,8 @@ extern "C"
 
     DAPI void loadModelFromAssimp(ResourceManager *manager,
                                   const c8 *filename);
+    DAPI void resRegisterPrimitive(ResourceManager *manager,
+                                   const c8 *name, Mesh *mesh);
 
     // keys
     // keyboard keys enum
@@ -1651,7 +1961,43 @@ extern "C"
 
         // GPU pipeline queries (GL_PRIMITIVES_GENERATED)
         u64          primitivesGenerated;
+
+        // Cache analysis (computed per-test, constant for a given entity count + layout)
+        u64          cacheWorkingSetBytes;    // total bytes accessed per frame (hot path)
+        u64          cacheLinesAccessed;      // unique 64B cache lines touched
+        u64          cacheUsefulBytes;        // bytes actually read/written from those lines
+        u64          cacheWastedBytes;        // bytes loaded but not used (pollution)
+        f64          cacheUtilisation;        // useful / fetched as 0-100%
+        u64          estL1Misses;             // estimated L1 misses (working set > L1)
+        u64          estL2Misses;             // estimated L2 misses (working set > L2)
+        u64          estL3Misses;             // estimated L3 misses → RAM accesses
     } ProfileFrame;
+
+    //=====================================================================================================================
+    // Cache topology — detected at startup via OS API (Windows: GetLogicalProcessorInformation)
+    //=====================================================================================================================
+    typedef struct
+    {
+        u32 l1dSize;       // L1 data cache size in bytes
+        u32 l2Size;        // L2 cache size in bytes
+        u32 l3Size;        // L3 cache size in bytes
+        u32 lineSize;      // cache line size in bytes (typically 64)
+    } CacheInfo;
+
+    // Detect CPU cache topology at startup. Fills CacheInfo with L1/L2/L3 sizes.
+    DAPI void profileDetectCaches(CacheInfo *out);
+
+    // Get the detected cache info (call profileDetectCaches first)
+    DAPI const CacheInfo *profileGetCacheInfo(void);
+
+    // Estimate cache performance for a known access pattern.
+    // entityCount: number of entities iterated
+    // bytesPerEntity: total bytes fetched per entity (e.g. sizeof(SpaceBodyAoS) = 116)
+    // usefulBytesPerEntity: bytes actually used per entity (e.g. 56 for physics hot fields)
+    // numArrays: number of separate contiguous arrays (SoA = 14, AoS = 1)
+    // Results written into the current ProfileFrame cache fields.
+    DAPI void profileEstimateCache(u32 entityCount, u32 bytesPerEntity,
+                                   u32 usefulBytesPerEntity, u32 numArrays);
 
     typedef struct { const c8 *name; u64 startCycles; } ProfileScope_;
 
@@ -1679,7 +2025,7 @@ extern "C"
 
     // memory tracking
     DAPI void               profileCountAlloc(u64 bytes);
-    DAPI void               profileCountFree(void);
+    DAPI void               profileCountFree(u64 bytes);
 
     DAPI extern u32 g_drawCalls;
     DAPI extern u32 g_triangles;
@@ -1776,39 +2122,240 @@ extern "C"
         DAPI extern f32 yLookAxis;
 
     //=====================================================================================================================
+    // Colliders
 
-    // Collier
     typedef enum
     {
-        Circle,
-        Box,
-        Cube,
-        MeshCollider
+        COLLIDER_CIRCLE   = 0,
+        COLLIDER_BOX_2D   = 1,
+        COLLIDER_SPHERE   = 2,
+        COLLIDER_BOX      = 3,
+        COLLIDER_CYLINDER = 4,
+        COLLIDER_MESH     = 5
     } ColliderType;
+
+    typedef struct { Vec3 min; Vec3 max; } AABB;
 
     typedef struct
     {
-        ColliderType type;
-        b8 isColliding;
-        i32 layer;
         void *state;
         void (*response)(u32 self, u32 other);
+        void (*onTrigger)(u32 self, u32 other);
+        ColliderType type;
+        i32 layer;
+        b8 isColliding;
+        b8 isTrigger;
     } Collider;
 
-    // Functions
+    // Legacy 2D
     DAPI Collider *createCircleCollider(f32 radius);
     DAPI Collider *createBoxCollider(Vec2 scale);
-    DAPI b8 cleanCollider(Collider *col);
     DAPI b8 isCircleColliding(Vec2 posA, f32 radA, Vec2 posB, f32 radB);
     DAPI b8 isBoxColliding(Vec2 posA, Vec2 scaleA, Vec2 posB, Vec2 scaleB);
-    DAPI f32 getRadius(Collider *col);
+
+    // 3D creation
+    DAPI Collider *createSphereCollider(f32 radius);
+    DAPI Collider *createCubeCollider(Vec3 halfExtents);
+    DAPI Collider *createCylinderCollider(f32 radius, f32 halfHeight);
+    DAPI Collider *createMeshCollider3D(const Vec3 *vertices, const u32 *indices,
+                                        u32 vertexCount, u32 indexCount);
+    DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
+
+    // Utilities
+    DAPI b8   cleanCollider(Collider *col);
+    DAPI f32  getRadius(Collider *col);
     DAPI Vec2 getScale(Collider *col);
-    DAPI b8 setBoxScale(Collider *col, Vec2 scale);
+    DAPI Vec3 getHalfExtents(Collider *col);
+    DAPI b8   setBoxScale(Collider *col, Vec2 scale);
+    DAPI AABB colliderComputeAABB(Collider *col, Vec3 pos);
+    DAPI b8   isAABBOverlapping(AABB a, AABB b);
 
-    DAPI Collider *createCubeCollider(Vec3 scale);
-    DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
+    // 3D collision detection
+    DAPI b8 isSphereVsSphere(Vec3 posA, f32 radA, Vec3 posB, f32 radB);
+    DAPI b8 isBoxVsBox(Vec3 posA, Vec3 halfA, Vec3 posB, Vec3 halfB);
+    DAPI b8 isSphereVsBox(Vec3 spherePos, f32 radius, Vec3 boxPos, Vec3 boxHalf);
+    DAPI b8 isSphereVsCylinder(Vec3 spherePos, f32 sphereRad,
+                                Vec3 cylPos, f32 cylRad, f32 cylHalfH);
+    DAPI b8 isCylinderVsCylinder(Vec3 posA, f32 radA, f32 halfHA,
+                                  Vec3 posB, f32 radB, f32 halfHB);
+    DAPI b8 isBoxVsCylinder(Vec3 boxPos, Vec3 boxHalf,
+                             Vec3 cylPos, f32 cylRad, f32 cylHalfH);
+    DAPI b8 isMeshVsSphere(Collider *meshCol, Vec3 meshPos,
+                            Vec3 spherePos, f32 sphereRad);
+    DAPI b8 isMeshVsBox(Collider *meshCol, Vec3 meshPos,
+                         Vec3 boxPos, Vec3 boxHalf);
 
-    DAPI Collider *createMeshCollider(Mesh *mesh, Transform *transform);
+    // Generic dispatch
+    DAPI b8 collidersOverlap(Collider *a, Vec3 posA, Collider *b, Vec3 posB);
+
+    //=====================================================================================================================
+    // Physics Engine
+
+    typedef enum { PHYS_BODY_STATIC = 0, PHYS_BODY_DYNAMIC = 1, PHYS_BODY_KINEMATIC = 2 } PhysBodyType;
+    typedef enum { PHYS_SHAPE_SPHERE, PHYS_SHAPE_BOX, PHYS_SHAPE_CYLINDER, PHYS_SHAPE_MESH, PHYS_SHAPE_COUNT } PhysShapeType;
+
+    typedef struct { f32 friction; f32 restitution; f32 density; } PhysMaterial;
+    typedef struct { Vec3 point; Vec3 normal; f32 depth; } ContactPoint;
+
+#define MAX_CONTACT_POINTS 4
+
+    typedef struct
+    {
+        u32          bodyA;
+        u32          bodyB;
+        ContactPoint points[MAX_CONTACT_POINTS];
+        u32          pointCount;
+    } ContactManifold;
+
+    typedef void (*CollisionFn)(u32 self, u32 other, const ContactManifold *manifold);
+    typedef void (*TriggerFn)(u32 self, u32 other);
+
+    typedef struct { Vec3 origin; Vec3 direction; f32 maxDistance; u32 layerMask; } PhysRay;
+    typedef struct { Vec3 point; Vec3 normal; f32 distance; u32 bodyIndex; b8 hit; } PhysRayHit;
+
+    // Opaque — defined in physics.c (PhysicsWorld forward-declared before Archetype)
+    typedef struct SpatialHashGrid SpatialHashGrid;
+
+    // Include in any archetype definition to make it a physics body
+#define PHYSICS_BODY_FIELDS                \
+    FIELD(u32, PhysicsBodyType),           \
+    FIELD(u32, ColliderHandle),            \
+    VEC3_FIELDS(LinearVelocity),           \
+    VEC3_FIELDS(AngularVelocity),          \
+    VEC3_FIELDS(Force),                    \
+    VEC3_FIELDS(Torque),                   \
+    FIELD(f32, Mass),                      \
+    FIELD(f32, InvMass),                   \
+    FIELD(f32, LinearDamping),             \
+    FIELD(f32, AngularDamping),            \
+    FIELD(u32, CollisionLayer),            \
+    FIELD(u32, CollisionMask)
+
+    // Physics DLL plugin
+    typedef void (*PhysicsInitFn)(PhysicsWorld *world);
+    typedef void (*PhysicsStepFn)(PhysicsWorld *world, f32 dt);
+    typedef void (*PhysicsShutdownFn)(PhysicsWorld *world);
+
+    typedef struct
+    {
+        PhysicsInitFn     init;
+        PhysicsStepFn     step;
+        PhysicsShutdownFn shutdown;
+    } PhysicsPlugin;
+
+    typedef void (*GetPhysicsPluginFn)(PhysicsPlugin *out);
+
+    typedef struct
+    {
+        DLLHandle     dll;
+        PhysicsPlugin plugin;
+        b8            loaded;
+    } PhysicsDLL;
+
+    // World
+    DAPI PhysicsWorld *physWorldCreate(Vec3 gravity, f32 timestep);
+    DAPI void          physWorldDestroy(PhysicsWorld *world);
+    DAPI void          physWorldStep(PhysicsWorld *world, f32 dt);
+    DAPI void          physWorldSetGravity(PhysicsWorld *world, Vec3 gravity);
+    DAPI void          physWorldSetIterations(PhysicsWorld *world, u32 iterations);
+    DAPI void          physWorldSetSubsteps(PhysicsWorld *world, u32 substeps);
+    DAPI void          physWorldSetCollisionCallback(PhysicsWorld *world, CollisionFn fn);
+    DAPI void          physWorldSetTriggerCallback(PhysicsWorld *world, TriggerFn fn);
+
+    // feed frustum cull results to physics for LOD skipping
+    DAPI void          physWorldSetVisibility(PhysicsWorld *world, const b8 *visible,
+                                              u32 count, u32 lodInterval);
+
+    // Entity management — engine tracks physics archetypes
+    DAPI void          physRegisterArchetype(PhysicsWorld *world, Archetype *arch);
+    DAPI u32           physGetBodyArchetypeCount(PhysicsWorld *world);
+    DAPI Archetype    *physGetBodyArchetype(PhysicsWorld *world, u32 index);
+
+    // Colliders (handle-based)
+    DAPI u32  physColliderCreateSphere(PhysicsWorld *world, f32 radius);
+    DAPI u32  physColliderCreateBox(PhysicsWorld *world, Vec3 halfExtents);
+    DAPI u32  physColliderCreateCylinder(PhysicsWorld *world, f32 radius, f32 halfHeight);
+    DAPI u32  physColliderCreateMesh(PhysicsWorld *world, const Vec3 *verts, const u32 *indices,
+                                     u32 vertCount, u32 idxCount);
+    DAPI void physColliderDestroy(PhysicsWorld *world, u32 handle);
+    DAPI void physColliderSetOffset(PhysicsWorld *world, u32 handle, Vec3 offset);
+    DAPI void physColliderSetTrigger(PhysicsWorld *world, u32 handle, b8 isTrigger);
+    DAPI void physColliderSetMaterial(PhysicsWorld *world, u32 handle, PhysMaterial mat);
+    DAPI AABB physColliderComputeAABB(PhysicsWorld *world, u32 handle, Vec3 pos, Vec4 rot);
+
+    // Rigidbody
+    DAPI void physBodyApplyForce(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 force);
+    DAPI void physBodyApplyTorque(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 torque);
+    DAPI void physBodyApplyImpulse(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 impulse);
+    DAPI void physBodyApplyImpulseAt(PhysicsWorld *world, Archetype *arch, u32 index,
+                                     Vec3 impulse, Vec3 point);
+
+    // Broadphase
+    DAPI void physBroadphaseRebuild(PhysicsWorld *world);
+    DAPI u32  physBroadphaseQuery(PhysicsWorld *world, AABB query, u32 *outBodies, u32 maxBodies);
+
+    // Raycasting
+    DAPI PhysRayHit physRaycast(PhysicsWorld *world, PhysRay ray);
+    DAPI u32        physRaycastAll(PhysicsWorld *world, PhysRay ray, PhysRayHit *hits, u32 maxHits);
+
+    // Overlap queries
+    DAPI u32 physOverlapSphere(PhysicsWorld *world, Vec3 center, f32 radius,
+                               u32 *outBodies, u32 maxBodies);
+    DAPI u32 physOverlapBox(PhysicsWorld *world, Vec3 center, Vec3 halfExtents,
+                            u32 *outBodies, u32 maxBodies);
+
+    // Physics DLL
+    DAPI b8   loadPhysicsDLL(const c8 *dllPath, PhysicsDLL *out);
+    DAPI void unloadPhysicsDLL(PhysicsDLL *dll);
+
+    // Global physics world (like renderer — created once, accessible everywhere)
+    DAPI extern PhysicsWorld *physicsWorld;
+
+    // Engine-side physics lifecycle — call from your app/editor loop
+    DAPI PhysicsWorld *physInit(Vec3 gravity, f32 timestep);
+    DAPI void          physShutdown(void);
+    DAPI void          physTick(f32 dt);
+
+    // Auto-registers all archetypes with isPhysicsBody == true from a scene
+    DAPI void physAutoRegisterScene(SceneData *scene);
+
+    //=====================================================================================================================
+    // Debug Gizmos — immediate-mode debug drawing
+
+    typedef struct { f32 r, g, b, a; } GizmoColor;
+
+    #define GIZMO_RED    (GizmoColor){1, 0, 0, 1}
+    #define GIZMO_GREEN  (GizmoColor){0, 1, 0, 1}
+    #define GIZMO_BLUE   (GizmoColor){0, 0, 1, 1}
+    #define GIZMO_YELLOW (GizmoColor){1, 1, 0, 1}
+    #define GIZMO_CYAN   (GizmoColor){0, 1, 1, 1}
+    #define GIZMO_WHITE  (GizmoColor){1, 1, 1, 1}
+
+    DAPI void gizmoInit(void);
+    DAPI void gizmoShutdown(void);
+    DAPI void gizmoBeginFrame(void);
+    DAPI void gizmoEndFrame(Mat4 viewProj);
+
+    // Primitives
+    DAPI void gizmoDrawLine(Vec3 from, Vec3 to, GizmoColor color);
+    DAPI void gizmoDrawRay(Vec3 origin, Vec3 direction, f32 length, GizmoColor color);
+    DAPI void gizmoDrawArrow(Vec3 from, Vec3 to, f32 headSize, GizmoColor color);
+
+    // Shapes
+    DAPI void gizmoDrawSphere(Vec3 center, f32 radius, GizmoColor color);
+    DAPI void gizmoDrawBox(Vec3 center, Vec3 halfExtents, GizmoColor color);
+    DAPI void gizmoDrawCylinder(Vec3 center, f32 radius, f32 halfHeight, GizmoColor color);
+    DAPI void gizmoDrawAABB(AABB box, GizmoColor color);
+    DAPI void gizmoDrawCircle(Vec3 center, Vec3 normal, f32 radius, GizmoColor color);
+
+    // Grids & axes
+    DAPI void gizmoDrawGrid(Vec3 center, f32 size, u32 divisions, GizmoColor color);
+    DAPI void gizmoDrawAxes(Vec3 origin, f32 length);
+    DAPI void gizmoDrawTransform(Transform *t, f32 length);
+
+    // Physics debug
+    DAPI void gizmoDrawCollider(Collider *col, Vec3 pos, GizmoColor color);
+    DAPI void gizmoDrawContactManifold(const ContactManifold *manifold, GizmoColor color);
 
 #ifdef __cplusplus
 }

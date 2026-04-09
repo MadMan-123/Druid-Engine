@@ -11,6 +11,30 @@ static SceneTransitionFn g_onBeforeUnload = NULL;
 static SceneTransitionFn g_onAfterLoad    = NULL;
 static void             *g_callbackData   = NULL;
 
+static b8 strEqIgnoreCase(const c8 *a, const c8 *b)
+{
+    if (!a || !b) return false;
+    u32 i = 0;
+    while (a[i] || b[i])
+    {
+        if (tolower((u8)a[i]) != tolower((u8)b[i]))
+            return false;
+        i++;
+    }
+    return true;
+}
+
+static i32 findFieldIndex(StructLayout *layout, const c8 *name)
+{
+    if (!layout || !name) return -1;
+    for (u32 i = 0; i < layout->count; i++)
+    {
+        if (layout->fields[i].name && strEqIgnoreCase(layout->fields[i].name, name))
+            return (i32)i;
+    }
+    return -1;
+}
+
 DAPI SceneRuntime *sceneRuntimeGetData(void)
 {
     return sceneRuntime;
@@ -37,20 +61,60 @@ static void *findField(SceneData *sd, const c8 *name)
     void **fields = getArchetypeFields(arch, 0);
     if (!fields || !arch->layout) return NULL;
 
-    for (u32 i = 0; i < arch->layout->count; i++)
-    {
-        const c8 *fn = arch->layout->fields[i].name;
-        if (!fn) continue;
-        u32 j = 0;
-        b8 match = true;
-        while (fn[j] || name[j])
-        {
-            if (tolower((u8)fn[j]) != tolower((u8)name[j])) { match = false; break; }
-            j++;
-        }
-        if (match) return fields[i];
-    }
+    i32 idx = findFieldIndex(arch->layout, name);
+    if (idx >= 0)
+        return fields[idx];
+
     return NULL;
+}
+
+DAPI u32 sceneRemapModelIDs(SceneData *data)
+{
+    if (!data || !resources || !data->modelRefs || data->modelRefCount == 0)
+        return 0;
+    if (data->archetypeCount == 0 || !data->archetypes)
+        return 0;
+
+    Archetype *arch = &data->archetypes[0];
+    if (!arch->layout || arch->activeChunkCount == 0)
+        return 0;
+
+    i32 modelIdx = findFieldIndex(arch->layout, "modelID");
+    if (modelIdx < 0)
+        return 0;
+
+    u32 remapped = 0;
+    u32 cursor = 0;
+    for (u32 ch = 0; ch < arch->activeChunkCount && cursor < data->modelRefCount; ch++)
+    {
+        u32 count = arch->arena[ch].count;
+        u32 *modelIDs = (u32 *)arch->arena[ch].fields[modelIdx];
+        if (!modelIDs)
+        {
+            cursor += count;
+            continue;
+        }
+
+        for (u32 e = 0; e < count && cursor < data->modelRefCount; e++, cursor++)
+        {
+            const c8 *modelName = data->modelRefs[cursor];
+            if (!modelName || modelName[0] == '\0')
+                continue;
+
+            u32 mapped = 0;
+            if (findInMap(&resources->modelIDs, modelName, &mapped)
+                && mapped < resources->modelUsed)
+            {
+                if (modelIDs[e] != mapped)
+                {
+                    modelIDs[e] = mapped;
+                    remapped++;
+                }
+            }
+        }
+    }
+
+    return remapped;
 }
 
 // Find and load the startup scene: checks startup_scene.txt, then scans scenes/.
@@ -114,7 +178,10 @@ b8 sceneRuntimeInit(const c8 *projectDir)
     if (!projectDir) return false;
 
     if (!sceneRuntime)
-        sceneRuntime = (SceneRuntime *)calloc(1, sizeof(SceneRuntime));
+    {
+        sceneRuntime = (SceneRuntime *)dalloc(sizeof(SceneRuntime), MEM_TAG_SCENE);
+        if (sceneRuntime) memset(sceneRuntime, 0, sizeof(SceneRuntime));
+    }
     if (!sceneRuntime) return false;
 
     if (!loadStartupSceneData(projectDir, &sceneRuntime->data))
@@ -123,9 +190,11 @@ b8 sceneRuntimeInit(const c8 *projectDir)
         return false;
     }
 
+    sceneRemapModelIDs(&sceneRuntime->data);
+
     // Extract entity count from archetype 0
     Archetype *arch = &sceneRuntime->data.archetypes[0];
-    sceneRuntime->entityCount = arch->arena[0].count;
+    sceneRuntime->entityCount = archetypeEntityCount(arch);
 
     // Extract named field pointers
     sceneRuntime->positions        = (Vec3 *)findField(&sceneRuntime->data, "position");
@@ -196,18 +265,18 @@ b8 sceneRuntimeLoad(const c8 *filePath)
         // Count persistent archetypes
         for (u32 i = 0; i < sceneRuntime->data.archetypeCount; i++)
         {
-            if (sceneRuntime->data.archetypes[i].isPersistent)
+            if (FLAG_CHECK(sceneRuntime->data.archetypes[i].flags, ARCH_PERSISTENT))
                 persistCount++;
         }
 
         // Stash persistent archetypes into a side array
         if (persistCount > 0)
         {
-            persistArchetypes = (Archetype *)malloc(sizeof(Archetype) * persistCount);
+            persistArchetypes = (Archetype *)dalloc(sizeof(Archetype) * persistCount, MEM_TAG_SCENE);
             u32 p = 0;
             for (u32 i = 0; i < sceneRuntime->data.archetypeCount; i++)
             {
-                if (sceneRuntime->data.archetypes[i].isPersistent)
+                if (FLAG_CHECK(sceneRuntime->data.archetypes[i].flags, ARCH_PERSISTENT))
                 {
                     persistArchetypes[p] = sceneRuntime->data.archetypes[i];
                     strncpy(persistNames[p], sceneRuntime->data.archetypeNames[i],
@@ -220,18 +289,27 @@ b8 sceneRuntimeLoad(const c8 *filePath)
         // Destroy only non-persistent archetypes
         for (u32 i = 0; i < sceneRuntime->data.archetypeCount; i++)
         {
-            if (!sceneRuntime->data.archetypes[i].isPersistent)
+            if (!FLAG_CHECK(sceneRuntime->data.archetypes[i].flags, ARCH_PERSISTENT))
                 destroyArchetype(&sceneRuntime->data.archetypes[i]);
         }
-        free(sceneRuntime->data.archetypes);
+        dfree(sceneRuntime->data.archetypes,
+              sizeof(Archetype) * sceneRuntime->data.archetypeCount, MEM_TAG_SCENE);
         sceneRuntime->data.archetypes    = NULL;
         sceneRuntime->data.archetypeCount = 0;
     }
     if (sceneRuntime->data.materials)
     {
-        free(sceneRuntime->data.materials);
+        dfree(sceneRuntime->data.materials,
+              sizeof(Material) * sceneRuntime->data.materialCount, MEM_TAG_SCENE);
         sceneRuntime->data.materials    = NULL;
         sceneRuntime->data.materialCount = 0;
+    }
+    if (sceneRuntime->data.modelRefs)
+    {
+        dfree(sceneRuntime->data.modelRefs,
+              sizeof(c8[MAX_NAME_SIZE]) * sceneRuntime->data.modelRefCount, MEM_TAG_SCENE);
+        sceneRuntime->data.modelRefs = NULL;
+        sceneRuntime->data.modelRefCount = 0;
     }
 
     // Load new scene
@@ -252,11 +330,13 @@ b8 sceneRuntimeLoad(const c8 *filePath)
         return false;
     }
 
+    sceneRemapModelIDs(&sceneRuntime->data);
+
     // Merge persistent archetypes back into the new scene's archetype array
     if (persistCount > 0 && persistArchetypes)
     {
         u32 newTotal = sceneRuntime->data.archetypeCount + persistCount;
-        Archetype *merged = (Archetype *)malloc(sizeof(Archetype) * newTotal);
+        Archetype *merged = (Archetype *)dalloc(sizeof(Archetype) * newTotal, MEM_TAG_SCENE);
         if (merged)
         {
             // Copy new scene archetypes first
@@ -271,17 +351,18 @@ b8 sceneRuntimeLoad(const c8 *filePath)
                         persistNames[p], MAX_SCENE_NAME - 1);
             }
 
-            free(sceneRuntime->data.archetypes);
+            dfree(sceneRuntime->data.archetypes,
+                  sizeof(Archetype) * sceneRuntime->data.archetypeCount, MEM_TAG_SCENE);
             sceneRuntime->data.archetypes = merged;
             sceneRuntime->data.archetypeCount = newTotal;
         }
-        free(persistArchetypes);
+        dfree(persistArchetypes, sizeof(Archetype) * persistCount, MEM_TAG_SCENE);
         persistArchetypes = NULL;
     }
 
     // Re-extract field pointers
     Archetype *arch = &sceneRuntime->data.archetypes[0];
-    sceneRuntime->entityCount      = arch->arena[0].count;
+    sceneRuntime->entityCount      = archetypeEntityCount(arch);
     sceneRuntime->positions        = (Vec3 *)findField(&sceneRuntime->data, "position");
     sceneRuntime->rotations        = (Vec4 *)findField(&sceneRuntime->data, "rotation");
     sceneRuntime->scales           = (Vec3 *)findField(&sceneRuntime->data, "scale");
@@ -321,12 +402,17 @@ void sceneRuntimeDestroy(void)
     {
         for (u32 i = 0; i < sceneRuntime->data.archetypeCount; i++)
             destroyArchetype(&sceneRuntime->data.archetypes[i]);
-        free(sceneRuntime->data.archetypes);
+        dfree(sceneRuntime->data.archetypes,
+              sizeof(Archetype) * sceneRuntime->data.archetypeCount, MEM_TAG_SCENE);
     }
     if (sceneRuntime->data.materials)
-        free(sceneRuntime->data.materials);
+        dfree(sceneRuntime->data.materials,
+              sizeof(Material) * sceneRuntime->data.materialCount, MEM_TAG_SCENE);
+    if (sceneRuntime->data.modelRefs)
+        dfree(sceneRuntime->data.modelRefs,
+              sizeof(c8[MAX_NAME_SIZE]) * sceneRuntime->data.modelRefCount, MEM_TAG_SCENE);
 
-    free(sceneRuntime);
+    dfree(sceneRuntime, sizeof(SceneRuntime), MEM_TAG_SCENE);
     sceneRuntime = NULL;
 }
 
@@ -372,6 +458,59 @@ b8 saveScene(const c8 *filePath, SceneData *data)
         return false;
     }
 
+    // Build optional model-name refs for archetype 0 so modelID can be remapped
+    // on load when resource index ordering differs.
+    u32 modelRefCount = 0;
+    c8 (*modelRefs)[MAX_NAME_SIZE] = NULL;
+    if (data->archetypeCount > 0 && data->archetypes && resources)
+    {
+        Archetype *arch0 = &data->archetypes[0];
+        if (arch0->layout && arch0->activeChunkCount > 0)
+        {
+            i32 modelField = findFieldIndex(arch0->layout, "modelID");
+            if (modelField >= 0)
+            {
+                modelRefCount = archetypeEntityCount(arch0);
+                if (modelRefCount > 0)
+                {
+                    u64 modelRefsSize = (u64)modelRefCount * sizeof(*modelRefs);
+                    modelRefs = (c8 (*)[MAX_NAME_SIZE])dalloc(modelRefsSize, MEM_TAG_SCENE);
+                    if (modelRefs) memset(modelRefs, 0, modelRefsSize);
+                }
+
+                u32 cursor = 0;
+                for (u32 ch = 0; ch < arch0->activeChunkCount && cursor < modelRefCount; ch++)
+                {
+                    u32 count = arch0->arena[ch].count;
+                    u32 *ids = (u32 *)arch0->arena[ch].fields[modelField];
+                    if (!ids)
+                    {
+                        cursor += count;
+                        continue;
+                    }
+
+                    for (u32 e = 0; e < count && cursor < modelRefCount; e++, cursor++)
+                    {
+                        u32 mid = ids[e];
+                        if (mid == (u32)-1 || mid >= resources->modelUsed)
+                            continue;
+
+                        const c8 *src = resources->modelBuffer[mid].name;
+                        if (!src || src[0] == '\0')
+                            continue;
+
+                        const c8 *slash = strrchr(src, '/');
+                        if (!slash) slash = strrchr(src, '\\');
+                        const c8 *base = slash ? slash + 1 : src;
+
+                        strncpy(modelRefs[cursor], base, MAX_NAME_SIZE - 1);
+                        modelRefs[cursor][MAX_NAME_SIZE - 1] = '\0';
+                    }
+                }
+            }
+        }
+    }
+
     FILE *f = fopen(filePath, "wb");
     if (!f)
     {
@@ -389,7 +528,6 @@ b8 saveScene(const c8 *filePath, SceneData *data)
     {
         Archetype *arch = &data->archetypes[a];
         StructLayout *lay = arch->layout;
-        EntityArena *ea = &arch->arena[0]; // first arena
 
         // archetype name (fixed-size block)
         fwrite(data->archetypeNames[a], MAX_SCENE_NAME, 1, f);
@@ -407,17 +545,25 @@ b8 saveScene(const c8 *filePath, SceneData *data)
         // entity capacity (so loader doesn't shrink the arena)
         fwrite(&arch->capacity, sizeof(u32), 1, f);
 
-        // live entity count
-        u32 liveCount = ea->count;
+        // archetype flags (v4+): ARCH_SINGLE, ARCH_PERSISTENT, ARCH_BUFFERED, ARCH_PHYSICS_BODY
+        fwrite(&arch->flags, sizeof(u8), 1, f);
+
+        // total live entity count across all chunks
+        u32 liveCount = archetypeEntityCount(arch);
         fwrite(&liveCount, sizeof(u32), 1, f);
 
-        // raw SOA data – one block per field, only the live entities
+        // raw SOA data — linearize all chunks into a flat stream per field
         for (u32 fi = 0; fi < lay->count; fi++)
         {
-            u32 bytes = lay->fields[fi].size * liveCount;
-            if (bytes > 0)
+            u32 fieldSize = lay->fields[fi].size;
+            for (u32 ch = 0; ch < arch->activeChunkCount; ch++)
             {
-                fwrite(ea->fields[fi], bytes, 1, f);
+                u32 chunkCount = arch->arena[ch].count;
+                u32 bytes = fieldSize * chunkCount;
+                if (bytes > 0)
+                {
+                    fwrite(arch->arena[ch].fields[fi], bytes, 1, f);
+                }
             }
         }
     }
@@ -428,6 +574,16 @@ b8 saveScene(const c8 *filePath, SceneData *data)
     {
         fwrite(data->materials, sizeof(Material), data->materialCount, f);
     }
+
+    // v5+: optional model-name references for archetype-0 entities
+    fwrite(&modelRefCount, sizeof(u32), 1, f);
+    if (modelRefCount > 0 && modelRefs)
+    {
+        fwrite(modelRefs, sizeof(*modelRefs), modelRefCount, f);
+    }
+
+    if (modelRefs)
+        dfree(modelRefs, sizeof(*modelRefs) * modelRefCount, MEM_TAG_SCENE);
 
     fclose(f);
     INFO("Saved scene to %s (%u archetypes, %u materials)",
@@ -481,7 +637,7 @@ SceneData loadScene(const c8 *filePath)
 
     out.archetypeCount = hdr.archetypeCount;
     out.archetypes =
-        (Archetype *)malloc(sizeof(Archetype) * hdr.archetypeCount);
+        (Archetype *)dalloc(sizeof(Archetype) * hdr.archetypeCount, MEM_TAG_SCENE);
     if (!out.archetypes)
     {
         ERROR("loadScene: allocation failed");
@@ -500,7 +656,7 @@ SceneData loadScene(const c8 *filePath)
         fread(&fieldCount, sizeof(u32), 1, f);
 
         FieldInfo *fields =
-            (FieldInfo *)malloc(sizeof(FieldInfo) * fieldCount);
+            (FieldInfo *)dalloc(sizeof(FieldInfo) * fieldCount, MEM_TAG_SCENE);
 
         for (u32 fi = 0; fi < fieldCount; fi++)
         {
@@ -509,19 +665,20 @@ SceneData loadScene(const c8 *filePath)
 
             // duplicate name string so it persists
             u32 len = (u32)strlen(fh.name);
-            c8 *nameCopy = (c8 *)malloc(len + 1);
+            c8 *nameCopy = (c8 *)dalloc(len + 1, MEM_TAG_SCENE);
             memcpy(nameCopy, fh.name, len + 1);
 
             fields[fi].name = nameCopy;
             fields[fi].size = fh.size;
+            fields[fi].temperature = FIELD_TEMP_COLD;
         }
 
         // build a StructLayout from what we just read
         StructLayout *layout =
-            (StructLayout *)malloc(sizeof(StructLayout));
+            (StructLayout *)dalloc(sizeof(StructLayout), MEM_TAG_SCENE);
 
         u32 nameLen = (u32)strlen(out.archetypeNames[a]);
-        c8 *layoutName = (c8 *)malloc(nameLen + 1);
+        c8 *layoutName = (c8 *)dalloc(nameLen + 1, MEM_TAG_SCENE);
         memcpy(layoutName, out.archetypeNames[a], nameLen + 1);
 
         layout->name = layoutName;
@@ -533,6 +690,11 @@ SceneData loadScene(const c8 *filePath)
         fread(&capacity, sizeof(u32), 1, f);
         if (capacity == 0)
             capacity = 128; // fallback default
+
+        // archetype flags (v4+)
+        u8 archFlags = 0;
+        if (hdr.version >= 4)
+            fread(&archFlags, sizeof(u8), 1, f);
 
         // live entity count
         u32 liveCount = 0;
@@ -551,18 +713,36 @@ SceneData loadScene(const c8 *filePath)
             fclose(f);
             return out;
         }
+        out.archetypes[a].flags = archFlags;
 
-        // read SOA data straight into the arena fields
-        EntityArena *ea = &out.archetypes[a].arena[0];
-        ea->count = liveCount;
-
-        for (u32 fi = 0; fi < fieldCount; fi++)
+        // read SOA data — distribute into chunks
         {
-            u32 bytes = fields[fi].size * liveCount;
-            if (bytes > 0)
+            Archetype *loadArch = &out.archetypes[a];
+            u32 remaining = liveCount;
+            u32 chunkIdx = 0;
+
+            while (remaining > 0 && chunkIdx < loadArch->arenaCount)
             {
-                fread(ea->fields[fi], bytes, 1, f);
+                u32 toRead = remaining;
+                if (toRead > loadArch->chunkCapacity)
+                    toRead = loadArch->chunkCapacity;
+
+                loadArch->arena[chunkIdx].count = toRead;
+
+                for (u32 fi = 0; fi < fieldCount; fi++)
+                {
+                    u32 bytes = fields[fi].size * toRead;
+                    if (bytes > 0)
+                    {
+                        fread(loadArch->arena[chunkIdx].fields[fi], bytes, 1, f);
+                    }
+                }
+
+                remaining -= toRead;
+                chunkIdx++;
             }
+            loadArch->activeChunkCount = chunkIdx;
+            loadArch->cachedEntityCount = liveCount;  // Update entity count cache
         }
     }
 
@@ -570,14 +750,41 @@ SceneData loadScene(const c8 *filePath)
     if (fread(&matCount, sizeof(u32), 1, f) == 1 && matCount > 0)
     {
         out.materialCount = matCount;
-        out.materials = (Material *)malloc(sizeof(Material) * matCount);
+        out.materials = (Material *)dalloc(sizeof(Material) * matCount, MEM_TAG_SCENE);
         if (out.materials)
         {
             fread(out.materials, sizeof(Material), matCount, f);
         }
     }
 
+    if (hdr.version >= 5)
+    {
+        u32 modelRefCount = 0;
+        if (fread(&modelRefCount, sizeof(u32), 1, f) == 1 && modelRefCount > 0)
+        {
+            out.modelRefs = (c8 (*)[MAX_NAME_SIZE])dalloc(sizeof(*out.modelRefs) * modelRefCount, MEM_TAG_SCENE);
+            if (out.modelRefs)
+            {
+                size_t got = fread(out.modelRefs, sizeof(*out.modelRefs), modelRefCount, f);
+                if (got != modelRefCount)
+                {
+                    dfree(out.modelRefs, sizeof(*out.modelRefs) * modelRefCount, MEM_TAG_SCENE);
+                    out.modelRefs = NULL;
+                    out.modelRefCount = 0;
+                }
+                else
+                {
+                    out.modelRefCount = modelRefCount;
+                }
+            }
+        }
+    }
+
     fclose(f);
+
+    // Opportunistic remap when resources are already available.
+    sceneRemapModelIDs(&out);
+
     INFO("Loaded scene from %s (%u archetypes, %u materials)",
          filePath, out.archetypeCount, out.materialCount);
     return out;
@@ -586,7 +793,7 @@ SceneData loadScene(const c8 *filePath)
 
 SceneManager *createSceneManager(u32 sceneCapacity)
 {
-    SceneManager *manager = (SceneManager *)malloc(sizeof(SceneManager));
+    SceneManager *manager = (SceneManager *)dalloc(sizeof(SceneManager), MEM_TAG_SCENE);
     if (!manager)
     {
         ERROR("Failed to allocate memory for SceneManager");
@@ -594,11 +801,11 @@ SceneManager *createSceneManager(u32 sceneCapacity)
     }
 
     // create an arena for scene data
-    manager->data = (Arena *)malloc(sizeof(Arena));
+    manager->data = (Arena *)dalloc(sizeof(Arena), MEM_TAG_SCENE);
     if (!manager->data)
     {
         ERROR("Failed to allocate memory for SceneManager arena");
-        free(manager);
+        dfree(manager, sizeof(SceneManager), MEM_TAG_SCENE);
         return NULL;
     }
 
@@ -611,8 +818,8 @@ SceneManager *createSceneManager(u32 sceneCapacity)
                           sizeof(Scene))))
     {
         ERROR("Failed to create arena for SceneManager");
-        free(manager->data);
-        free(manager);
+        dfree(manager->data, sizeof(Arena), MEM_TAG_SCENE);
+        dfree(manager, sizeof(SceneManager), MEM_TAG_SCENE);
         return NULL;
     }
     manager->scenes =
@@ -620,7 +827,7 @@ SceneManager *createSceneManager(u32 sceneCapacity)
     if (!manager->scenes)
     {
         ERROR("Failed to allocate memory for SceneData array");
-        free(manager);
+        dfree(manager, sizeof(SceneManager), MEM_TAG_SCENE);
         return NULL;
     }
 
@@ -633,7 +840,7 @@ SceneManager *createSceneManager(u32 sceneCapacity)
     {
         ERROR("Failed to allocate memory for current Scene");
         arenaDestroy(manager->data);
-        free(manager);
+        dfree(manager, sizeof(SceneManager), MEM_TAG_SCENE);
         return NULL;
     }
 
@@ -646,6 +853,7 @@ void destroySceneManager(SceneManager *manager)
         return;
 
     arenaDestroy(manager->data);
+    dfree(manager, sizeof(SceneManager), MEM_TAG_SCENE);
     DEBUG("Destroyed scene manager");
 }
 
@@ -693,17 +901,17 @@ void switchScene(SceneManager *manager, u32 sceneIndex)
 
     for (u32 i = 0; i < cur->manager.archetypeCount; i++)
     {
-        if (cur->manager.archetypes[i].isPersistent)
+        if (FLAG_CHECK(cur->manager.archetypes[i].flags, ARCH_PERSISTENT))
             persistCount++;
     }
 
     if (persistCount > 0)
     {
-        persistArchetypes = (Archetype *)malloc(sizeof(Archetype) * persistCount);
+        persistArchetypes = (Archetype *)dalloc(sizeof(Archetype) * persistCount, MEM_TAG_SCENE);
         u32 p = 0;
         for (u32 i = 0; i < cur->manager.archetypeCount; i++)
         {
-            if (cur->manager.archetypes[i].isPersistent)
+            if (FLAG_CHECK(cur->manager.archetypes[i].flags, ARCH_PERSISTENT))
                 persistArchetypes[p++] = cur->manager.archetypes[i];
         }
     }
@@ -711,7 +919,7 @@ void switchScene(SceneManager *manager, u32 sceneIndex)
     // Destroy only non-persistent archetypes
     for (u32 i = 0; i < cur->manager.archetypeCount; i++)
     {
-        if (!cur->manager.archetypes[i].isPersistent)
+        if (!FLAG_CHECK(cur->manager.archetypes[i].flags, ARCH_PERSISTENT))
             destroyArchetype(&cur->manager.archetypes[i]);
     }
 
@@ -725,7 +933,7 @@ void switchScene(SceneManager *manager, u32 sceneIndex)
     {
         // Need to grow the archetype array to hold persistent entries
         u32 newTotal = cur->manager.archetypeCount + persistCount;
-        Archetype *merged = (Archetype *)malloc(sizeof(Archetype) * newTotal);
+        Archetype *merged = (Archetype *)dalloc(sizeof(Archetype) * newTotal, MEM_TAG_SCENE);
         if (merged)
         {
             memcpy(merged, cur->manager.archetypes,
@@ -735,7 +943,7 @@ void switchScene(SceneManager *manager, u32 sceneIndex)
             cur->manager.archetypes = merged;
             cur->manager.archetypeCount = newTotal;
         }
-        free(persistArchetypes);
+        dfree(persistArchetypes, sizeof(Archetype) * persistCount, MEM_TAG_SCENE);
     }
 
     INFO("Switched to scene %u (%u persistent archetypes carried over)",
