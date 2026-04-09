@@ -1,171 +1,92 @@
 # Druid Engine
 
-## Overview
-Druid is a lightweight game engine and editor built with C++, SDL3, OpenGL, and ImGui. The project is organized into different components:
-- **Core Engine** (in `src/`): Handles application logic, math, input, rendering, and systems like physics and world modeling.
-- **Editor** (in `Editor/`): A dockable ImGui-based editor for scene and asset management, with a real-time viewport and inspector.
-- **Testbed** (in `testbed/`): A sandbox for running engine demos and experiments.
+A data-oriented game engine written in C11 with an archetype ECS, targeting millions of entities.
 
-## Features
-- Modular architecture (core, editor, testbed)
-- Real-time rendering with OpenGL
-- ImGui-based editor UI (docking branch)
-- Scene hierarchy, inspector, and viewport panels
-- Physics and rendering systems
-- Asset loading (models, textures, shaders)
+The engine is built around SoA (Structure of Arrays) memory layouts, arena allocation, and SIMD-accelerated batch processing. Everything goes through a single public header (`include/druid.h`) in the style of raylib.
 
-## Directory Structure
-```
-Druid/
-├── src/         # Core engine implementation
-├── include/     # Public API (single header: druid.h)
-├── Editor/      # ImGui-based editor
-├── testbed/     # Experimental sandbox
-├── deps/        # Third-party libraries (SDL3, GLEW, ImGui, etc.)
-└── bin/         # Output binaries
+The editor is a separate C++17 app using ImGui.
 
-```
+## Design
 
-## Public API
-
-All engine functionality is exposed via `include/druid.h`. This is a single-header API designed to act as both the **entry point and documentation** for Druid.
-
-You can:
-
-- Create entities and assign components
-- Control rendering and physics behavior
-- Load textures, models, and shaders
-- Hook into input, simulation, and draw updates
-
----
+- **ECS with archetypes** - entities are stored in chunked SoA arrays grouped by field layout. Hot and cold fields are split into separate contiguous memory blocks so physics iteration doesn't pull in render-only data.
+- **Arena memory** - one large OS allocation at startup, carved into bump arenas (General, ECS, Renderer, Physics, Frame). No per-frame malloc.
+- **Single header API** - `include/druid.h` is the entire public interface. If you want to know what the engine can do, read that file.
+- **DLL plugin system** - game code and ECS systems compile as shared libraries, hot-reloadable by the editor.
+- **SSBO instanced rendering** - entities are batched by model ID into a GPU buffer and drawn with ~44 draw calls for 1M entities.
 
 ## Building
 
-### Windows (MSYS2 + GCC)
+Requires MSYS2 with GCC, CMake, and Ninja. Dependencies (SDL3, GLEW, Assimp) are prebuilt in `deps/`.
 
-1. Install MSYS2 from https://www.msys2.org/ and update packages:
-   pacman -Syu
-   pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+```
+cmake -B build -G Ninja
+cmake --build build
+```
 
-## Prerequisites
-- CMake
-- SDL3
-- OpenGL
-- ImGui (docking branch)
-- GLEW
-- A C++ compiler (tested with MinGW-w64)
+Engine outputs `bin/libdruid.dll`. Editor outputs `Editor/bin/editor.exe`.
 
-## Building
-1. Make sure all dependencies are present in the `deps/` folder (DLLs, libs, and headers for SDL3, ImGui, GLEW, etc.).
-2. From the project root, you can build the engine, editor, and testbed:
-   ```sh
-   make           # or use CMake as needed
-   cd Editor && make
-   cd ../testbed && make
-   ```
-   Adjust for your platform and build system as needed.
+## Project structure
 
-2. Clone the repository and ensure all third-party libraries are placed inside the `deps/` folder.
+```
+include/druid.h         - public API (monolithic, don't split it)
+src/core/               - arena, buffer, hashmap, input, logging, math, SIMD, profiler
+src/systems/rendering/  - renderer, camera, shader, mesh, material, SSBO, GBuffer
+src/systems/physics/    - rigidbody, spatial hash broadphase, collision
+src/systems/ecs/        - archetype, entity arena, DLL plugin system, scene
+src/application/        - application lifecycle, resource manager
+Editor/src/             - ImGui editor (C++17)
+testbed/                - example project
+```
 
-3. Build using Ninja or Makefiles:
+## Usage
 
-- Using Ninja (recommended):
+Game code links against `libdruid.dll` and includes `druid.h`. A minimal app:
 
-  ```
-  cmake -G "Ninja" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ .
-  ninja
-  ```
+```c
+#include <druid.h>
 
-- Using MinGW Makefiles:
+void init(void)    { /* setup */ }
+void update(f32 dt){ /* logic */ }
+void render(f32 dt){ /* draw  */ }
+void destroy(void) { /* cleanup */ }
 
-  ```
-  cmake -G "MinGW Makefiles" .
-  mingw32-make
-  ```
-
----
-
-## Running
-
-### Editor
-
-Run:
-./bin/Editor.exe
-- Opens the dockable ImGui editor UI
-- Shows the real-time OpenGL viewport output
-- Hierarchy and Inspector panels for entity/component editing
-
-### Testbed
-
-Run:
-./bin/testbed.exe
-
-
-- Opens the sandbox for engine demos and experiments
-
----
-
-## Visual Studio Support (Experimental)
-
-Visual Studio is not officially supported yet, but you can build using MSYS2 GCC + Ninja through CMake.
-
-Example `CMakeSettings.json`:
-
-```json
+int main(void)
 {
-  "configurations": [
-    {
-      "name": "x64-Debug",
-      "generator": "Ninja",
-      "configurationType": "Debug",
-      "buildRoot": "${projectDir}\\out\\build\\${name}",
-      "installRoot": "${projectDir}\\out\\install\\${name}",
-      "environment": {
-        "CC": "gcc",
-        "CXX": "g++"
-      },
-      "inheritEnvironments": [ "gcc" ]
-    }
-  ]
+    Application *app = createApplication("My Game", init, update, render, destroy);
+    run(app);
+    return 0;
 }
 ```
-You must still install MSYS2 and configure GCC environment accordingly.
 
+Entities live in archetypes. Define a field layout, create the archetype, spawn entities:
 
-| Issue                 | Solution                                                                                                          |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------|
-| ImGui docking errors  | Use the docking branch of ImGui and include `imgui_internal.h`                                                    |
-| `std::lerp` conflict  | Rename or namespace your custom `lerp` function                                                                   |
-| Viewport crash/assert | If using multi-viewport mode, call `ImGui::UpdatePlatformWindows();` and `ImGui::RenderPlatformWindowsDefault();` |
-| Missing DLLs          | Ensure SDL3.dll, glew32.dll, and other dependencies are present in `deps/`                                        |
+```c
+FieldInfo fields[] = {
+    {"Alive",      sizeof(b8),  FIELD_TEMP_COLD},
+    {"PositionX",  sizeof(f32), FIELD_TEMP_HOT},
+    {"PositionY",  sizeof(f32), FIELD_TEMP_HOT},
+    {"PositionZ",  sizeof(f32), FIELD_TEMP_HOT},
+    {"ModelID",    sizeof(u32), FIELD_TEMP_COLD},
+};
+StructLayout layout = { "Enemy", fields, 5 };
 
+Archetype arch = {0};
+arch.flags = ARCH_BUFFERED;
+createArchetype(&layout, 10000, &arch);
+
+u32 id = archetypePoolSpawn(&arch);
+```
+
+Fields are accessed as flat arrays through `getArchetypeFields()`:
+
+```c
+void **f = getArchetypeFields(&arch, chunkIndex);
+f32 *posX = (f32 *)f[1];
+posX[entityIndex] = 50.0f;
+```
 
 ## License
-The Druid engine source code is licensed under the MIT License.
 
-Dependencies (SDL3, GLEW, ImGui, etc.) are licensed under their own terms, see their folders in deps/.
-## Future Licensing Note
-Druid is currently MIT-licensed for open and commercial use.
+MIT License - Copyright (c) 2025 Madoc Wolstencroft
 
-However, future versions of the engine, editor, or tools may adopt a dual-license or commercial licensing model to support ongoing development.
-
-## MIT License
-Copyright (c) 2025 Madoc Wolstencroft
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+Dependencies (SDL3, GLEW, Assimp, ImGui) are under their own licenses.
