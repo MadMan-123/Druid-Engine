@@ -1,9 +1,9 @@
 #pragma once
 
-#include <druid.h>
 #include <SDL3/SDL.h>
 #include <GL/glew.h>
 #include <imgui.h>
+#include <druid.h>
 #include "project_builder.h"
 #define MAX_CONSOLE_LINES 10000
 #define MAX_CONSOLE_LINE_LENGTH 256
@@ -54,6 +54,14 @@ extern u32 *shaderHandles;
 extern u32 *entityMaterialIDs;
 extern u32 *archetypeIDs;
 extern u32 *ecsSlotIDs;
+extern c8  *entityTags;
+extern u32 *physicsBodyTypes;
+extern f32 *masses;
+extern u32 *colliderShapes;
+extern f32 *sphereRadii;
+extern f32 *colliderHalfXs;
+extern f32 *colliderHalfYs;
+extern f32 *colliderHalfZs;
 extern Mesh* cubeMesh;
 extern Material* materials;
 

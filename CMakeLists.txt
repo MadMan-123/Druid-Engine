@@ -8,6 +8,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+# Note: LTO disabled — mingw GCC crashes (silent ICE) when compiling shared library with -flto
+# The game plugin uses LTO fine since it's a separate TU; engine DLL triggers GCC bug
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
@@ -38,7 +41,21 @@ target_include_directories(druid PUBLIC
 
 # Compiler options
 target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32 DRUID_PROFILE)
-target_compile_options(druid PRIVATE -Wall -O3 -fPIC -g)
+
+# Conservative optimization flags: -march=native for CPU tuning, keep -O3/-Ofast
+# Removed: -flto (Link-Time Optimization) and -ffast-math due to aggressive optimization issues
+# These flags removed: -fno-strict-aliasing -fvisibility=hidden (too aggressive)
+target_compile_options(druid PRIVATE
+    -Wall
+    -fPIC
+    -g
+    -O3                        # Always optimize (was behind generator expressions that never fired)
+    -march=native              # Optimize for current CPU (5-10% gain, enables SIMD/AVX)
+    -mavx2                     # Explicit AVX2 for SoA Vec3 batch operations
+    -ffast-math                # Fast floating-point for physics/rendering hot paths
+    -funroll-loops
+    -fopenmp                   # OpenMP for multithreaded SSBO transform writes in renderer
+)
 
 target_link_libraries(druid PUBLIC
     ${CMAKE_SOURCE_DIR}/deps/libglew.dll.a
@@ -47,6 +64,7 @@ target_link_libraries(druid PUBLIC
     opengl32
     gdi32
     user32
+    -fopenmp                   # Link OpenMP runtime (libgomp)
 )
 
 

@@ -31,6 +31,74 @@ static b8 copyFileSingle(const c8 *src, const c8 *dst)
     return platformFileCopy(src, dst);
 }
 
+static b8 readCMakeCacheGenerator(const c8 *buildDir, c8 *outGen, u32 outSize)
+{
+    if (!buildDir || !outGen || outSize == 0)
+        return false;
+
+    outGen[0] = '\0';
+
+    c8 cachePath[MAX_PATH_LENGTH];
+    snprintf(cachePath, sizeof(cachePath), "%s/CMakeCache.txt", buildDir);
+
+    FILE *f = fopen(cachePath, "r");
+    if (!f)
+        return false;
+
+    c8 line[512];
+    while (fgets(line, sizeof(line), f))
+    {
+        const c8 *k1 = "CMAKE_GENERATOR:INTERNAL=";
+        const c8 *k2 = "CMAKE_GENERATOR:STRING=";
+        const c8 *val = NULL;
+
+        if (strncmp(line, k1, strlen(k1)) == 0)
+            val = line + strlen(k1);
+        else if (strncmp(line, k2, strlen(k2)) == 0)
+            val = line + strlen(k2);
+
+        if (!val)
+            continue;
+
+        strncpy(outGen, val, outSize - 1);
+        outGen[outSize - 1] = '\0';
+
+        u32 len = (u32)strlen(outGen);
+        while (len > 0 && (outGen[len - 1] == '\n' || outGen[len - 1] == '\r'))
+        {
+            outGen[len - 1] = '\0';
+            len--;
+        }
+
+        fclose(f);
+        return (outGen[0] != '\0');
+    }
+
+    fclose(f);
+    return false;
+}
+
+static void buildConfigureCommand(const c8 *projectDir, c8 *cmd, u32 cmdSize)
+{
+    c8 buildDir[MAX_PATH_LENGTH];
+    snprintf(buildDir, sizeof(buildDir), "%s/build", projectDir);
+
+    c8 generator[128];
+    if (readCMakeCacheGenerator(buildDir, generator, sizeof(generator)))
+    {
+        snprintf(cmd, cmdSize,
+                 "cd /d \"%s/build\" && cmake .. -G \"%s\" 2>&1",
+                 projectDir, generator);
+    }
+    else
+    {
+        // No prior generator cached: let CMake select the local default.
+        snprintf(cmd, cmdSize,
+                 "cd /d \"%s/build\" && cmake .. 2>&1",
+                 projectDir);
+    }
+}
+
 static void getProjectBaseName(const c8 *projectDir, c8 *out, u32 size)
 {
     if (!out || size == 0)
@@ -521,13 +589,24 @@ static const c8 *TPL_SHADER_VERT =
     "out vec2 tc;\n"
     "out vec3 Normal;\n"
     "out vec3 FragPos;\n"
+    "out mat3 TBN;\n"
     "\n"
     "void main()\n"
     "{\n"
-    "    FragPos = vec3(model * vec4(position, 1.0));\n"
-    "    Normal  = normal;\n"
-    "    tc      = texCoord;\n"
-    "    gl_Position = projection * view * model * vec4(position, 1.0);\n"
+    "    vec4 worldPos = model * vec4(position, 1.0);\n"
+    "    FragPos = worldPos.xyz;\n"
+    "\n"
+    "    mat3 normalMatrix = transpose(inverse(mat3(model)));\n"
+    "    Normal = normalize(normalMatrix * normal);\n"
+    "\n"
+    "    vec3 N = Normal;\n"
+    "    vec3 up = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n"
+    "    vec3 T = normalize(cross(up, N));\n"
+    "    vec3 B = cross(N, T);\n"
+    "    TBN = mat3(T, B, N);\n"
+    "\n"
+    "    tc = texCoord;\n"
+    "    gl_Position = projection * view * worldPos;\n"
     "}\n";
 
 // ---- template: res/shader.frag ----
@@ -670,9 +749,7 @@ b8 buildProject(const c8 *projectDir, c8 *outLog, u32 logSize)
 
     // configure
     c8 cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-             "cd /d \"%s/build\" && cmake .. -G \"MinGW Makefiles\" 2>&1",
-             projectDir);
+    buildConfigureCommand(projectDir, cmd, sizeof(cmd));
 
     FILE *pipe = (FILE *)platformPipeOpen(cmd);
     if (!pipe)
@@ -736,9 +813,7 @@ b8 buildStandalone(const c8 *projectDir, const c8 *scenePath, c8 *outLog, u32 lo
 
     // configure (same as normal build)
     c8 cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-             "cd /d \"%s/build\" && cmake .. -G \"MinGW Makefiles\" 2>&1",
-             projectDir);
+    buildConfigureCommand(projectDir, cmd, sizeof(cmd));
 
     FILE *pipe = (FILE *)platformPipeOpen(cmd);
     if (!pipe)

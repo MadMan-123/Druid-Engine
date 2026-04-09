@@ -19,6 +19,8 @@ static const f32 camMoveSpeed = 1.0f;   // units per second
 static const f32 camRotateSpeed = 5.0f; // degrees per second
 static const u32 entityDefaultCount = 128;
 MaterialUniforms materialUniforms = {0};
+static u32 g_startupModelRefCount = 0;
+static c8 (*g_startupModelRefs)[MAX_NAME_SIZE] = nullptr;
 
 Archetype sceneArchetype;
 c8 inputBoxBuffer[100]; // this will be in numbers
@@ -76,6 +78,44 @@ void rotateCamera(f32 dt)
         Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
         sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
     }
+    
+    // Arrow key rotation
+    if (isKeyDown(KEY_LEFT))
+    {
+        yaw += camRotateSpeed * dt;
+        f32 goal = radians(89.0f);
+        currentPitch = clamp(currentPitch, -goal, goal);
+        Vec4 yawQuat = quatFromAxisAngle(v3Up, yaw);
+        Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
+        sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
+    }
+    if (isKeyDown(KEY_RIGHT))
+    {
+        yaw -= camRotateSpeed * dt;
+        f32 goal = radians(89.0f);
+        currentPitch = clamp(currentPitch, -goal, goal);
+        Vec4 yawQuat = quatFromAxisAngle(v3Up, yaw);
+        Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
+        sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
+    }
+    if (isKeyDown(KEY_UP))
+    {
+        currentPitch += camRotateSpeed * dt;
+        f32 goal = radians(89.0f);
+        currentPitch = clamp(currentPitch, -goal, goal);
+        Vec4 yawQuat = quatFromAxisAngle(v3Up, yaw);
+        Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
+        sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
+    }
+    if (isKeyDown(KEY_DOWN))
+    {
+        currentPitch -= camRotateSpeed * dt;
+        f32 goal = radians(89.0f);
+        currentPitch = clamp(currentPitch, -goal, goal);
+        Vec4 yawQuat = quatFromAxisAngle(v3Up, yaw);
+        Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
+        sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
+    }
     //  else if (v2Mag(axis) > 1.15f);
     //  {
 
@@ -123,6 +163,18 @@ void processInput(void *appData)
         case SDL_EVENT_GAMEPAD_REMOVED:
             checkForGamepadRemoved(&evnt);
             break;
+        case SDL_EVENT_WINDOW_RESIZED:
+        {
+            i32 w = evnt.window.data1;
+            i32 h = evnt.window.data2;
+            if (w > 0 && h > 0)
+            {
+                app->width  = (f32)w;
+                app->height = (f32)h;
+                glViewport(0, 0, w, h);
+            }
+            break;
+        }
         default:;
         }
     }
@@ -160,9 +212,17 @@ void rebindArchetypeFields()
     modelIDs          = (u32 *)fields[5];
     shaderHandles     = (u32 *)fields[6];
     entityMaterialIDs = (u32 *)fields[7];
-    archetypeIDs      = (fieldCount > 8) ? (u32 *)fields[8] : nullptr;
-    sceneCameraFlags  = (fieldCount > 9) ? (b8 *)fields[9] : nullptr;
+    archetypeIDs      = (fieldCount > 8)  ? (u32 *)fields[8]  : nullptr;
+    sceneCameraFlags  = (fieldCount > 9)  ? (b8 *)fields[9]   : nullptr;
     ecsSlotIDs        = (fieldCount > 10) ? (u32 *)fields[10] : nullptr;
+    entityTags        = (fieldCount > 11) ? (c8 *)fields[11]  : nullptr;
+    physicsBodyTypes  = (fieldCount > 12) ? (u32 *)fields[12] : nullptr;
+    masses            = (fieldCount > 13) ? (f32 *)fields[13] : nullptr;
+    colliderShapes    = (fieldCount > 14) ? (u32 *)fields[14] : nullptr;
+    sphereRadii       = (fieldCount > 15) ? (f32 *)fields[15] : nullptr;
+    colliderHalfXs    = (fieldCount > 16) ? (f32 *)fields[16] : nullptr;
+    colliderHalfYs    = (fieldCount > 17) ? (f32 *)fields[17] : nullptr;
+    colliderHalfZs    = (fieldCount > 18) ? (f32 *)fields[18] : nullptr;
 }
 
 // After loading an old scene whose layout has fewer fields than the current
@@ -209,13 +269,19 @@ void migrateSceneArchetypeIfNeeded()
             for (u32 i = 0; i < loadedFields; i++)
             {
                 if (dynLayout->fields[i].name)
-                    free((void *)dynLayout->fields[i].name);
+                {
+                    u32 len = (u32)strlen(dynLayout->fields[i].name) + 1;
+                    dfree((void *)dynLayout->fields[i].name, len, MEM_TAG_SCENE);
+                }
             }
-            free(dynLayout->fields);
+            dfree(dynLayout->fields, sizeof(FieldInfo) * loadedFields, MEM_TAG_SCENE);
         }
         if (dynLayout->name)
-            free((void *)dynLayout->name);
-        free(dynLayout);
+        {
+            u32 len = (u32)strlen(dynLayout->name) + 1;
+            dfree((void *)dynLayout->name, len, MEM_TAG_SCENE);
+        }
+        dfree(dynLayout, sizeof(StructLayout), MEM_TAG_SCENE);
     }
 
     // Create new archetype with current SceneEntity layout
@@ -281,6 +347,14 @@ u32 *shaderHandles = nullptr;
 u32 *entityMaterialIDs = nullptr;
 u32 *archetypeIDs = nullptr;
 u32 *ecsSlotIDs = nullptr;
+c8  *entityTags = nullptr;
+u32 *physicsBodyTypes = nullptr;
+f32 *masses = nullptr;
+u32 *colliderShapes = nullptr;
+f32 *sphereRadii = nullptr;
+f32 *colliderHalfXs = nullptr;
+f32 *colliderHalfYs = nullptr;
+f32 *colliderHalfZs = nullptr;
 Material *materials = nullptr;
 
 void init()
@@ -386,6 +460,7 @@ void init()
             // Acquire a camera in the renderer and sync it with sceneCam
             g_editorCamSlot = rendererAcquireCamera(r, sceneCam.pos, 70.0f, 1.0f, 0.1f, 100.0f);
             rendererSetActiveCamera(r, g_editorCamSlot);
+            r->envMapTex = cubeMapTexture;
             INFO("Editor: created Renderer (defaultShader=%u, cam=%u)", shader, g_editorCamSlot);
         }
         else
@@ -394,8 +469,24 @@ void init()
         }
     }
 
+    // Initialize the immediate-mode gizmo drawing system (GL_LINES overlay)
+    gizmoInit();
+
     // create a small cube mesh for gizmos and pickable handles
     cubeMesh = createBoxMesh();
+
+    // register built-in primitive models (box, plane, sphere)
+    {
+        Mesh *boxPrim   = createBoxMesh();
+        Mesh *planePrim = createPlaneMesh();
+        Mesh *spherePrim = createSphereMesh();
+        if (boxPrim)    resRegisterPrimitive(resources, "Box",    boxPrim);
+        if (planePrim)  resRegisterPrimitive(resources, "Plane",  planePrim);
+        if (spherePrim) resRegisterPrimitive(resources, "Sphere", spherePrim);
+        dfree(boxPrim, sizeof(Mesh), MEM_TAG_MESH);
+        dfree(planePrim, sizeof(Mesh), MEM_TAG_MESH);
+        dfree(spherePrim, sizeof(Mesh), MEM_TAG_MESH);
+    }
 
     // initialize ID framebuffer for entity picking
     initIDFramebuffer();
@@ -432,6 +523,7 @@ void init()
         {
             INFO("Auto-loading scene: %s", firstScene);
             SceneData sd = loadScene(firstScene);
+            sceneRemapModelIDs(&sd);
             //copy the first scene's archetype data into our scene path buffer
             strncpy(scenePathBuffer, firstScene, sizeof(scenePathBuffer));
             scenePathBuffer[sizeof(scenePathBuffer) - 1] = '\0';
@@ -458,8 +550,19 @@ void init()
                     memcpy(resources->materialBuffer, sd.materials,
                            sizeof(Material) * count);
                     resources->materialUsed = count;
-                    free(sd.materials);
+                    dfree(sd.materials, sizeof(Material) * sd.materialCount, MEM_TAG_SCENE);
                 }
+
+                if (g_startupModelRefs)
+                {
+                    dfree(g_startupModelRefs, sizeof(c8[MAX_NAME_SIZE]) * g_startupModelRefCount, MEM_TAG_SCENE);
+                    g_startupModelRefs = nullptr;
+                    g_startupModelRefCount = 0;
+                }
+                g_startupModelRefs = sd.modelRefs;
+                g_startupModelRefCount = sd.modelRefCount;
+                sd.modelRefs = nullptr;
+                sd.modelRefCount = 0;
 
                 INFO("Loaded startup scene (%u entities, %u materials)",
                      entityCount, sd.materialCount);
@@ -478,6 +581,33 @@ void init()
     // Scan the project's src/ for existing archetype system files so the
     // archetype designer shows them immediately on project open.
     scanProjectArchetypes(hubProjectDir);
+
+    // Load the project's own res/ folder into the resource manager so that
+    // project models, textures and shaders are available in the editor.
+    if (hubProjectDir[0] != '\0')
+    {
+        c8 projRes[MAX_PATH_LENGTH];
+        snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
+        if (fileExists(projRes) || true)  // readResources handles missing dir gracefully
+            readResources(resources, projRes);
+
+        if (g_startupModelRefs && g_startupModelRefCount > 0)
+        {
+            SceneData remapData = {0};
+            remapData.archetypeCount = 1;
+            remapData.archetypes = &sceneArchetype;
+            remapData.modelRefCount = g_startupModelRefCount;
+            remapData.modelRefs = g_startupModelRefs;
+
+            u32 remapped = sceneRemapModelIDs(&remapData);
+            if (remapped > 0)
+                INFO("Startup scene model IDs remapped: %u", remapped);
+
+            dfree(g_startupModelRefs, sizeof(c8[MAX_NAME_SIZE]) * g_startupModelRefCount, MEM_TAG_SCENE);
+            g_startupModelRefs = nullptr;
+            g_startupModelRefCount = 0;
+        }
+    }
 
     //set vsync off
     SDL_GL_SetSwapInterval(0);
@@ -691,6 +821,13 @@ void destroy()
         g_gameRunning = false;
     }
 
+    if (g_startupModelRefs)
+    {
+        dfree(g_startupModelRefs, sizeof(c8[MAX_NAME_SIZE]) * g_startupModelRefCount, MEM_TAG_SCENE);
+        g_startupModelRefs = nullptr;
+        g_startupModelRefCount = 0;
+    }
+
     // destroy archetype and free its arenas
     destroyArchetype(&sceneArchetype);
     // clear pointers to archetype fields
@@ -713,6 +850,10 @@ void destroy()
     freeShader(skyboxShader);
     destroyIDFramebuffer();
     destroyMultiFBOs();
+
+    // Shutdown physics and gizmo systems
+    physShutdown();
+    gizmoShutdown();
 
     // destroy the global renderer
     if (renderer)
@@ -752,10 +893,25 @@ i32 main(i32 argc, char **argv)
     useCustomOutputSrc = true;
     consoleLines = (const c8**)calloc(MAX_CONSOLE_LINES, sizeof(c8*));
     editor = createApplication("Druid Editor",init, update, render, destroy);
-    editor->width = (f32)(1920 * 1.25f);
-    editor->height = (f32)(1080 * 1.25f);
-    viewportWidth = editor->width;
-    viewportHeight = editor->height;
+
+    // Use 80% of the primary display resolution so the window fits on screen.
+    // SDL video must be initialised to query display modes; initSystems will
+    // re-init with the full flag set, and SDL_Init is safe to call twice.
+    SDL_Init(SDL_INIT_VIDEO);
+    SDL_DisplayID displayID = SDL_GetPrimaryDisplay();
+    const SDL_DisplayMode *dm = displayID ? SDL_GetCurrentDisplayMode(displayID) : nullptr;
+    if (dm && dm->w > 0 && dm->h > 0)
+    {
+        editor->width  = (f32)(dm->w * 0.8f);
+        editor->height = (f32)(dm->h * 0.8f);
+    }
+    else
+    {
+        editor->width  = 1920.0f;
+        editor->height = 1080.0f;
+    }
+    viewportWidth = (u32)editor->width;
+    viewportHeight = (u32)editor->height;
     editor->inputProcess = processInput;
     run(editor);
     return 0;

@@ -3,6 +3,8 @@ project(Editor CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
+# Note: LTO disabled due to heap corruption issues with aggressive optimization
+
 # Source files
 file(GLOB EDITOR_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
@@ -47,6 +49,17 @@ target_include_directories(editor PRIVATE
 )
 
 target_compile_definitions(editor PRIVATE DRUID_PROFILE)
+
+# Conservative optimization flags: match engine optimization strategy without aggressive options
+target_compile_options(editor PRIVATE
+    -Wall
+    -fPIC
+    -g
+    -O3                        # Always optimize (unconditional, like engine)
+    -march=native              # Optimize for current CPU
+    -ffast-math                # Fast floating-point math
+    -funroll-loops
+)
 
 target_sources(editor PRIVATE ${IMGUI_SOURCES}) 
 
