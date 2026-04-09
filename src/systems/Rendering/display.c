@@ -36,7 +36,7 @@ void initDisplay(const c8* title, Display* display, f32 width, f32 height)
 
     //create the window
 	//TODO: change to upload custom title 
-	display->sdlWindow = SDL_CreateWindow(title, (i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL); // create window
+	display->sdlWindow = SDL_CreateWindow(title, (i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE); // create window
 	
     //null check
 	if (display->sdlWindow == NULL)

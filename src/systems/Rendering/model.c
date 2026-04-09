@@ -6,7 +6,6 @@
 #include <math.h>
 #include <time.h>
 
-#define MAX_NAME_SIZE 64
 void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
 {
     // null check the resource
@@ -16,9 +15,13 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
         return;
     }
 
-    const c8 *fileName = strrchr(filename, '/');
-    // remove the first slash
-    fileName = fileName ? fileName + 1 : filename;
+    const c8 *baseName = strrchr(filename, '/');
+    baseName = baseName ? baseName + 1 : filename;
+
+    // pad to MAX_NAME_SIZE for insertMap
+    c8 fileName[MAX_NAME_SIZE];
+    memset(fileName, 0, MAX_NAME_SIZE);
+    strncpy(fileName, baseName, MAX_NAME_SIZE - 1);
 
     // load the model from file
     const struct aiScene *scene = aiImportFile(filename,
@@ -93,11 +96,11 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     // Create a temporary Model struct on the stack
     Model model;
 
-    model.meshIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
-    model.materialIndices = (u32 *)malloc(sizeof(u32) * scene->mNumMeshes);
+    model.meshIndices = (u32 *)dalloc(sizeof(u32) * scene->mNumMeshes, MEM_TAG_MODEL);
+    model.materialIndices = (u32 *)dalloc(sizeof(u32) * scene->mNumMeshes, MEM_TAG_MODEL);
     model.meshCount = scene->mNumMeshes;
     model.materialCount = scene->mNumMaterials;
-    model.name = (c8 *)malloc(sizeof(c8) * MAX_NAME_SIZE);
+    model.name = (c8 *)dalloc(sizeof(c8) * MAX_NAME_SIZE, MEM_TAG_MODEL);
     strncpy(model.name, filename, MAX_NAME_SIZE - 1);
     model.name[MAX_NAME_SIZE - 1] = '\0'; // ensure null termination
 
@@ -108,14 +111,16 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     if (meshes == NULL)
     {
         ERROR("Mesh buffer failed to create");
-        free(model.meshIndices);
-        free(model.materialIndices);
-        free(model.name);
+        dfree(model.meshIndices, sizeof(u32) * scene->mNumMeshes, MEM_TAG_MODEL);
+        dfree(model.materialIndices, sizeof(u32) * scene->mNumMeshes, MEM_TAG_MODEL);
+        dfree(model.name, sizeof(c8) * MAX_NAME_SIZE, MEM_TAG_MODEL);
         aiReleaseImport(scene);
         return;
     }
 
-    // Store meshes in ResourceManager and create proper index mapping
+    // Store meshes in ResourceManager and create proper index mapping.
+    // Also compute the bounding radius across all meshes for frustum culling.
+    f32 maxRadiusSq = 0.0f;
     for (u32 i = 0; i < scene->mNumMeshes; i++)
     {
         // format the mesh name
@@ -134,13 +139,23 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
         // Map Assimp material index to ResourceManager material index
         u32 assimpMaterialIndex = scene->mMeshes[i]->mMaterialIndex;
         model.materialIndices[i] = materialStartIndex + assimpMaterialIndex;
-        
+
         if(DEBUG_RESOURCES)
         DEBUG("Mesh %d: Assimp material %d -> ResourceManager material %d", i,
               assimpMaterialIndex, model.materialIndices[i]);
 
+        // Compute bounding radius from Assimp vertex data
+        struct aiMesh *am = scene->mMeshes[i];
+        for (u32 v = 0; v < am->mNumVertices; v++)
+        {
+            f32 x = am->mVertices[v].x, y = am->mVertices[v].y, z = am->mVertices[v].z;
+            f32 d2 = x*x + y*y + z*z;
+            if (d2 > maxRadiusSq) maxRadiusSq = d2;
+        }
+
         manager->meshUsed++;
     }
+    model.boundingRadius = sqrtf(maxRadiusSq);
 
     // Add model to resource manager
     manager->modelBuffer[manager->modelUsed] = model;
@@ -151,8 +166,45 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     manager->modelUsed++;
 
     // Clean up temporary mesh array
-    free(meshes);
+    dfree(meshes, sizeof(Mesh) * meshCount, MEM_TAG_MESH);
     aiReleaseImport(scene);
+}
+
+void resRegisterPrimitive(ResourceManager *manager, const c8 *name, Mesh *mesh)
+{
+    if (!manager || !name || !mesh) return;
+    if (manager->meshUsed >= manager->meshCount ||
+        manager->modelUsed >= manager->modelCount)
+    {
+        ERROR("resRegisterPrimitive: no space for '%s'", name);
+        return;
+    }
+
+    // store mesh
+    u32 meshIdx = manager->meshUsed;
+    manager->meshBuffer[meshIdx] = *mesh;
+    insertMap(&manager->mesheIDs, name, &manager->meshUsed);
+    manager->meshUsed++;
+
+    // build model with single mesh, no material
+    Model model;
+    model.meshIndices = (u32 *)dalloc(sizeof(u32), MEM_TAG_MODEL);
+    model.materialIndices = (u32 *)dalloc(sizeof(u32), MEM_TAG_MODEL);
+    model.meshIndices[0] = meshIdx;
+    model.materialIndices[0] = 0;
+    model.meshCount = 1;
+    model.materialCount = 0;
+    model.boundingRadius = 1.0f;  // primitives are unit-scale (sphere r=1, box half-ext=1)
+
+    u32 len = (u32)strlen(name);
+    model.name = (c8 *)dalloc(len + 1, MEM_TAG_MODEL);
+    memcpy(model.name, name, len + 1);
+
+    manager->modelBuffer[manager->modelUsed] = model;
+    insertMap(&manager->modelIDs, name, &manager->modelUsed);
+    manager->modelUsed++;
+
+    INFO("Registered primitive model '%s'", name);
 }
 
 void draw(Model *model, u32 shader, b8 shouldUpdateMaterials)

@@ -16,8 +16,12 @@ GeometryBuffer *geometryBufferCreate(u32 maxVertices, u32 maxIndices)
         return NULL;
     }
 
-    GeometryBuffer *gb = (GeometryBuffer *)malloc(sizeof(GeometryBuffer));
-    if (!gb) { ERROR("geometryBufferCreate: malloc failed"); return NULL; }
+    GeometryBuffer *gb = (GeometryBuffer *)dalloc(sizeof(GeometryBuffer), MEM_TAG_GEOMETRY_BUFFER);
+    if (!gb) 
+    {
+        ERROR("geometryBufferCreate: alloc failed"); 
+        return NULL;
+    }
     memset(gb, 0, sizeof(GeometryBuffer));
 
     gb->maxVertices = maxVertices;
@@ -59,7 +63,7 @@ void geometryBufferDestroy(GeometryBuffer *buf)
     if (buf->vao) glDeleteVertexArrays(1, &buf->vao);
     if (buf->vbo) glDeleteBuffers(1, &buf->vbo);
     if (buf->ebo) glDeleteBuffers(1, &buf->ebo);
-    free(buf);
+    dfree(buf, sizeof(GeometryBuffer), MEM_TAG_GEOMETRY_BUFFER);
 }
 
 b8 geometryBufferUpload(GeometryBuffer *buf, Mesh *mesh,

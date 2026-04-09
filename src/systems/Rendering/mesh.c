@@ -17,7 +17,7 @@ void freeMesh(Mesh *mesh)
         glDeleteBuffers(1, &mesh->ebo);
     }
     // buffered meshes: GPU memory is owned by GeometryBuffer — don't delete here
-    free(mesh);
+    dfree(mesh, sizeof(Mesh), MEM_TAG_MESH);
 }
 void freeMeshArray(Mesh *meshes, u32 meshCount)
 {
@@ -31,7 +31,7 @@ void freeMeshArray(Mesh *meshes, u32 meshCount)
         if (meshes[i].ebo != 0) glDeleteBuffers(1, &meshes[i].ebo);
     }
 
-    free(meshes);
+    dfree(meshes, sizeof(Mesh) * meshCount, MEM_TAG_MESH);
 }
 void drawMesh(Mesh *mesh)
 {
@@ -61,9 +61,7 @@ void drawMesh(Mesh *mesh)
     }
     else
     {
-        GLint buffer_bound;
-        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &buffer_bound);
-        if (buffer_bound != 0)
+        if (mesh->ebo)
             glDrawElements(GL_TRIANGLES, (GLsizei)mesh->drawCount, GL_UNSIGNED_INT, 0);
         else
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)mesh->drawCount);
@@ -72,7 +70,8 @@ void drawMesh(Mesh *mesh)
     g_drawCalls++;
     g_triangles += mesh->drawCount / 3;
     g_vertices  += mesh->drawCount;
-    glBindVertexArray(0);
+    // Do NOT unbind VAO — the next drawMesh/drawMeshInstanced will rebind anyway.
+    // Removing glBindVertexArray(0) eliminates a redundant GL state change per draw.
 }
 
 Mesh *loadMeshFromAssimp(const c8 *filename, u32 *meshCount)
@@ -141,7 +140,7 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
     }
 
     // allocate array for output meshes
-    Mesh *outputMesh = (Mesh *)malloc(sizeof(Mesh) * scene->mNumMeshes);
+    Mesh *outputMesh = (Mesh *)dalloc(sizeof(Mesh) * scene->mNumMeshes, MEM_TAG_MESH);
     if (!outputMesh)
     {
         ERROR("Failed to allocate output mesh array");
@@ -168,7 +167,7 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
         if (!vertices.positions || !vertices.texCoords || !vertices.normals || !indices)
         {
             ERROR("Arena allocation failed for mesh %u", m);
-            free(outputMesh);
+            dfree(outputMesh, sizeof(Mesh) * scene->mNumMeshes, MEM_TAG_MESH);
             arenaDestroy(&meshArena);
             return NULL;
         }
@@ -312,7 +311,13 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
     const u32 stride = GEO_VERTEX_STRIDE;  // 32 bytes: Vec3+Vec2+Vec3
 
     // Build interleaved vertex data
-    f32 *interleavedData = (f32 *)malloc(model.positionsCount * stride);
+    f32 *interleavedData = (f32 *)dalloc(model.positionsCount * stride, MEM_TAG_MESH);
+    if (!interleavedData)
+    {
+        ERROR("initMeshFromModel: failed to allocate %u bytes for interleaved data",
+              model.positionsCount * stride);
+        return;
+    }
     u32 offset = 0;
     for (u32 i = 0; i < model.positionsCount; i++)
     {
@@ -333,13 +338,13 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
                                   interleavedData, model.positionsCount,
                                   model.indices,   model.indicesCount))
         {
-            free(interleavedData);
+            dfree(interleavedData, model.positionsCount * stride, MEM_TAG_MESH);
             return;
         }
         WARN("initMeshFromModel: GeometryBuffer full, falling back to standalone");
     }
 
-    // Slow path � dedicated VAO/VBO/EBO for this mesh
+    // Slow path dedicated VAO/VBO/EBO for this mesh
     glGenVertexArrays(1, &mesh->vao);
     glGenBuffers(1, &mesh->vbo);
     glGenBuffers(1, &mesh->ebo);
@@ -364,7 +369,7 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride,
                           (void *)(sizeof(Vec3) + sizeof(Vec2)));
 
-    free(interleavedData);
+    dfree(interleavedData, model.positionsCount * stride, MEM_TAG_MESH);
 }
 // Function to generate height data using compute shader
 HeightMap generateHeightMap(i32 sizeX, i32 sizeZ, f32 heightScale,
@@ -400,7 +405,7 @@ HeightMap generateHeightMap(i32 sizeX, i32 sizeZ, f32 heightScale,
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Read back height data
-    f32 *heights = (f32 *)malloc(sizeof(f32) * (sizeX * sizeZ));
+    f32 *heights = (f32 *)dalloc(sizeof(f32) * (sizeX * sizeZ), MEM_TAG_MESH);
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeX * sizeZ * sizeof(f32),
                        heights);
 
@@ -417,7 +422,7 @@ u32 *createTerrainIndices(u32 cellsX, u32 cellsZ, u32 *outIndexCount)
         cellsX * cellsZ * 6; // 2 triangles per cell, 3 indices per triangle
 
     // Allocate indices array
-    u32 *indices = malloc(sizeof(u32) * totalIndices);
+    u32 *indices = dalloc(sizeof(u32) * totalIndices, MEM_TAG_MESH);
 
     // Track index count for caller
     *outIndexCount = totalIndices;
@@ -541,7 +546,7 @@ Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
     {
         // setup heights array
         output->heights =
-            (f32 *)malloc(sizeof(f32) * heightData.width * heightData.height);
+            (f32 *)dalloc(sizeof(f32) * heightData.width * heightData.height, MEM_TAG_MESH);
         // copy the height data to the output
         memcpy(output->heights, heightData.heights,
                sizeof(f32) * heightData.width * heightData.height);
@@ -550,14 +555,14 @@ Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
     }
 
     // Generate vertices with height
-    Vertices *terrainVertices = (Vertices *)malloc(sizeof(Vertices));
+    Vertices *terrainVertices = (Vertices *)dalloc(sizeof(Vertices), MEM_TAG_MESH);
     terrainVertices->ammount = heightData.width * heightData.height;
     terrainVertices->positions =
-        (Vec3 *)malloc(terrainVertices->ammount * sizeof(Vec3));
+        (Vec3 *)dalloc(terrainVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
     terrainVertices->texCoords =
-        (Vec2 *)malloc(terrainVertices->ammount * sizeof(Vec2));
+        (Vec2 *)dalloc(terrainVertices->ammount * sizeof(Vec2), MEM_TAG_MESH);
     terrainVertices->normals =
-        (Vec3 *)malloc(terrainVertices->ammount * sizeof(Vec3));
+        (Vec3 *)dalloc(terrainVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
 
     // Generate vertex data with heights
     for (u32 z = 0; z < heightData.height; ++z)
@@ -586,16 +591,16 @@ Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
     u32 *terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
     // Create mesh
-    Mesh *terrainMesh = malloc(sizeof(Mesh));
+    Mesh *terrainMesh = dalloc(sizeof(Mesh), MEM_TAG_MESH);
     createMesh(terrainMesh, terrainVertices, terrainVertices->ammount,
                terrainIndices, indexCount);
 
     // Clean up
-    free(heightData.heights);
-    free(terrainVertices->positions);
-    free(terrainVertices->texCoords);
-    free(terrainVertices->normals);
-    free(terrainVertices);
+    dfree(heightData.heights, sizeof(f32) * heightData.width * heightData.height, MEM_TAG_MESH);
+    dfree(terrainVertices->positions, terrainVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(terrainVertices->texCoords, terrainVertices->ammount * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(terrainVertices->normals, terrainVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(terrainVertices, sizeof(Vertices), MEM_TAG_MESH);
 
     return terrainMesh;
 }
@@ -607,12 +612,12 @@ Vertices *createTerrainVertices(u32 cellsX, u32 cellsZ, f32 cellSize)
     u32 verticesZ = cellsZ + 1;
     u32 totalVertices = verticesX * verticesZ;
 
-    Vertices *vertices = malloc(sizeof(Vertices));
+    Vertices *vertices = dalloc(sizeof(Vertices), MEM_TAG_MESH);
     vertices->ammount = totalVertices;
 
-    vertices->positions = malloc(sizeof(Vec3) * totalVertices);
-    vertices->texCoords = malloc(sizeof(Vec2) * totalVertices);
-    vertices->normals = malloc(sizeof(Vec3) * totalVertices);
+    vertices->positions = dalloc(vertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    vertices->texCoords = dalloc(vertices->ammount * sizeof(Vec2), MEM_TAG_MESH);
+    vertices->normals = dalloc(vertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
 
     // Generate vertex data
     for (u32 z = 0; z < verticesZ; ++z)
@@ -653,16 +658,16 @@ Mesh *createTerrainMesh(u32 cellsX, u32 cellsZ, f32 cellSize)
     u32 *terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 
     // Create mesh using the provided createMesh function
-    Mesh *terrainMesh = malloc(sizeof(Mesh));
+    Mesh *terrainMesh = dalloc(sizeof(Mesh), MEM_TAG_MESH);
     createMesh(terrainMesh, terrainVertices, terrainVertices->ammount,
                terrainIndices, indexCount);
 
     // Clean up temporary arrays (createMesh should have made copies)
-    free(terrainVertices->positions);
-    free(terrainVertices->texCoords);
-    free(terrainVertices->normals);
-    free(terrainVertices);
-    free(terrainIndices);
+    dfree(terrainVertices->positions, terrainVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(terrainVertices->texCoords, terrainVertices->ammount * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(terrainVertices->normals, terrainVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(terrainVertices, sizeof(Vertices), MEM_TAG_MESH);
+    dfree(terrainIndices, sizeof(u32) * indexCount, MEM_TAG_MESH);
 
     return terrainMesh;
 }
@@ -671,14 +676,14 @@ Mesh *createBoxMesh()
 {
     // Define vertices for a unit cube centered at origin
     // Each face needs its own vertices since texture coordinates are different
-    Vertices *boxVertices = (Vertices *)malloc(sizeof(Vertices));
+    Vertices *boxVertices = (Vertices *)dalloc(sizeof(Vertices), MEM_TAG_MESH);
     boxVertices->ammount = 24; // 4 vertices per face * 6 faces
 
     boxVertices->positions =
-        (Vec3 *)malloc(boxVertices->ammount * sizeof(Vec3));
+        (Vec3 *)dalloc(boxVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
     boxVertices->texCoords =
-        (Vec2 *)malloc(boxVertices->ammount * sizeof(Vec2));
-    boxVertices->normals = (Vec3 *)malloc(boxVertices->ammount * sizeof(Vec3));
+        (Vec2 *)dalloc(boxVertices->ammount * sizeof(Vec2), MEM_TAG_MESH);
+    boxVertices->normals = (Vec3 *)dalloc(boxVertices->ammount * sizeof(Vec3), MEM_TAG_MESH );
 
     // Fill in vertex data for each face
     // FRONT FACE (Z+)
@@ -717,12 +722,48 @@ Mesh *createBoxMesh()
     boxVertices->positions[22] = (Vec3){1.0f, -1.0f, -1.0f};
     boxVertices->positions[23] = (Vec3){1.0f, -1.0f, 1.0f};
 
-    // Fill unused texcoords and normals with zeros
-    for (u32 i = 0; i < boxVertices->ammount; i++)
-    {
-        boxVertices->texCoords[i] = (Vec2){0.0f, 0.0f};
-        boxVertices->normals[i] = (Vec3){0.0f, 0.0f, 0.0f};
-    }
+    // Per-face UVs (0..1) and hard normals for proper texturing + flat lighting
+    // Front (Z+)
+    boxVertices->texCoords[0] = (Vec2){0.0f, 1.0f};
+    boxVertices->texCoords[1] = (Vec2){0.0f, 0.0f};
+    boxVertices->texCoords[2] = (Vec2){1.0f, 0.0f};
+    boxVertices->texCoords[3] = (Vec2){1.0f, 1.0f};
+    for (u32 i = 0; i < 4; i++) boxVertices->normals[i] = (Vec3){0.0f, 0.0f, 1.0f};
+
+    // Back (Z-)
+    boxVertices->texCoords[4] = (Vec2){0.0f, 1.0f};
+    boxVertices->texCoords[5] = (Vec2){0.0f, 0.0f};
+    boxVertices->texCoords[6] = (Vec2){1.0f, 0.0f};
+    boxVertices->texCoords[7] = (Vec2){1.0f, 1.0f};
+    for (u32 i = 4; i < 8; i++) boxVertices->normals[i] = (Vec3){0.0f, 0.0f, -1.0f};
+
+    // Left (X-)
+    boxVertices->texCoords[8]  = (Vec2){0.0f, 1.0f};
+    boxVertices->texCoords[9]  = (Vec2){0.0f, 0.0f};
+    boxVertices->texCoords[10] = (Vec2){1.0f, 0.0f};
+    boxVertices->texCoords[11] = (Vec2){1.0f, 1.0f};
+    for (u32 i = 8; i < 12; i++) boxVertices->normals[i] = (Vec3){-1.0f, 0.0f, 0.0f};
+
+    // Right (X+)
+    boxVertices->texCoords[12] = (Vec2){0.0f, 1.0f};
+    boxVertices->texCoords[13] = (Vec2){0.0f, 0.0f};
+    boxVertices->texCoords[14] = (Vec2){1.0f, 0.0f};
+    boxVertices->texCoords[15] = (Vec2){1.0f, 1.0f};
+    for (u32 i = 12; i < 16; i++) boxVertices->normals[i] = (Vec3){1.0f, 0.0f, 0.0f};
+
+    // Top (Y+)
+    boxVertices->texCoords[16] = (Vec2){0.0f, 1.0f};
+    boxVertices->texCoords[17] = (Vec2){0.0f, 0.0f};
+    boxVertices->texCoords[18] = (Vec2){1.0f, 0.0f};
+    boxVertices->texCoords[19] = (Vec2){1.0f, 1.0f};
+    for (u32 i = 16; i < 20; i++) boxVertices->normals[i] = (Vec3){0.0f, 1.0f, 0.0f};
+
+    // Bottom (Y-)
+    boxVertices->texCoords[20] = (Vec2){0.0f, 1.0f};
+    boxVertices->texCoords[21] = (Vec2){0.0f, 0.0f};
+    boxVertices->texCoords[22] = (Vec2){1.0f, 0.0f};
+    boxVertices->texCoords[23] = (Vec2){1.0f, 1.0f};
+    for (u32 i = 20; i < 24; i++) boxVertices->normals[i] = (Vec3){0.0f, -1.0f, 0.0f};
 
     // Define indices for the cube
     u32 indices[] = {// Front face
@@ -739,43 +780,43 @@ Mesh *createBoxMesh()
                      20, 21, 22, 20, 22, 23};
 
     // Create the mesh
-    Mesh *boxMesh = malloc(sizeof(Mesh));
+    Mesh *boxMesh = dalloc(sizeof(Mesh), MEM_TAG_MESH);
     createMesh(boxMesh, boxVertices, boxVertices->ammount, indices, 36);
 
     // Clean up
-    free(boxVertices->positions);
-    free(boxVertices->texCoords);
-    free(boxVertices->normals);
-    free(boxVertices);
+    dfree(boxVertices->positions, boxVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(boxVertices->texCoords, boxVertices->ammount * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(boxVertices->normals, boxVertices->ammount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(boxVertices, sizeof(Vertices), MEM_TAG_MESH);
 
     return boxMesh;
 }
 Mesh *createSkyboxMesh()
 {
     // Define vertices for a skybox
-    Vertices *skyboxVertices = (Vertices *)malloc(sizeof(Vertices));
+    Vertices *skyboxVertices = (Vertices *)dalloc(sizeof(Vertices), MEM_TAG_MESH);
     if (!skyboxVertices)
         return NULL;
 
     skyboxVertices->ammount = 36;
 
     // Allocate and initialize positions
-    skyboxVertices->positions = (Vec3 *)malloc(36 * sizeof(Vec3));
+    skyboxVertices->positions = (Vec3 *)dalloc(36 * sizeof(Vec3), MEM_TAG_MESH);
     if (!skyboxVertices->positions)
     {
-        free(skyboxVertices);
+        dfree(skyboxVertices, sizeof(Vertices), MEM_TAG_MESH);
         return NULL;
     }
 
     // Allocate empty (but valid) arrays for texCoords and normals
-    skyboxVertices->texCoords = (Vec2 *)malloc(36 * sizeof(Vec2));
-    skyboxVertices->normals = (Vec3 *)malloc(36 * sizeof(Vec3));
+    skyboxVertices->texCoords = (Vec2 *)dalloc(36 * sizeof(Vec2), MEM_TAG_MESH);
+    skyboxVertices->normals = (Vec3 *)dalloc(36 * sizeof(Vec3), MEM_TAG_MESH);
     if (!skyboxVertices->texCoords || !skyboxVertices->normals)
     {
-        free(skyboxVertices->positions);
-        free(skyboxVertices->texCoords);
-        free(skyboxVertices->normals);
-        free(skyboxVertices);
+        dfree(skyboxVertices->positions, 36 * sizeof(Vec3), MEM_TAG_MESH);
+        dfree(skyboxVertices->texCoords, 36 * sizeof(Vec2), MEM_TAG_MESH);
+        dfree(skyboxVertices->normals, 36 * sizeof(Vec3), MEM_TAG_MESH);
+        dfree(skyboxVertices, sizeof(Vertices), MEM_TAG_MESH);
         return NULL;
     }
 
@@ -833,14 +874,14 @@ Mesh *createSkyboxMesh()
     skyboxVertices->positions[35] = (Vec3){1.0f, -1.0f, 1.0f};
 
     // Create the mesh
-    Mesh *skyboxMesh = malloc(sizeof(Mesh));
+    Mesh *skyboxMesh = (Mesh *)dalloc(sizeof(Mesh), MEM_TAG_MESH);
     createMesh(skyboxMesh, skyboxVertices, 36, NULL, 0);
 
     // Clean up
-    free(skyboxVertices->positions);
-    free(skyboxVertices->texCoords);
-    free(skyboxVertices->normals);
-    free(skyboxVertices);
+    dfree(skyboxVertices->positions, 36 * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(skyboxVertices->texCoords, 36 * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(skyboxVertices->normals, 36 * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(skyboxVertices, sizeof(Vertices), MEM_TAG_MESH);
 
     return skyboxMesh;
 }
@@ -848,20 +889,20 @@ Mesh *createSkyboxMesh()
 Mesh *createQuadMesh()
 {
     // Create vertices for fullscreen quad
-    Vertices *quadVertices = (Vertices *)malloc(sizeof(Vertices));
+    Vertices *quadVertices = (Vertices *)dalloc(sizeof(Vertices), MEM_TAG_MESH);
     if (!quadVertices) return NULL;
     
     quadVertices->ammount = 6;
-    quadVertices->positions = (Vec3 *)malloc(6 * sizeof(Vec3));
-    quadVertices->texCoords = (Vec2 *)malloc(6 * sizeof(Vec2));
-    quadVertices->normals = (Vec3 *)malloc(6 * sizeof(Vec3));
-    
+    quadVertices->positions = (Vec3 *)dalloc(6 * sizeof(Vec3), MEM_TAG_MESH);
+    quadVertices->texCoords = (Vec2 *)dalloc(6 * sizeof(Vec2), MEM_TAG_MESH);
+    quadVertices->normals = (Vec3 *)dalloc(6 * sizeof(Vec3), MEM_TAG_MESH);
+
     if (!quadVertices->positions || !quadVertices->texCoords || !quadVertices->normals)
     {
-        if (quadVertices->positions) free(quadVertices->positions);
-        if (quadVertices->texCoords) free(quadVertices->texCoords);
-        if (quadVertices->normals) free(quadVertices->normals);
-        free(quadVertices);
+        if (quadVertices->positions) dfree(quadVertices->positions, 6 * sizeof(Vec3), MEM_TAG_MESH);
+        if (quadVertices->texCoords) dfree(quadVertices->texCoords, 6 * sizeof(Vec2), MEM_TAG_MESH);
+        if (quadVertices->normals) dfree(quadVertices->normals, 6 * sizeof(Vec3), MEM_TAG_MESH);
+        dfree(quadVertices, sizeof(Vertices), MEM_TAG_MESH);
         return NULL;
     }
     
@@ -889,17 +930,122 @@ Mesh *createQuadMesh()
     }
     
     // Create the mesh
-    Mesh *quadMesh = (Mesh *)malloc(sizeof(Mesh));
+    Mesh *quadMesh = (Mesh *)dalloc(sizeof(Mesh), MEM_TAG_MESH);
     if (quadMesh)
     {
         createMesh(quadMesh, quadVertices, 6, NULL, 0);
     }
     
     // Clean up
-    free(quadVertices->positions);
-    free(quadVertices->texCoords);
-    free(quadVertices->normals);
-    free(quadVertices);
+    dfree(quadVertices->positions, 6 * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(quadVertices->texCoords, 6 * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(quadVertices->normals, 6 * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(quadVertices, sizeof(Vertices), MEM_TAG_MESH);
     
     return quadMesh;
+}
+
+Mesh *createPlaneMesh()
+{
+    Vertices *v = (Vertices *)dalloc(sizeof(Vertices), MEM_TAG_MESH);
+    if (!v) return NULL;
+
+    v->ammount = 4;
+    v->positions = (Vec3 *)dalloc(4 * sizeof(Vec3), MEM_TAG_MESH);
+    v->texCoords = (Vec2 *)dalloc(4 * sizeof(Vec2), MEM_TAG_MESH);
+    v->normals   = (Vec3 *)dalloc(4 * sizeof(Vec3), MEM_TAG_MESH);
+
+    // Unit plane on XZ, centered at origin, facing Y+
+    v->positions[0] = (Vec3){-1.0f, 0.0f,  1.0f};
+    v->positions[1] = (Vec3){ 1.0f, 0.0f,  1.0f};
+    v->positions[2] = (Vec3){ 1.0f, 0.0f, -1.0f};
+    v->positions[3] = (Vec3){-1.0f, 0.0f, -1.0f};
+
+    v->texCoords[0] = (Vec2){0.0f, 0.0f};
+    v->texCoords[1] = (Vec2){1.0f, 0.0f};
+    v->texCoords[2] = (Vec2){1.0f, 1.0f};
+    v->texCoords[3] = (Vec2){0.0f, 1.0f};
+
+    for (u32 i = 0; i < 4; i++)
+        v->normals[i] = (Vec3){0.0f, 1.0f, 0.0f};
+
+    u32 indices[] = {0, 1, 2, 0, 2, 3};
+
+    Mesh *mesh = (Mesh *)dalloc(sizeof(Mesh), MEM_TAG_MESH);
+    if (mesh)
+        createMesh(mesh, v, 4, indices, 6);
+
+    dfree(v->positions, 4 * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(v->texCoords, 4 * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(v->normals, 4 * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(v, sizeof(Vertices), MEM_TAG_MESH);
+    return mesh;
+}
+
+Mesh *createSphereMesh()
+{
+    // UV sphere: use higher tessellation so reflected env-map vectors
+    // interpolate smoothly and do not appear blocky.
+    const u32 slices = 128;
+    const u32 stacks = 64;
+    const u32 vertCount = (slices + 1) * (stacks + 1);
+    const u32 idxCount  = slices * stacks * 6;
+
+    Vertices *v = (Vertices *)dalloc(sizeof(Vertices), MEM_TAG_MESH);
+    if (!v) return NULL;
+
+    v->ammount   = vertCount;
+    v->positions = (Vec3 *)dalloc(vertCount * sizeof(Vec3), MEM_TAG_MESH);
+    v->texCoords = (Vec2 *)dalloc(vertCount * sizeof(Vec2), MEM_TAG_MESH);
+    v->normals   = (Vec3 *)dalloc(vertCount * sizeof(Vec3), MEM_TAG_MESH);
+
+    u32 vi = 0;
+    for (u32 st = 0; st <= stacks; st++)
+    {
+        f32 phi = (f32)st / (f32)stacks * 3.14159265f;
+        f32 sinP = sinf(phi);
+        f32 cosP = cosf(phi);
+
+        for (u32 sl = 0; sl <= slices; sl++)
+        {
+            f32 theta = (f32)sl / (f32)slices * 2.0f * 3.14159265f;
+            f32 sinT = sinf(theta);
+            f32 cosT = cosf(theta);
+
+            Vec3 n = {sinP * cosT, cosP, sinP * sinT};
+            v->positions[vi] = n;
+            v->normals[vi]   = n;
+            v->texCoords[vi] = (Vec2){(f32)sl / (f32)slices, (f32)st / (f32)stacks};
+            vi++;
+        }
+    }
+
+    u32 *indices = (u32 *)dalloc(idxCount * sizeof(u32), MEM_TAG_MESH);
+    u32 ii = 0;
+    for (u32 st = 0; st < stacks; st++)
+    {
+        for (u32 sl = 0; sl < slices; sl++)
+        {
+            u32 a = st * (slices + 1) + sl;
+            u32 b = a + slices + 1;
+            // Keep front faces outward (CCW) for standard back-face culling.
+            indices[ii++] = a;
+            indices[ii++] = a + 1;
+            indices[ii++] = b;
+            indices[ii++] = a + 1;
+            indices[ii++] = b + 1;
+            indices[ii++] = b;
+        }
+    }
+
+    Mesh *mesh = (Mesh *)dalloc(sizeof(Mesh), MEM_TAG_MESH);
+    if (mesh)
+        createMesh(mesh, v, vertCount, indices, idxCount);
+
+    dfree(v->positions, vertCount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(v->texCoords, vertCount * sizeof(Vec2), MEM_TAG_MESH);
+    dfree(v->normals, vertCount * sizeof(Vec3), MEM_TAG_MESH);
+    dfree(v, sizeof(Vertices), MEM_TAG_MESH);
+    dfree(indices, idxCount * sizeof(u32), MEM_TAG_MESH);
+    return mesh;
 }

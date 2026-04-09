@@ -4,24 +4,32 @@ ModelSSBO *modelSSBOCreate(u32 capacity)
 {
     if (capacity == 0) { ERROR("modelSSBOCreate: capacity must be > 0"); return NULL; }
 
-    ModelSSBO *ssbo = (ModelSSBO *)malloc(sizeof(ModelSSBO));
-    if (!ssbo) { ERROR("modelSSBOCreate: malloc failed"); return NULL; }
+    ModelSSBO *ssbo = (ModelSSBO *)dalloc(sizeof(ModelSSBO), MEM_TAG_RENDERER);
+    if (!ssbo) { ERROR("modelSSBOCreate: alloc failed"); return NULL; }
 
     ssbo->capacity = capacity;
     ssbo->count    = 0;
     ssbo->data     = NULL;
     ssbo->buffer   = 0;
 
-    const GLbitfield flags    = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT
-                              | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT;
+    // Use GL_MAP_FLUSH_EXPLICIT_BIT instead of GL_MAP_COHERENT_BIT.
+    // Coherent mapping forces per-cacheline write-combining buffer drains on every
+    // store, which stalls the CPU when writing 1M+ Mat4 transforms per frame.
+    // Explicit flush lets us batch all writes into a single glFlushMappedBufferRange
+    // call, which is significantly faster for large sequential writes.
+    const GLbitfield storageFlags = GL_MAP_WRITE_BIT
+                                  | GL_MAP_PERSISTENT_BIT
+                                  | GL_DYNAMIC_STORAGE_BIT;
+    const GLbitfield mapFlags     = GL_MAP_WRITE_BIT
+                                  | GL_MAP_PERSISTENT_BIT
+                                  | GL_MAP_FLUSH_EXPLICIT_BIT;
     const GLsizeiptr byteSize = (GLsizeiptr)(capacity * sizeof(Mat4));
 
     glGenBuffers(1, &ssbo->buffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo->buffer);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, byteSize, NULL, flags);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, byteSize, NULL, storageFlags);
 
-    ssbo->data = (Mat4 *)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, byteSize,
-        GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+    ssbo->data = (Mat4 *)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, byteSize, mapFlags);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -29,7 +37,7 @@ ModelSSBO *modelSSBOCreate(u32 capacity)
     {
         ERROR("modelSSBOCreate: glMapBufferRange failed (capacity=%u)", capacity);
         glDeleteBuffers(1, &ssbo->buffer);
-        free(ssbo);
+        dfree(ssbo, sizeof(ModelSSBO), MEM_TAG_RENDERER);
         return NULL;
     }
 
@@ -46,7 +54,7 @@ void modelSSBODestroy(ModelSSBO *ssbo)
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         glDeleteBuffers(1, &ssbo->buffer);
     }
-    free(ssbo);
+    dfree(ssbo, sizeof(ModelSSBO), MEM_TAG_RENDERER);
 }
 
 void modelSSBOBeginFrame(ModelSSBO *ssbo)
@@ -67,6 +75,17 @@ void modelSSBOUpload(ModelSSBO *ssbo)
 {
     if (!ssbo || !ssbo->buffer) return;
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void modelSSBOEndFrame(ModelSSBO *ssbo)
+{
+    if (!ssbo || !ssbo->buffer || ssbo->count == 0) return;
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo->buffer);
+    glFlushMappedBufferRange(GL_SHADER_STORAGE_BUFFER,
+        0,
+        (GLsizeiptr)(ssbo->count * sizeof(Mat4)));
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void modelSSBOBind(ModelSSBO *ssbo, u32 bindingPoint)

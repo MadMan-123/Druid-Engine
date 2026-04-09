@@ -123,6 +123,12 @@ void readMaterial(Material *out, struct aiMaterial *mat)
 
 MaterialUniforms getMaterialUniforms(u32 shader)
 {
+    // Cache per shader — avoids 9 glGetUniformLocation calls every frame
+    static u32 s_cachedShader = 0;
+    static MaterialUniforms s_cached = {0};
+    if (shader == s_cachedShader && shader != 0)
+        return s_cached;
+
     MaterialUniforms uniforms = {0};
     uniforms.albedoTex = glGetUniformLocation(shader, "albedoTexture");
     uniforms.metallicTex = glGetUniformLocation(shader, "metallicTexture");
@@ -132,6 +138,10 @@ MaterialUniforms getMaterialUniforms(u32 shader)
     uniforms.metallic = glGetUniformLocation(shader, "metallic");
     uniforms.colour = glGetUniformLocation(shader, "colour");
     uniforms.transparency = glGetUniformLocation(shader, "transparency");
+    uniforms.emissive = glGetUniformLocation(shader, "emissive");
+
+    s_cachedShader = shader;
+    s_cached = uniforms;
     return uniforms;
 }
 
@@ -177,6 +187,7 @@ void updateMaterial(Material *material, const MaterialUniforms *uniforms)
     glUniform1f(uniforms->transparency, material->transparency);
     Vec3 col = material->colour;
     glUniform3f(uniforms->colour, col.x, col.y, col.z);
+    glUniform1f(uniforms->emissive, material->emissive);
 }
 
 Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count)
@@ -196,7 +207,7 @@ Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count)
 
     *count = scene->mNumMaterials;
 
-    Material *materials = (Material *)malloc(sizeof(Material) * scene->mNumMaterials);
+    Material *materials = (Material *)dalloc(sizeof(Material) * scene->mNumMaterials, MEM_TAG_MATERIAL);
     
     if (!materials) {
         ERROR("Failed to allocate memory for materials\n");
