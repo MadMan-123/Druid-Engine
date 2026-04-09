@@ -1,7 +1,11 @@
 #include "../../include/druid.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 //=====================================================================================================================
-// Profiler — RDTSC scope timing, GPU timer queries, state change + geometry counters
+// Profiler - RDTSC scope timing, GPU timer queries, state change + geometry counters
 //=====================================================================================================================
 
 static ProfileFrame g_profFrame;
@@ -125,7 +129,7 @@ void profileBeginFrame(void)
         {
             GLuint64 gpuNs = 0;
             glGetQueryObjectui64v(g_gpuQueries[readIdx], GL_QUERY_RESULT, &gpuNs);
-            g_prevFrame.gpuFrameTime_us = (f64)gpuNs / 1000.0;
+            g_profFrame.gpuFrameTime_us = (f64)gpuNs / 1000.0;
         }
     }
 
@@ -148,7 +152,7 @@ void profileBeginFrame(void)
         {
             GLuint64 prims = 0;
             glGetQueryObjectui64v(g_primQueries[readIdx], GL_QUERY_RESULT, &prims);
-            g_prevFrame.primitivesGenerated = prims;
+            g_profFrame.primitivesGenerated = prims;
         }
     }
 
@@ -208,4 +212,126 @@ void profileCountBufferUpload(u64 bytes) { g_bufferUploadsCount++; g_bufferUploa
 
 // memory tracking
 void profileCountAlloc(u64 bytes)    { g_heapAllocBytes += bytes; g_heapAllocCount++; g_heapLiveBytes += bytes; }
-void profileCountFree(void)          { g_heapFreeCount++; }
+void profileCountFree(u64 bytes)     { g_heapFreeCount++; if (g_heapLiveBytes >= bytes) g_heapLiveBytes -= bytes; else g_heapLiveBytes = 0; }
+
+//=====================================================================================================================
+// Cache topology detection + estimation
+//=====================================================================================================================
+
+static CacheInfo g_cacheInfo = {0};
+static b8        g_cacheDetected = false;
+
+void profileDetectCaches(CacheInfo *out)
+{
+    // Defaults (conservative, modern desktop)
+    out->l1dSize  = 32 * 1024;       // 32 KB
+    out->l2Size   = 256 * 1024;      // 256 KB
+    out->l3Size   = 8 * 1024 * 1024; // 8 MB
+    out->lineSize = 64;
+
+#ifdef _WIN32
+    DWORD bufSize = 0;
+    GetLogicalProcessorInformation(NULL, &bufSize);
+    if (bufSize > 0)
+    {
+        SYSTEM_LOGICAL_PROCESSOR_INFORMATION *buf =
+            (SYSTEM_LOGICAL_PROCESSOR_INFORMATION *)malloc(bufSize);
+        if (buf && GetLogicalProcessorInformation(buf, &bufSize))
+        {
+            DWORD count = bufSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+            for (DWORD i = 0; i < count; i++)
+            {
+                if (buf[i].Relationship == RelationCache)
+                {
+                    CACHE_DESCRIPTOR *c = &buf[i].Cache;
+                    if (c->LineSize > 0) out->lineSize = c->LineSize;
+                    switch (c->Level)
+                    {
+                        case 1:
+                            if (c->Type == CacheData || c->Type == CacheUnified)
+                                out->l1dSize = c->Size;
+                            break;
+                        case 2: out->l2Size = c->Size; break;
+                        case 3: out->l3Size = c->Size; break;
+                    }
+                }
+            }
+        }
+        free(buf);
+    }
+#endif
+
+    g_cacheInfo = *out;
+    g_cacheDetected = true;
+    INFO("Cache topology: L1d=%uKB  L2=%uKB  L3=%uMB  line=%uB",
+         out->l1dSize / 1024, out->l2Size / 1024,
+         out->l3Size / (1024 * 1024), out->lineSize);
+}
+
+const CacheInfo *profileGetCacheInfo(void)
+{
+    return &g_cacheInfo;
+}
+
+void profileEstimateCache(u32 entityCount, u32 bytesPerEntity,
+                          u32 usefulBytesPerEntity, u32 numArrays)
+{
+    if (!g_cacheDetected) return;
+    if (entityCount == 0 || bytesPerEntity == 0) return;
+
+    u32 lineSize = g_cacheInfo.lineSize > 0 ? g_cacheInfo.lineSize : 64;
+
+    // Total bytes fetched from memory (includes padding/cold data)
+    u64 totalFetched = (u64)entityCount * bytesPerEntity;
+    // Bytes actually used by the hot loop
+    u64 totalUseful  = (u64)entityCount * usefulBytesPerEntity;
+
+    // Cache lines touched depends on layout:
+    //   AoS (numArrays==1): each entity strides bytesPerEntity, so lines = totalFetched / lineSize
+    //   SoA (numArrays>1):  each array is contiguous f32s, lines = numArrays * ceil(entityCount * fieldSize / lineSize)
+    u64 linesAccessed;
+    if (numArrays <= 1)
+    {
+        // AoS: sequential stride through interleaved struct
+        linesAccessed = (totalFetched + lineSize - 1) / lineSize;
+    }
+    else
+    {
+        // SoA: each field array is contiguous. Assume f32 (4 bytes) per field per entity.
+        // numArrays = number of separate arrays touched by the hot loop.
+        u64 bytesPerArray = (u64)entityCount * 4; // f32 per entity per field
+        u64 linesPerArray = (bytesPerArray + lineSize - 1) / lineSize;
+        linesAccessed = linesPerArray * numArrays;
+    }
+
+    u64 fetchedBytes = linesAccessed * lineSize;
+    // clamp useful to fetched
+    if (totalUseful > fetchedBytes) totalUseful = fetchedBytes;
+    u64 wastedBytes  = fetchedBytes - totalUseful;
+    f64 utilisation  = (fetchedBytes > 0) ? (f64)totalUseful / (f64)fetchedBytes * 100.0 : 0.0;
+
+    // Estimate cache misses based on working set vs cache level sizes
+    // Working set = total unique bytes that need to be in cache simultaneously
+    u64 workingSet = (numArrays <= 1) ? totalFetched : ((u64)entityCount * 4 * numArrays);
+
+    u64 l1Size = g_cacheInfo.l1dSize;
+    u64 l2Size = g_cacheInfo.l2Size;
+    u64 l3Size = g_cacheInfo.l3Size;
+
+    // If working set fits in a cache level, all accesses hit that level.
+    // If it overflows, the excess lines miss to the next level.
+    u64 l1Misses = (workingSet > l1Size) ? (workingSet - l1Size) / lineSize : 0;
+    u64 l2Misses = (workingSet > l1Size + l2Size) ? (workingSet - l1Size - l2Size) / lineSize : 0;
+    u64 l3Misses = (workingSet > l1Size + l2Size + l3Size) ?
+                   (workingSet - l1Size - l2Size - l3Size) / lineSize : 0;
+
+    // Write to current frame
+    g_profFrame.cacheWorkingSetBytes = workingSet;
+    g_profFrame.cacheLinesAccessed   = linesAccessed;
+    g_profFrame.cacheUsefulBytes     = totalUseful;
+    g_profFrame.cacheWastedBytes     = wastedBytes;
+    g_profFrame.cacheUtilisation     = utilisation;
+    g_profFrame.estL1Misses          = l1Misses;
+    g_profFrame.estL2Misses          = l2Misses;
+    g_profFrame.estL3Misses          = l3Misses;
+}

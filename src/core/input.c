@@ -57,9 +57,8 @@ static Vec2 getPrimaryJoystickAxis(JoystickCode axis1, JoystickCode axis2)
 
 void initInput()
 {
-	//initialize SDL event system
-	SDL_Init(SDL_INIT_EVENTS);
-	
+	// SDL_Init already called by initDisplay — do not re-init here
+
 	//initialize the keyboard state
 	state = SDL_GetKeyboardState(NULL);
 	

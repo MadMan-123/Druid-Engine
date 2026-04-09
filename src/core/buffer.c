@@ -17,19 +17,28 @@ b8 bufferCreate(Buffer *buf, u32 elemSize, u32 capacity)
         return false;
     }
 
-    buf->data     = calloc(capacity, elemSize);
-    buf->occupied = (b8 *)calloc(capacity, sizeof(b8));
-    buf->elemSize = elemSize;
-    buf->capacity = capacity;
-    buf->count    = 0;
+    buf->data      = dalloc((u64)capacity * elemSize, MEM_TAG_BUFFER);
+    buf->occupied  = (b8 *)dalloc((u64)capacity * sizeof(b8), MEM_TAG_BUFFER);
+    buf->freeStack = (u32 *)dalloc((u64)capacity * sizeof(u32), MEM_TAG_BUFFER);
+    buf->elemSize  = elemSize;
+    buf->capacity  = capacity;
+    buf->count     = 0;
+    buf->freeCount = capacity;  // all slots are free initially
 
-    if (!buf->data || !buf->occupied)
+    if (!buf->data || !buf->occupied || !buf->freeStack)
     {
         ERROR("bufferCreate: allocation failed");
-        free(buf->data);
-        free(buf->occupied);
+        dfree(buf->data, (u64)capacity * elemSize, MEM_TAG_BUFFER);
+        dfree(buf->occupied, (u64)capacity * sizeof(b8), MEM_TAG_BUFFER);
+        dfree(buf->freeStack, (u64)capacity * sizeof(u32), MEM_TAG_BUFFER);
         memset(buf, 0, sizeof(Buffer));
         return false;
+    }
+
+    // Initialize freeStack with all indices (in reverse order for natural LIFO)
+    for (u32 i = 0; i < capacity; i++)
+    {
+        buf->freeStack[i] = i;
     }
 
     return true;
@@ -39,30 +48,40 @@ u32 bufferAcquire(Buffer *buf)
 {
     if (!buf || !buf->data) return (u32)-1;
 
-    for (u32 i = 0; i < buf->capacity; i++)
+    // Check if any free slots available
+    if (buf->freeCount == 0)
     {
-        if (!buf->occupied[i])
-        {
-            buf->occupied[i] = true;
-            buf->count++;
-            // zero the slot so the caller gets a clean element
-            memset((u8 *)buf->data + (size_t)i * buf->elemSize, 0, buf->elemSize);
-            return i;
-        }
+        ERROR("bufferAcquire: no free slots (capacity %u)", buf->capacity);
+        return (u32)-1;
     }
 
-    ERROR("bufferAcquire: no free slots (capacity %u)", buf->capacity);
-    return (u32)-1;
+    // Pop from free stack (O(1))
+    u32 index = buf->freeStack[--buf->freeCount];
+
+    // Mark as occupied
+    buf->occupied[index] = true;
+    buf->count++;
+
+    // Zero the slot so the caller gets a clean element
+    memset((u8 *)buf->data + (size_t)index * buf->elemSize, 0, buf->elemSize);
+
+    return index;
 }
 
 void bufferRelease(Buffer *buf, u32 index)
 {
     if (!buf || index >= buf->capacity) return;
-    if (!buf->occupied[index]) return;
+    if (!buf->occupied[index]) return;  // Guard against double-free
 
+    // Zero the slot
     memset((u8 *)buf->data + (size_t)index * buf->elemSize, 0, buf->elemSize);
+
+    // Mark as unoccupied
     buf->occupied[index] = false;
     buf->count--;
+
+    // Push index back onto free stack (O(1))
+    buf->freeStack[buf->freeCount++] = index;
 }
 
 void *bufferGet(Buffer *buf, u32 index)
@@ -82,7 +101,8 @@ void bufferDestroy(Buffer *buf)
 {
     if (!buf) return;
 
-    free(buf->data);
-    free(buf->occupied);
+    dfree(buf->data, (u64)buf->capacity * buf->elemSize, MEM_TAG_BUFFER);
+    dfree(buf->occupied, (u64)buf->capacity * sizeof(b8), MEM_TAG_BUFFER);
+    dfree(buf->freeStack, (u64)buf->capacity * sizeof(u32), MEM_TAG_BUFFER);
     memset(buf, 0, sizeof(Buffer));
 }

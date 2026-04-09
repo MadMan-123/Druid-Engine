@@ -48,7 +48,10 @@ i32 compare_files_for_loading_priority(const void* a, const void* b) {
     if (!isTexA && isTexB) {
         return 1; // B (texture) comes before A
     }
-    return 0; // Keep original order for same types
+
+    // Use lexical order as a deterministic tie-breaker so model/shader indices
+    // stay stable across runs and scene-stored IDs remain valid.
+    return strcmp(fileA, fileB);
 }
 
 ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
@@ -56,7 +59,7 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
                                        u32 shaderCount)
 {
     ResourceManager *manager =
-        (ResourceManager *)malloc(sizeof(ResourceManager));
+        (ResourceManager *)dalloc(sizeof(ResourceManager), MEM_TAG_RENDERER);
     if (manager == NULL)
     {
         ERROR("Resource Manager not allocated correctly");
@@ -80,11 +83,11 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
 
     // allocate arrays
     manager->materialBuffer =
-        (Material *)malloc(sizeof(Material) * materialCount);
-    manager->meshBuffer = (Mesh *)malloc(sizeof(Mesh) * meshCount);
-    manager->modelBuffer = (Model *)malloc(sizeof(Model) * modelCount);
-    manager->textureHandles = (u32 *)malloc(sizeof(u32) * textureCount);
-    manager->shaderHandles = (u32 *)malloc(sizeof(u32) * shaderCount);
+        (Material *)dalloc(sizeof(Material) * materialCount, MEM_TAG_MATERIAL);
+    manager->meshBuffer = (Mesh *)dalloc(sizeof(Mesh) * meshCount, MEM_TAG_MESH);
+    manager->modelBuffer = (Model *)dalloc(sizeof(Model) * modelCount, MEM_TAG_MODEL);
+    manager->textureHandles = (u32 *)dalloc(sizeof(u32) * textureCount, MEM_TAG_TEXTURE);
+    manager->shaderHandles = (u32 *)dalloc(sizeof(u32) * shaderCount, MEM_TAG_SHADER);
 
     // null check
     assert(manager->materialBuffer != NULL && "material buffers not created");
@@ -134,15 +137,15 @@ void cleanUpResourceManager(ResourceManager *manager)
 {
     if (!manager) return;
     if (manager->geoBuffer) geometryBufferDestroy(manager->geoBuffer);
-    free(manager->materialBuffer);
-    free(manager->meshBuffer);
-    free(manager->modelBuffer);
-    free(manager->textureHandles);
-    free(manager->shaderHandles);
-    free(manager);
+    dfree(manager->materialBuffer, sizeof(Material) * manager->materialCount, MEM_TAG_MATERIAL);
+    dfree(manager->meshBuffer, sizeof(Mesh) * manager->meshCount, MEM_TAG_MESH);
+    dfree(manager->modelBuffer, sizeof(Model) * manager->modelCount, MEM_TAG_MODEL);
+    dfree(manager->textureHandles, sizeof(u32) * manager->textureCount, MEM_TAG_TEXTURE);
+    dfree(manager->shaderHandles, sizeof(u32) * manager->shaderCount, MEM_TAG_SHADER);
+    dfree(manager, sizeof(ResourceManager), MEM_TAG_RENDERER);
 }
 
-void readResources(ResourceManager *manager, const c8 *filename)
+DAPI void readResources(ResourceManager *manager, const c8 *filename)
 {
     u32 modelExtCount = 3;
     // vert, frag, geom, glsl, comp
@@ -153,17 +156,31 @@ void readResources(ResourceManager *manager, const c8 *filename)
                                     "frag", "geom", "glsl", "comp",
                                     "png",  "jpg",  "bmp"}; // textures
 
+    if (!filename || filename[0] == '\0') filename = "../" RES_FOLDER;
+
+    // Normalise: ensure trailing slash so path joins work correctly
+    c8 resDir[512];
+    strncpy(resDir, filename, sizeof(resDir) - 2);
+    resDir[sizeof(resDir) - 2] = '\0';
+    u32 rdLen = (u32)strlen(resDir);
+    if (rdLen > 0 && resDir[rdLen - 1] != '/' && resDir[rdLen - 1] != '\\')
+    {
+        resDir[rdLen]     = '/';
+        resDir[rdLen + 1] = '\0';
+    }
+
     if(DEBUG_RESOURCES)
-        TRACE("Reading resources from %s\n", filename);
-    // do a recursive search for all files in the RES_FOLDER directory
+        TRACE("Reading resources from %s\n", resDir);
+    // do a recursive search for all files in the given resource directory
     u32 outCount = 0;
-    c8 **output = listFilesInDirectory("../" RES_FOLDER, &outCount);
-    qsort(output, outCount, sizeof(c8 *), compare_files_for_loading_priority);
+    c8 **output = listFilesInDirectory(resDir, &outCount);
+    if (output)
+        qsort(output, outCount, sizeof(c8 *), compare_files_for_loading_priority);
     if(DEBUG_RESOURCES)
-    INFO("Found %d files in directory %s\n", outCount, "../" RES_FOLDER);
+        INFO("Found %d files in directory %s\n", outCount, resDir);
 
     HashMap shaderNameMap;
-    if (!createMap(&shaderNameMap, outCount, sizeof(c8) * MAX_NAME_SIZE,
+    if (!createMap(&shaderNameMap, outCount > 0 ? outCount : 8, sizeof(c8) * MAX_NAME_SIZE,
                    sizeof(u32), djb2Hash, equals))
     {
             FATAL("Model Hash map failed to create");
@@ -171,17 +188,22 @@ void readResources(ResourceManager *manager, const c8 *filename)
     }
     //load default shader which is called "shader.*"
     const c8 *defaultShaderName = "default";
-    
-    //add default shader to resource manager
-    u32 defaultShaderHandle = createGraphicsProgram("../" RES_FOLDER "shader.vert", "../" RES_FOLDER "shader.frag");
-    if (defaultShaderHandle != 0) 
+
+    // Build paths from the provided resource directory
+    c8 defVertPath[512], defFragPath[512];
+    snprintf(defVertPath, sizeof(defVertPath), "%sshader.vert", resDir);
+    snprintf(defFragPath, sizeof(defFragPath), "%sshader.frag", resDir);
+
+    //add default shader to resource manager (overwrite if already present from a prior call)
+    u32 defaultShaderHandle = createGraphicsProgram(defVertPath, defFragPath);
+    if (defaultShaderHandle != 0)
     {
         insertMap(&manager->shaderIDs, defaultShaderName, &manager->shaderUsed);
         manager->shaderHandles[manager->shaderUsed] = defaultShaderHandle;
         manager->shaderUsed++;
     } else
      {
-        WARN("Failed to load default shader");
+        WARN("Failed to load default shader from %s", resDir);
     }
     
     if (outCount > 0)
@@ -354,7 +376,7 @@ void readResources(ResourceManager *manager, const c8 *filename)
     }
     else
     {
-        WARN("Failed to list files in directory %s\n", "../" RES_FOLDER);
+        WARN("Failed to list files in directory %s\n", resDir);
     }
 
     for (u32 i = 0; i < outCount; i++)

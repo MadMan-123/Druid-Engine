@@ -18,7 +18,7 @@ b8 createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
     map->hashFunc = hashFunc;
     map->equalsFunc = equalsFunc;
 
-	map->arena = malloc(sizeof(Arena));
+	map->arena = dalloc(sizeof(Arena), MEM_TAG_ARRAY);
 	if(!map->arena) return false;
 	
 
@@ -31,7 +31,7 @@ b8 createMap(HashMap* map, u32 capacity, u32 keySize, u32 valueSize,
     map->pairs = (Pair*)aalloc(map->arena, capacity * sizeof(Pair));
     if (!map->pairs) {
         arenaDestroy(map->arena);
-        free(map->arena);
+        dfree(map->arena, sizeof(Arena), MEM_TAG_ARRAY);
         return false;
     }
 
@@ -54,7 +54,7 @@ void destroyMap(HashMap* map)
     if (!map) return;
     if (map->arena) {
         arenaDestroy(map->arena);
-        free(map->arena);
+        dfree(map->arena, sizeof(Arena), MEM_TAG_ARRAY);
         map->arena = NULL;
     }
 }

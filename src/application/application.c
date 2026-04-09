@@ -19,11 +19,11 @@ void inputUpdate(Application* app)
 Application* createApplication(const c8* title,FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)
 {
 	//create the application
-	Application* app = (Application*)malloc(sizeof(Application));
+	Application* app = (Application*)calloc(1, sizeof(Application));
 
 	//assert that the application was created
 	assert(app != NULL && "Application could not be created");
-	
+
 	//setup app state
 	app->state = RUN;
 
@@ -72,9 +72,10 @@ void destroyApplication(Application* app)
     //shutdown SDL after ImGui has been properly cleaned up
     SDL_Quit();
     
-    //free app data	
+    //free app data
 	shutdownLogging();
 	cleanUpResourceManager(resources);
+	memorySystemShutdown();
     free(app);
 }
 
@@ -89,18 +90,25 @@ void run(Application* app)
 	startApplication(app);
 }
 
-#define MATERIAL_COUNT 128
-#define TEXTURE_COUNT 128
-#define MESH_COUNT 256
-#define MODEL_COUNT 128
-#define SHADER_COUNT 64
+
+#define MATERIAL_COUNT 8192
+#define TEXTURE_COUNT 2048
+#define MESH_COUNT 8192
+#define MODEL_COUNT 2048
+#define SHADER_COUNT 128
 
 void initSystems(const Application* app)
 {
     //get default values for the display
 	f32 width = app->width == 0 ? 1920 : app->width;
 	f32 height = app->height == 0 ? 1080 : app->height;
-	
+
+	// initialize memory system, try project config first
+	MemoryConfig memCfg = memDefaultConfig();
+	if (!memLoadConfig("memory.conf", &memCfg))
+		memLoadConfig("../memory.conf", &memCfg);
+	memorySystemInit(&memCfg);
+
 	initLogging(); //initialize logging system
 	resources = createResourceManager(
 		MATERIAL_COUNT,
@@ -119,13 +127,15 @@ void initSystems(const Application* app)
 	initDisplay(app->title, app->display, width, height);
 
 	// Create global geometry buffer AFTER OpenGL context exists, BEFORE mesh loading.
-	// 500k vertices (16 MB) + 1.5M indices (6 MB) — covers typical asset budgets.
+	// 500k vertices (16 MB) + 1.5M indices (6 MB)
 	resources->geoBuffer = geometryBufferCreate(500000, 1500000);
 	if (!resources->geoBuffer)
-		WARN("GeometryBuffer creation failed — meshes will use standalone VAO/VBO/EBO");
+		WARN("GeometryBuffer creation failed, meshes will use standalone VAO/VBO/EBO");
 
-	//try and read in the resources
-	readResources(resources,"../"RES_FOLDER);
+	// load resources, prefer ./res/
+	// Fall back to ../res/ (development, exe in bin/, res/ at project root)
+	const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
+	readResources(resources, resPath);
     //call the init function pointer
 	app->init();
 
@@ -144,6 +154,7 @@ void startApplication(Application* app)
 	u64 fpsTime   = previousTime;
 	while (app->state != EXIT)
 	{
+		frameReset();
 		profileBeginFrame();
 
 		//calculate delta time for this frame (in seconds)

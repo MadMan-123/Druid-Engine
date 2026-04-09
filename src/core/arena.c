@@ -1,15 +1,15 @@
 // Arena allocator for Druid engine
-// Provides fast memory allocation for entities and subsystems
+// Provides fast bump allocation for entities and subsystems
 
 #include "../../include/druid.h"
 
-b8 arenaCreate(Arena *arena, u32 maxSize)
+b8 arenaCreate(Arena *arena, u64 maxSize)
 {
     if (!arena)
         return false;
     arena->size = maxSize;
     arena->used = 0;
-    arena->data = malloc(maxSize);
+    arena->data = dalloc(maxSize, MEM_TAG_ARENA);
     return arena->data != NULL;
 }
 
@@ -17,11 +17,11 @@ void arenaDestroy(Arena *arena)
 {
     if (!arena)
         return;
-    free(arena->data);
+    dfree(arena->data, arena->size, MEM_TAG_ARENA);
     arena->data = NULL;
 }
 
-void *aalloc(Arena *arena, u32 size)
+void *aalloc(Arena *arena, u64 size)
 {
     if (!arena)
         return NULL;

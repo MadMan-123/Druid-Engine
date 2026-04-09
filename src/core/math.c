@@ -201,10 +201,10 @@ inline void matScale(f32** a,f32 b, Vec2i aSize)
 
 f32** matCreate(Vec2i size)
 {
-    f32** mat = (f32**)malloc(sizeof(f32*) * size.x);
+    f32** mat = (f32**)dalloc(sizeof(f32*) * size.x, MEM_TAG_ARRAY);
     for(u32 i = 0; i < size.x; i++)
     {
-        mat[i] = (f32*)malloc(sizeof(f32) * size.y);
+        mat[i] = (f32*)dalloc(sizeof(f32) * size.y, MEM_TAG_ARRAY);
     }
     return mat;
 }
@@ -213,9 +213,9 @@ void freeMat(f32** mat, Vec2i size)
 {
     for(u32 i = 0; i < size.x; i++)
     {
-        free(mat[i]);
+        dfree(mat[i], sizeof(f32) * size.y, MEM_TAG_ARRAY);
     }
-    free(mat);
+    dfree(mat, sizeof(f32*) * size.x, MEM_TAG_ARRAY);
 }
 
 
