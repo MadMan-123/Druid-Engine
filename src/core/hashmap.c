@@ -1,5 +1,3 @@
-// Hashmap implementation for Druid engine
-// Provides basic hashmap functionality for engine subsystems
 #include "../../include/druid.h"
 #include <stdbool.h>
 #include <string.h>

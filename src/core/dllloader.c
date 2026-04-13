@@ -1,14 +1,6 @@
 #include "../../include/druid.h"
 #include <string.h>
 
-//=====================================================================================================================
-// DLL Loader — unified API
-//
-// Wraps platformLibrary* functions with the temp-copy trick so the original
-// DLL file isn't locked by the OS during rebuilds. Used by both the game
-// plugin system and the ECS system DLLs.
-//=====================================================================================================================
-
 b8 dllLoad(const c8 *dllPath, DLLHandle *out)
 {
     if (!dllPath || !out) return false;

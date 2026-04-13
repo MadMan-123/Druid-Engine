@@ -1,6 +1,3 @@
-// Arena allocator for Druid engine
-// Provides fast bump allocation for entities and subsystems
-
 #include "../../include/druid.h"
 
 b8 arenaCreate(Arena *arena, u64 maxSize)

@@ -1,16 +1,14 @@
-// Input handling for Druid engine
-// Provides keyboard and mouse input utilities
 #include "../../include/druid.h"
 
 static SDL_Event evnt;
-static const b8* state; 
-SDL_Gamepad* gamepads[GAMEPAD_MAX] = { NULL }; //array to hold gamepads
-u32 gamepadCount = 0; //number of gamepads connected
+static const b8* state;
+SDL_Gamepad* gamepads[GAMEPAD_MAX] = { NULL };
+u32 gamepadCount = 0;
 
-f32 xInputAxis = 0.0f; //x axis input from keyboard or gamepad
-f32 yInputAxis = 0.0f; //y axis input from keyboard or gamepad
-f32 xLookAxis = 0.0f;  //x look axis from mouse or gamepad
-f32 yLookAxis = 0.0f;  //y look axis from mouse or gamepad
+f32 xInputAxis = 0.0f;
+f32 yInputAxis = 0.0f;
+f32 xLookAxis = 0.0f;
+f32 yLookAxis = 0.0f;
 
 // Global flag set by editor when ImGui captures input
 static b8 imguiCapturingInput = false;
@@ -58,11 +56,8 @@ static Vec2 getPrimaryJoystickAxis(JoystickCode axis1, JoystickCode axis2)
 void initInput()
 {
 	// SDL_Init already called by initDisplay — do not re-init here
-
-	//initialize the keyboard state
 	state = SDL_GetKeyboardState(NULL);
-	
-	//initialize gamepads currently connected
+
 	int connectedCount = 0;
 	SDL_JoystickID *connected = SDL_GetGamepads(&connectedCount);
 	if (connected)
@@ -95,10 +90,8 @@ void initInput()
 
 void destroyInput()
 {
-	//close the SDL event system
 	SDL_QuitSubSystem(SDL_INIT_EVENTS);
-	
-	//close gamepads
+
 	for (u32 i = 0; i < GAMEPAD_MAX; i++) 
 	{
 		if (gamepads[i] != NULL) 
@@ -110,7 +103,6 @@ void destroyInput()
 }
 void checkForGamepadConnection(SDL_Event *event)
 {
-	//check if a gamepad has been connected
 	SDL_JoystickID instanceID = event->gdevice.which;
 
 	for (u32 i = 0; i < GAMEPAD_MAX; i++)
@@ -148,7 +140,6 @@ void checkForGamepadConnection(SDL_Event *event)
 
 void checkForGamepadRemoved(SDL_Event* event)
 {
-	//check if a gamepad has been disconnected
 	SDL_JoystickID instanceID = event->gdevice.which;
 	for (u32 i = 0; i < GAMEPAD_MAX; i++)
 	{
@@ -166,15 +157,12 @@ void checkForGamepadRemoved(SDL_Event* event)
 
 void processInput(Application* app)
 {
-    //tell SDL to process events
 	SDL_PumpEvents();
 
-    //get the current state of the keyboard
-	while(SDL_PollEvent(&evnt)) //get and process events
+	while(SDL_PollEvent(&evnt))
 	{
 		switch (evnt.type)
 		{
-            //if the quit event is triggered then change the state to exit
 			case SDL_EVENT_QUIT:
 				app->state = EXIT;
 				break;
@@ -196,7 +184,6 @@ Vec2 getKeyboardAxis()
 {
 	Vec2 axis = { 0 };
 	
-	//if the D key is pressed make x +1 else if A then make x -1
 	f32 xP = isKeyDown(KEY_D) ? 1 : 0;
 	f32 xN = isKeyDown(KEY_A) ? -1 : 0;
 
@@ -213,21 +200,14 @@ Vec2 getJoystickAxis(u32 controllerID, JoystickCode axis1, JoystickCode axis2)
 {
 	Vec2 axis = { 0 };
 
-	//get valid gamepad
 	SDL_Gamepad* pad = gamepads[controllerID];
-	//check if the gamepad is valid
-	if(pad == NULL) 
-	{
-		//DEBUG("No gamepad found at index %d\n", controllerID);
-		return axis; //no gamepad found
-	}
+	if(pad == NULL)
+		return axis;
 
-	//get the left joystick axi
 	axis.x = -SDL_GetGamepadAxis(pad, axis1);
 	axis.y = -SDL_GetGamepadAxis(pad, axis2);
-	//normalize the axi
-	axis.x /= 32767.0f; //SDL joystick axis range is -32768 to 32767
-	axis.y /= 32767.0f; //normalize to -1 to 1 range
+	axis.x /= 32767.0f;
+	axis.y /= 32767.0f;
 	return axis;
 }
 
@@ -289,8 +269,6 @@ f32 getLookAxisY(void)
 
 
 
-/// Check if a key is pressed
-
 b8 isKeyDown(KeyCode key)
 {
 	state = SDL_GetKeyboardState(NULL);
@@ -318,20 +296,17 @@ b8 isButtonDown(u32 controllerID, ControllerCode button)
 }
 
 
-/// Check if a mouse button is pressed
 b8 isMouseDown(u32 button)
 {
 	if (imguiCapturingInput)
 		return false;
 	return (SDL_GetMouseState(NULL,NULL) & SDL_BUTTON_MASK(button)) != 0;
 }
-/// Get the mouse position
 void getMouseDelta(f32*x,f32*y)
 {
 	SDL_GetRelativeMouseState(x,y); 
 }
 
-/// Set input capture state (called by editor when ImGui wants input)
 void setInputCaptureState(b8 captured)
 {
 	imguiCapturingInput = captured;
