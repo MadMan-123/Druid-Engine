@@ -116,7 +116,6 @@ Renderer *createRenderer(Display *display, f32 fov, f32 nearClip, f32 farClip,
         rendererEnableDeferred(r, gbW, gbH);
     }
 
-    // set the global pointer
     renderer = r;
 
     INFO("Renderer created (%gx%g, cams=%u, ibufs=%u, gbufs=%u, deferred=%s, indirect=%s)",

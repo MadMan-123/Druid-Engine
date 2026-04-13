@@ -41,7 +41,6 @@ u32 bufferAcquire(Buffer *buf)
 {
     if (!buf || !buf->data) return (u32)-1;
 
-    // Check if any free slots available
     if (buf->freeCount == 0)
     {
         ERROR("bufferAcquire: no free slots (capacity %u)", buf->capacity);

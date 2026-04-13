@@ -23,12 +23,9 @@ void *aalloc(Arena *arena, u64 size)
     if (!arena)
         return NULL;
 
-    // check if there is enough space in the arena
     if (arena->used + size > arena->size)
         return NULL;
-    // allocate memory
     void *ptr = (c8 *)(arena->data) + arena->used;
     arena->used += size;
-    // return pointer to allocated memory
     return ptr;
 }

@@ -481,11 +481,9 @@ u8 createEntityInArchetype(Archetype *arch, u64 *outEntity)
         return false;
     }
 
-    // track active chunks
     if (chunkIdx + 1 > arch->activeChunkCount)
         arch->activeChunkCount = chunkIdx + 1;
 
-    // update entity count cache
     arch->cachedEntityCount++;
 
     *outEntity = ENTITY_PACK(arch->id, chunkIdx, localIndex);
@@ -587,7 +585,6 @@ u32 archetypePoolSpawn(Archetype *arch)
         if (chunkIdx + 1 > arch->activeChunkCount)
             arch->activeChunkCount = chunkIdx + 1;
 
-        // update entity count cache
         arch->cachedEntityCount++;
 
         return index;
@@ -609,7 +606,6 @@ u32 archetypePoolSpawn(Archetype *arch)
         arch->arena[c].count = 1;
         arch->activeChunkCount = newCount;
 
-        // update entity count cache
         arch->cachedEntityCount++;
 
         b8 *alive = (b8 *)arch->arena[c].fields[0];
@@ -639,7 +635,6 @@ void archetypePoolDespawn(Archetype *arch, u32 poolIndex)
     {
         alive[localIdx] = false;
 
-        // update entity count cache
         arch->cachedEntityCount--;
 
         // Push index back onto free-list stack for reuse (O(1))

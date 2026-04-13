@@ -50,11 +50,9 @@ DEFINE_ARCHETYPE(SceneEntity,
 // Editor-side registry of user-created archetypes
 static ArchetypeRegistry g_archRegistry = {0};
 
-// buffer of 2D array of strings
 const c8 **consoleLines = NULL;
 static u32 g_consoleCount = 0;
 
-// Allocate the storage here
 Application *editor = nullptr;
 
 // UI state for scene menu modals
@@ -205,8 +203,7 @@ Vec3 EulerAngles = v3Zero;
 b8 manipulateTransform = false;
 
 u32 entityCount = 0;
-InspectorState currentInspectorState =
-    EMPTY_VIEW; // set inital inspector view to be empty
+InspectorState currentInspectorState = EMPTY_VIEW;
 
 u32 inspectorEntityID = 0;
 

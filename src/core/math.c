@@ -363,39 +363,6 @@ inline Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) {
     return result;
 }
 
-//Matrix addition
-inline Mat4 mat4Add(Mat4 a, Mat4 b)
-{
-    Mat4 result;
-    
-    for (i32 i = 0; i < 4; i++)
-    {
-        for (i32 j = 0; j < 4; j++)
-        {
-            result.m[i][j] = a.m[i][j] + b.m[i][j];
-        }
-    }
-    
-    return result;
-}
-
-//Matrix subtraction
-inline Mat4 mat4Sub(Mat4 a, Mat4 b)
-{
-    Mat4 result;
-    
-    for (i32 i = 0; i < 4; i++)
-    {
-        for (i32 j = 0; j < 4; j++)
-        {
-            result.m[i][j] = a.m[i][j] - b.m[i][j];
-        }
-    }
-    
-    return result;
-}
-
-//Scale all elements of a matrix
 inline Mat4 mat4ScaleVal(Mat4 a, f32 scale)
 {
     Mat4 result;
@@ -443,7 +410,6 @@ Mat4 mat3ToMat4(const Mat3 m3)
 }
 
 
-//Transform a vector by a matrix
 inline Vec4 mat4TransformVec4(Mat4 m, Vec4 v)
 {
     // m[col][row] — read across columns for each result row
@@ -509,7 +475,6 @@ inline f32 mat4Determinant(Mat4 m)
     return m.m[0][0] * c00 - m.m[0][1] * c01 + m.m[0][2] * c02 - m.m[0][3] * c03;
 }
 
-//Invert a 4x4 matrix
 inline Mat4 mat4Inverse(Mat4 m)
 {
     f32 det = mat4Determinant(m);
@@ -622,7 +587,6 @@ inline Mat4 mat4Inverse(Mat4 m)
     return result;
 }
 
-//Calculate the transpose of a matrix
 inline Mat4 mat4Transpose(Mat4 m) 
 {
     Mat4 result;
@@ -651,7 +615,6 @@ inline void mat4ToPointers(Mat4 mat, f32** dest)
     }
 }
 
-//Convert f32** to Mat4 format
 inline Mat4 pointersToMat4(f32** src) 
 {
     Mat4 result;
@@ -678,7 +641,7 @@ f32 degrees(f32 radians)
 {
     return radians * (180.0f / PI);
 }
-//Helper quaternion functions you'll need
+
 Vec4 quatIdentity()
 {
     return (Vec4){0.0f, 0.0f, 0.0f, 1.0f};
@@ -747,7 +710,6 @@ inline Vec3 quatRotateVec3(Vec4 q, Vec3 v)
     return (Vec3){result.x, result.y, result.z};
 }
 
-//Convert quaternion to rotation matrix
 inline Mat4 quatToRotationMatrix(Vec4 q)
 {
     Mat4 result = mat4Identity();

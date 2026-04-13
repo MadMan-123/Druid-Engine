@@ -31,17 +31,14 @@ void logOutput (LogLevel level, const c8* message, ...)
 	const c8* levelStrings[LOG_MAX] = {"[FATAL]","[ERROR]","[WARNING]","[INFO]","[DEBUG]","[TRACE]" };
 	
 	c8 outBuffer[LOG_BUFFER_SIZE];
-	//buffer to hold the formatted message
 	c8 buffer[LOG_BUFFER_SIZE];
-	
+
 	va_list bufferArgs;
-	va_start(bufferArgs, message);	
-	//format the message
+	va_start(bufferArgs, message);
 	vsnprintf(buffer, sizeof(buffer), message, bufferArgs);
 
 	va_end(bufferArgs);
 
-	//format the final output with the level and message
 	snprintf(outBuffer, sizeof(outBuffer), "%s %s", levelStrings[level], buffer);
 
 	if (useCustomOutputSrc)
@@ -51,14 +48,12 @@ void logOutput (LogLevel level, const c8* message, ...)
 	}
 
 	//in future we can later add a different output for things like the imgui console
-	if (level < LOG_WARNING) 
+	if (level < LOG_WARNING)
 	{
-		//print to stderr for fatal and error
 		fprintf(stderr, "%s%s%s\n", colorCodes[level], outBuffer, colorReset);
 	}
-	else 
+	else
 	{
-		//print to stdout for other levels
 		printf("%s%s%s\n", colorCodes[level], outBuffer, colorReset);
 	}
 }

@@ -875,11 +875,9 @@ Archetype *physGetBodyArchetype(PhysicsWorld *world, u32 index)
     return world->bodyArchetypes[index];
 }
 
-//=====================================================================================================================
 // Binding accessor functions — expose cached bindings for broadphase/narrowphase queries
 //=====================================================================================================================
 
-// Accessor function for cached field bindings
 PhysFieldBinding *physGetBindingByIndex(PhysicsWorld *world, u32 index)
 {
     if (!world || index >= world->bodyArchetypeCount) return NULL;

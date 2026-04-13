@@ -82,19 +82,16 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 {
 	const u32 ARENA_MAX_SIZE = 67108864; // 64MB max for now
 
-	//get total size of the arena
 	u32 entitySize = getEntitySize(layout);
 	const u32 total = entitySize * entityCount;
 
-	EntityArena* arena = NULL;	//set inital meta data
-	//work out if we need multple arenas
+	EntityArena* arena = NULL;
 	if(total > ARENA_MAX_SIZE)
 	{
 		f32 arenasNeeded = total / ARENA_MAX_SIZE;
 		DEBUG("Entity Arena requested size %d exceeds max of %d\nnow allocating %d arenas", total, ARENA_MAX_SIZE, (u32)arenasNeeded);
 
 		arena = (EntityArena*)dalloc(sizeof(EntityArena) * (u32)arenasNeeded, MEM_TAG_ARCHETYPE);
-		//initialize each arena
 		for(u32 i = 0; i < (u32)arenasNeeded; i++)
 		{
 			arena[i].entityCount = entityCount;
@@ -104,18 +101,14 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 			arena[i].layout = layout;
 			arena[i].ownsData = true;
 
-			//allocate the field pointers
 			arena[i].fields = (void**)dalloc(sizeof(void*) * layout->count, MEM_TAG_ARCHETYPE);
 
 			//allocate memory (zero-init so inactive entities have sane defaults)
 			arena[i].data = dalloc(ARENA_MAX_SIZE, MEM_TAG_ARCHETYPE);
 			memset(arena[i].data, 0, ARENA_MAX_SIZE);
 
-			//base of memory arena
 			u8* base = (u8*)arena[i].data;
-			//track the offset to adjust pointers by
 			u32 offset = 0;
-			//set the field pointers
 			for(u32 j = 0; j < layout->count; j++)
 			{
 				arena[i].fields[j] = base + offset;
@@ -137,18 +130,14 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 		arena->layout = layout;
 		arena->ownsData = true;
 
-		//allocate the field pointers
 		arena->fields = (void**)dalloc(sizeof(void*) * layout->count, MEM_TAG_ARCHETYPE);
 
 		//allocate memory (zero-init so inactive entities have sane defaults)
 		arena->data = dalloc(total, MEM_TAG_ARCHETYPE);
 		memset(arena->data, 0, total);
-		//base of memory arena
 		u8* base = (u8*)arena->data;
-		//track the offset to adjust pointers by
 		u32 offset = 0;
 
-		//set the field pointers
 		for(u32 i = 0; i < layout->count; i++)
 		{
 			arena->fields[i] = base + offset;
@@ -163,10 +152,8 @@ EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outAr
 
 }
 
-//free the arena
 b8 freeEntityArena(EntityArena* arena, u32 arenaCount)
 {
-	//free each arena if there are multiple
 	for(u32 i = 0; i < arenaCount; i++)
 	{
 		u32 entitySize = arena[i].entitySize;
@@ -175,7 +162,6 @@ b8 freeEntityArena(EntityArena* arena, u32 arenaCount)
 		dfree(arena[i].data, total, MEM_TAG_ARCHETYPE);
 	}
 
-	//free the entity arena itself
 	dfree(arena, sizeof(EntityArena) * arenaCount, MEM_TAG_ARCHETYPE);
 	return true;
 }

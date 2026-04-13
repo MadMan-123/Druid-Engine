@@ -60,7 +60,7 @@ void destroyMap(HashMap* map)
 b8 insertMap(HashMap* map, const void* key, const void* value)
 {
     if (!map || !key || !value) return false;
-    if (map->count >= map->capacity) return false; // full map
+    if (map->count >= map->capacity) return false;
 
     u32 hashIndex = map->hashFunc(key, map->capacity);
 
@@ -77,13 +77,12 @@ b8 insertMap(HashMap* map, const void* key, const void* value)
         }
 
         if (map->equalsFunc(pair->key, key)) {
-            // Update existing value
             memcpy(pair->value, value, map->valueSize);
             return true;
         }
     }
 
-    return false; // map full
+    return false;
 }
 
 b8 findInMap(HashMap* map, const void* key, void* outValue)
@@ -97,7 +96,7 @@ b8 findInMap(HashMap* map, const void* key, void* outValue)
         Pair* pair = &map->pairs[tryIndex];
 
         if (!pair->occupied) {
-            return false; // not found
+            return false;
         }
 
         if (map->equalsFunc(pair->key, key)) {
@@ -106,5 +105,5 @@ b8 findInMap(HashMap* map, const void* key, void* outValue)
         }
     }
 
-    return false; // not found
+    return false;
 }

@@ -131,7 +131,6 @@ void processInput(void *appData)
     // tell SDL to process events
     SDL_PumpEvents();
 
-    // get the current state of the keyboard
     while (SDL_PollEvent(&evnt)) // get and process events
     {
         // pass imgui events
@@ -356,7 +355,6 @@ void init()
     DEBUG("Archetype created with capacity: %d\n", entitySizeCache);
 
     rebindArchetypeFields();
-    // set to empty strings
     DEBUG("Setting up ImGui with SDL");
     // initializes imgui, resources and default scene
     //  After SDL window and OpenGL context creation:
