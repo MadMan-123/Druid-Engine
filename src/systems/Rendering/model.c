@@ -8,7 +8,6 @@
 
 void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
 {
-    // null check the resource
     if (manager == NULL)
     {
         ERROR("Resource Manager is NULL");
@@ -23,20 +22,17 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     memset(fileName, 0, MAX_NAME_SIZE);
     strncpy(fileName, baseName, MAX_NAME_SIZE - 1);
 
-    // load the model from file
     const struct aiScene *scene = aiImportFile(filename,
          aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
         aiProcess_ImproveCacheLocality | aiProcess_SortByPType |
         aiProcess_CalcTangentSpace | aiProcess_GenSmoothNormals);
 
-    // null check
     if (!scene)
     {
         ERROR("Failed to load model %s: %s\n", filename, aiGetErrorString());
         return;
     }
 
-    // check if there are any meshes
     if (scene->mNumMeshes == 0)
     {
         ERROR("Model %s has no meshes\n", filename);
@@ -68,13 +64,10 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     // Store the starting indices for this model's resources
     u32 materialStartIndex = manager->materialUsed;
 
-    // Load materials first and store them in ResourceManager
     for (u32 i = 0; i < scene->mNumMaterials; i++)
     {
-        // Get the Assimp material
         struct aiMaterial *aimat = scene->mMaterials[i];
 
-        // Read material properties and store in ResourceManager
         Material *material = &manager->materialBuffer[manager->materialUsed];
         *material = (Material){0};
         readMaterial(material, aimat);
@@ -105,7 +98,6 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     model.name[MAX_NAME_SIZE - 1] = '\0'; // ensure null termination
 
     u32 meshCount = 0;
-    // load meshes to the resource manager
     Mesh *meshes = loadMeshFromAssimpScene(scene, &meshCount);
 
     if (meshes == NULL)
@@ -118,7 +110,6 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
         return;
     }
 
-    // Store meshes in ResourceManager and create proper index mapping.
     // Also compute the bounding radius across all meshes for frustum culling.
     f32 maxRadiusSq = 0.0f;
     for (u32 i = 0; i < scene->mNumMeshes; i++)
@@ -180,7 +171,6 @@ void resRegisterPrimitive(ResourceManager *manager, const c8 *name, Mesh *mesh)
         return;
     }
 
-    // store mesh
     u32 meshIdx = manager->meshUsed;
     manager->meshBuffer[meshIdx] = *mesh;
     insertMap(&manager->mesheIDs, name, &manager->meshUsed);

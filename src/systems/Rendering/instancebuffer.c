@@ -1,14 +1,6 @@
 
 #include "../../../include/druid.h"
 
-//=====================================================================================================================
-// Double-buffered instance SSBO
-//
-// Two persistently-mapped GL buffers rotate each frame.  CPU writes to buffer A
-// while GPU reads from buffer B (drawn last frame).  A GLsync fence placed after
-// each draw ensures we never overwrite data the GPU is still consuming.
-//=====================================================================================================================
-
 void instanceBufferCreate(InstanceBuffer* buf, u32 capacity)
 {
     buf->capacity = capacity;
@@ -66,7 +58,6 @@ void instanceBufferAdvance(InstanceBuffer* buf)
     buf->writeIdx = (buf->writeIdx + 1) % INST_BUF_COUNT;
 
     // Wait on the fence for the buffer we're about to write to.
-    // This ensures the GPU has finished reading from it (from 1-2 frames ago).
     // Use a generous timeout (50ms) and spin-wait if needed — blocking here is
     // correct behaviour (CPU must not overwrite data GPU is still reading).
     GLsync fence = (GLsync)buf->fences[buf->writeIdx];

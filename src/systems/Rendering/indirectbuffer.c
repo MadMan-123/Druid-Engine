@@ -2,21 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-//=====================================================================================================================
-// IndirectBuffer — glMultiDrawElementsIndirect support
-//
-// Pre-builds a command buffer with all draw commands for one frame, then dispatches
-// them in a single glMultiDrawElementsIndirect call. Reduces GPU submission CPU cost
-// from ~200 cycles per call × N models to ~100 cycles for the entire batch.
-//
-// GL indirect command struct (tightly packed, 20 bytes):
-//   count:         index count per draw
-//   instanceCount: typically 1 (we use baseInstance for model matrix batching)
-//   firstIndex:    offset into global index buffer
-//   baseVertex:    offset into global vertex buffer
-//   baseInstance:  offset for gl_BaseInstance (used in shader to index SSBO)
-//=====================================================================================================================
-
 STATIC_ASSERT(sizeof(IndirectCommand) == 20, "IndirectCommand must be exactly 20 bytes");
 
 IndirectBuffer *indirectBufferCreate(u32 maxCommands)

@@ -3,12 +3,6 @@
 
 #include "../../include/druid.h"
 
-// Math library for Druid engine
-// Provides vector, matrix, and quaternion operations for 2D/3D math in column-major order (OpenGL compatible)
-// All types use custom typedefs (f32, u32, etc.)
-// All functions use C camel case
-//
-
 inline Vec2 v2Add(Vec2 a, Vec2 b)
 {
     return (Vec2){ a.x + b.x, a.y + b.y };

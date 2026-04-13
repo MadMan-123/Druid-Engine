@@ -2,13 +2,6 @@
 #include "../../../include/druid.h"
 
 //=====================================================================================================================
-// Archetype - chunked entity storage with hot/cold data splitting
-//
-// hotData/coldData are contiguous per-field flat blocks spanning all entities.
-// Each chunk's fields[] pointers are views into these blocks.
-//=====================================================================================================================
-
-//=====================================================================================================================
 // Internal helpers
 //=====================================================================================================================
 
@@ -162,7 +155,6 @@ b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
 
     u32 totalCapacity = chunksNeeded * perChunk;
 
-    // allocate contiguous hot/cold blocks
     u64 hotTotal  = (u64)hotEntitySize  * totalCapacity;
     u64 coldTotal = (u64)coldEntitySize * totalCapacity;
 
@@ -193,7 +185,6 @@ b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
         memset(outArchetype->coldData, 0, coldTotal);
     }
 
-    // allocate chunk metadata array
     outArchetype->arena = (EntityArena *)dalloc(
         sizeof(EntityArena) * chunksNeeded, MEM_TAG_ARCHETYPE);
 
@@ -226,7 +217,6 @@ b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
                                 (u8 *)outArchetype->coldData);
     }
 
-    // initialize entity count cache
     outArchetype->cachedEntityCount = 0;
 
     // initialize free-list for buffered archetypes (O(1) pool spawn)
@@ -288,7 +278,6 @@ b8 destroyArchetype(Archetype *arch)
     u32 savedArenaCount = arch->arenaCount;
     u32 savedChunkCap   = arch->chunkCapacity;
 
-    // free contiguous hot/cold blocks
     if (arch->hotData)
     {
         u64 hotTotal = (u64)arch->hotEntitySize * savedChunkCap * savedArenaCount;
@@ -303,7 +292,6 @@ b8 destroyArchetype(Archetype *arch)
         arch->coldData = NULL;
     }
 
-    // free chunk field pointer arrays
     if (arch->arena)
     {
         for (u32 i = 0; i < savedArenaCount; i++)
@@ -321,7 +309,6 @@ b8 destroyArchetype(Archetype *arch)
         arch->activeChunkCount = 0;
     }
 
-    // clean up free-list (buffered pooling)
     if (arch->deadIndices)
     {
         u32 poolCap = (arch->poolCapacity > 0) ? arch->poolCapacity : arch->capacity;
@@ -361,7 +348,6 @@ static b8 archetypeGrow(Archetype *arch, u32 newChunkCount)
         memset(newHotData, 0, newHotTotal);
         if (arch->hotData)
         {
-            // copy each field's old data
             u32 oldOff = 0, newOff = 0;
             for (u32 f = 0; f < layout->count; f++)
             {
@@ -422,7 +408,6 @@ static b8 archetypeGrow(Archetype *arch, u32 newChunkCount)
                                 (u8 *)arch->hotData, (u8 *)arch->coldData);
     }
 
-    // initialize new chunks
     u32 entitySize = getEntitySize(layout);
     for (u32 i = oldCount; i < newChunkCount; i++)
     {
@@ -581,7 +566,6 @@ u32 archetypePoolSpawn(Archetype *arch)
     // ========================================================================
     if (arch->deadCount > 0)
     {
-        // Pop from free-list stack
         u32 index = arch->deadIndices[--arch->deadCount];
 
         // Determine chunk and local index

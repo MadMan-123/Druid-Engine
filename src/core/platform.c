@@ -2,13 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-//=====================================================================================================================
-// Platform OS layer
-//
-// All Windows / Linux specific calls live here. The rest of the engine
-// includes druid.h and calls these functions — no #ifdef _WIN32 elsewhere.
-//=====================================================================================================================
-
 #if PLATFORM_WINDOWS
 // suppress macro conflicts with our logging macros
 #pragma push_macro("ERROR")
@@ -208,7 +201,6 @@ void platformGetExePath(c8 *out, u32 size)
         out[0] = '\0';
 #elif PLATFORM_APPLE
     // _NSGetExecutablePath could be used here
-    // fallback to cwd
     if (getcwd(out, size) == NULL)
         out[0] = '\0';
 #else

@@ -59,7 +59,6 @@ void freeEntityArenaChunk(EntityArena *chunk)
     u32 fieldCount = chunk->fieldCount;
     if (entitySize == 0 || fieldCount == 0) return;
 
-    // free fields pointer array
     if (chunk->fields)
     {
         dfree(chunk->fields, sizeof(void *) * fieldCount, MEM_TAG_ARCHETYPE);

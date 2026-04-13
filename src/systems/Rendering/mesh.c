@@ -95,21 +95,18 @@ Mesh *loadMeshFromAssimp(const c8 *filename, u32 *meshCount)
 
 Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
 {
-    // null check
     if (!scene)
     {
         printf("Failed to load mesh: %s\n", aiGetErrorString());
         return NULL;
     }
 
-    // check if there are any meshes
     if (scene->mNumMeshes == 0)
     {
         printf("Mesh has no meshes\n");
         return NULL;
     }
 
-    // set the mesh count
     *meshCount = scene->mNumMeshes;
 
     // calculate total vertices and indices across all meshes
@@ -137,7 +134,6 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
         return NULL;
     }
 
-    // allocate array for output meshes
     Mesh *outputMesh = (Mesh *)dalloc(sizeof(Mesh) * scene->mNumMeshes, MEM_TAG_MESH);
     if (!outputMesh)
     {
@@ -146,7 +142,6 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
         return NULL;
     }
 
-    // create each mesh individually
     for (u32 m = 0; m < scene->mNumMeshes; m++)
     {
         struct aiMesh *aimesh = scene->mMeshes[m];
@@ -170,7 +165,6 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
             return NULL;
         }
 
-        // copy vertex data for this mesh
         for (u32 i = 0; i < aimesh->mNumVertices; i++)
         {
             // copy vertex position from Assimp mesh to our vertex buffer
@@ -187,7 +181,6 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
             }
             else
             {
-                // if no texture coords, set to default (0,0)
                 vertices.texCoords[i] = (Vec2){0.0f, 0.0f};
             }
 
@@ -200,7 +193,6 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
             }
             else
             {
-                // if no normals exist, set to default (0,0,0)
                 vertices.normals[i] = (Vec3){0.0f, 0.0f, 0.0f};
             }
         }
@@ -214,7 +206,6 @@ Mesh *loadMeshFromAssimpScene(const struct aiScene *scene, u32 *meshCount)
             indexPtr += 3;
         }
 
-        // create mesh for this mesh data (uploads to GPU)
         createMesh(&outputMesh[m], &vertices, aimesh->mNumVertices, indices,
                    meshIndexCount);
         
@@ -386,7 +377,6 @@ HeightMap generateHeightMap(i32 sizeX, i32 sizeZ, f32 heightScale,
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, heightBuffer);
 
     srand(time(0));
-    // get a random seed wit time
     u32 seed = rand();
     // Run compute shader
     glUseProgram(computeShader);
@@ -429,12 +419,10 @@ u32 *createTerrainIndices(u32 cellsX, u32 cellsZ, u32 *outIndexCount)
     {
         for (u32 x = 0; x < cellsX; ++x)
         {
-            // First triangle of the cell
             indices[indexIdx++] = z * verticesX + x;
             indices[indexIdx++] = (z + 1) * verticesX + x;
             indices[indexIdx++] = z * verticesX + x + 1;
 
-            // Second triangle of the cell
             indices[indexIdx++] = z * verticesX + x + 1;
             indices[indexIdx++] = (z + 1) * verticesX + x;
             indices[indexIdx++] = (z + 1) * verticesX + x + 1;
@@ -470,7 +458,6 @@ void calculateTerrainNormals(Vertices *vertices, i32 width, i32 height)
             Vec3 v4 = vertices->positions[bottomRight];
 
             // Calculate triangle normals using cross product
-            // First triangle (v1, v3, v2)
             Vec3 edge1 = (Vec3){v3.x - v1.x, v3.y - v1.y, v3.z - v1.z};
             Vec3 edge2 = (Vec3){v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
             Vec3 normal1 = (Vec3){edge1.y * edge2.z - edge1.z * edge2.y,
@@ -488,7 +475,6 @@ void calculateTerrainNormals(Vertices *vertices, i32 width, i32 height)
             vertices->normals[bottomLeft].y += normal1.y;
             vertices->normals[bottomLeft].z += normal1.z;
 
-            // Second triangle (v2, v3, v4)
             edge1 = (Vec3){v3.x - v2.x, v3.y - v2.y, v3.z - v2.z};
             edge2 = (Vec3){v4.x - v2.x, v4.y - v2.y, v4.z - v2.z};
             Vec3 normal2 = (Vec3){edge1.y * edge2.z - edge1.z * edge2.y,
@@ -540,10 +526,8 @@ Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
     // copuy all the data from the heightmap to the output
     if (output != NULL)
     {
-        // setup heights array
         output->heights =
             (f32 *)dalloc(sizeof(f32) * heightData.width * heightData.height, MEM_TAG_MESH);
-        // copy the height data to the output
         memcpy(output->heights, heightData.heights,
                sizeof(f32) * heightData.width * heightData.height);
         output->width = heightData.width;
@@ -582,7 +566,6 @@ Mesh *createTerrainMeshWithHeight(u32 cellsX, u32 cellsZ, f32 cellSize,
 
     calculateTerrainNormals(terrainVertices, heightData.width,
                             heightData.height);
-    // Generate indices (same as before)
     u32 indexCount;
     u32 *terrainIndices = createTerrainIndices(cellsX, cellsZ, &indexCount);
 

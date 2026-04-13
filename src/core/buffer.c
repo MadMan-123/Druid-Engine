@@ -2,13 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-//=====================================================================================================================
-// Buffer — generic slot-based object buffer
-//
-// Heap-allocates `capacity * elemSize` bytes and a parallel b8 occupancy array.
-// Acquire returns the first free index; release zeros the slot and frees it.
-//=====================================================================================================================
-
 b8 bufferCreate(Buffer *buf, u32 elemSize, u32 capacity)
 {
     if (!buf || elemSize == 0 || capacity == 0)
@@ -55,10 +48,8 @@ u32 bufferAcquire(Buffer *buf)
         return (u32)-1;
     }
 
-    // Pop from free stack (O(1))
     u32 index = buf->freeStack[--buf->freeCount];
 
-    // Mark as occupied
     buf->occupied[index] = true;
     buf->count++;
 
@@ -73,14 +64,11 @@ void bufferRelease(Buffer *buf, u32 index)
     if (!buf || index >= buf->capacity) return;
     if (!buf->occupied[index]) return;  // Guard against double-free
 
-    // Zero the slot
     memset((u8 *)buf->data + (size_t)index * buf->elemSize, 0, buf->elemSize);
 
-    // Mark as unoccupied
     buf->occupied[index] = false;
     buf->count--;
 
-    // Push index back onto free stack (O(1))
     buf->freeStack[buf->freeCount++] = index;
 }
 

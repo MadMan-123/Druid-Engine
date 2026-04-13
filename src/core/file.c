@@ -1,4 +1,3 @@
-//generate the functions for file handling but dont actually implement them here, just the declarations.
 #include "../../include/druid.h"
 
 #if PLATFORM_WINDOWS
@@ -30,7 +29,6 @@ FileData* loadFile(const c8 *filePath)
     // determine how big the file is
     fseek(file, 0, SEEK_END);
     u64 length = ftell(file);
-    // go back to start
     rewind(file);
 
     // allocate enough memory
@@ -43,10 +41,8 @@ FileData* loadFile(const c8 *filePath)
         return NULL;
     }
 
-    // read the file to the buffer
     u32 readSize = fread(buffer, 1, length, file);
 
-    // add null terminator
     buffer[readSize] = '\0';
 
     fclose(file);
@@ -55,7 +51,6 @@ FileData* loadFile(const c8 *filePath)
     FileData *fileData = (FileData *)malloc(sizeof(FileData));
     assert(fileData != NULL && "Failed to allocate FileData");
     
-    // copy the path, data and size to the struct
     strncpy((c8 *)fileData->path, (const c8 *)filePath, MAX_PATH_LENGTH - 1);
     fileData->path[MAX_PATH_LENGTH - 1] = '\0';
     

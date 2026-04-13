@@ -4,10 +4,6 @@
 #include <string.h>
 #include <ctype.h>
 
-//=====================================================================================================================
-// ECS System DLL — load / unload (uses the unified DLL API from dllloader.c)
-//=====================================================================================================================
-
 b8 loadECSSystemDLL(const c8 *dllPath, ECSSystemDLL *out)
 {
     if (!dllPath || !out) return false;
@@ -70,13 +66,6 @@ b8 loadECSSystemFromHandle(DLLHandle *dll, const c8 *archetypeName, ECSSystemPlu
 
 //=====================================================================================================================
 // Archetype code file generation
-//
-// For a given archetype name and field list, writes:
-//   src/<name>.h        — archetype layout declaration + system function signatures
-//   src/<name>.c/.cpp   — field layout, system stubs (init/update/render/destroy), DLL export (C or C++ based on useCpp)
-//
-// The generated code uses DSAPI (defined in druid.h) for export/import,
-// so there are no per-archetype export macros.
 //=====================================================================================================================
 
 b8 generateArchetypeFiles(const c8 *projectDir,

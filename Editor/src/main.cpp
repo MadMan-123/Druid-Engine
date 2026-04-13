@@ -15,15 +15,15 @@ u32 shader = 0;
 
 f32 yaw = 0;
 f32 currentPitch = 0;
-static const f32 camMoveSpeed = 1.0f;   // units per second
-static const f32 camRotateSpeed = 5.0f; // degrees per second
+static const f32 camMoveSpeed = 1.0f;
+static const f32 camRotateSpeed = 5.0f;
 static const u32 entityDefaultCount = 128;
 MaterialUniforms materialUniforms = {0};
 static u32 g_startupModelRefCount = 0;
 static c8 (*g_startupModelRefs)[MAX_NAME_SIZE] = nullptr;
 
 Archetype sceneArchetype;
-c8 inputBoxBuffer[100]; // this will be in numbers
+c8 inputBoxBuffer[100];
 i32 entitySize = 0;
 // helper – move camera with wasd keys
 b8 canMoveViewPort = false;
@@ -42,7 +42,7 @@ static void MyFree(void *ptr, void *)
 
 static void moveCamera(f32 dt)
 {
-    const f32 deadZone = 0.45f; // dead zone for input
+    const f32 deadZone = 0.45f;
     if (yInputAxis > deadZone)
     {
         moveForward(&sceneCam, camMoveSpeed * dt);
@@ -116,21 +116,6 @@ void rotateCamera(f32 dt)
         Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
         sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
     }
-    //  else if (v2Mag(axis) > 1.15f);
-    //  {
-
-    //      //apply the joystick input to the camera
-    //      yaw += -axis.x * (camRotateSpeed) * dt;
-    //      currentPitch += -axis.y * (camRotateSpeed) * dt;
-    //      //89 in radians
-    //      f32 goal = radians(89.0f);
-    //      // Clamp pitch to avoid gimbal lock
-    //      currentPitch = clamp(currentPitch,-goal, goal);
-    //      // Create yaw quaternion based on the world-up vector
-    //      Vec4 yawQuat = quatFromAxisAngle(v3Up, yaw);
-    //      Vec4 pitchQuat = quatFromAxisAngle(v3Right, currentPitch);
-    // sceneCam.orientation = quatNormalize(quatMul(yawQuat, pitchQuat));
-    //  }
 }
 
 void moveViewPortCamera(f32 dt)
@@ -362,7 +347,6 @@ void init()
     entitySize = entityDefaultCount;
     entitySizeCache = entitySize;
     u32 outArenas = 0;
-    // create the scene archetype (new archetype system)
     if (!createArchetype(&SceneEntity, entitySizeCache, &sceneArchetype))
     {
         FATAL("Failed to create archetype for scene entities");
@@ -405,13 +389,11 @@ void init()
 
     colourLocation = glGetUniformLocation(arrowShader, "colour");
 
-    // setup camera that looks at the origin from z = +5
     initCamera(&sceneCam, {0.0f, 0.0f, 5.0f}, // position
                70.0f,                         // field of view
                1.0f,          // aspect (real aspect fixed every frame)
                0.1f, 100.0f); // near/far clip planes
 
-    // load skybox resources --------------------------------------------------
     cubeMapTexture = 0;
     skyboxMesh = createSkyboxMesh(); // generate cube mesh (36 verts)
     skyboxShader =
@@ -472,7 +454,6 @@ void init()
     // Initialize the immediate-mode gizmo drawing system (GL_LINES overlay)
     gizmoInit();
 
-    // create a small cube mesh for gizmos and pickable handles
     cubeMesh = createBoxMesh();
 
     // register built-in primitive models (box, plane, sphere)
@@ -491,7 +472,6 @@ void init()
     // initialize ID framebuffer for entity picking
     initIDFramebuffer();
 
-    // initialize multi-FBO system
     initMultiFBOs();
 
     DEBUG("Resource manager has %d models and %d meshes", resources->modelUsed,
@@ -803,7 +783,6 @@ void render(f32 dt)
 
     drawDockspaceAndPanels();
 
-    // render everything
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -839,12 +818,10 @@ void destroy()
     modelIDs = NULL;
     shaderHandles = NULL;
     entityMaterialIDs = NULL;
-    // free editor resources before exiting
     freeMesh(cubeMesh);
     freeShader(shader);
     freeShader(arrowShader);
     freeShader(fboShader);
-    // free skybox resources
     freeMesh(skyboxMesh);
     freeTexture(cubeMapTexture);
     freeShader(skyboxShader);
@@ -859,7 +836,6 @@ void destroy()
     if (renderer)
         destroyRenderer(renderer);
 
-    // free console log lines
     if (consoleLines)
     {
         for (u32 i = 0; i < MAX_CONSOLE_LINES; i++)
@@ -870,10 +846,9 @@ void destroy()
         consoleLines = NULL;
     }
 
-    ImGui_ImplOpenGL3_Shutdown(); // shutdown imgui opengl backend
-
-    ImGui_ImplSDL3_Shutdown(); // shutdown imgui sdl backend
-    ImGui::DestroyContext();   // destroy imgui core
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
 }
 
 i32 main(i32 argc, char **argv)

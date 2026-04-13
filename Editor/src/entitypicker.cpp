@@ -25,17 +25,9 @@ void renderIDPass()
     }
 
     bindFramebuffer(&viewportFBs[ID_FBO_INDEX]);
-    // clear the screen
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    // use the id shader
     glUseProgram(idShader);
     // for all entities render
-    /*
-        -render the entity regularly
-        -encode the id to rgb
-        -send information to shader
-        -draw
-        */
 
     for (u32 i = 0; i < entityCount; i++)
     {
@@ -45,15 +37,10 @@ void renderIDPass()
 
         u32 objectID = (i + 1) | ID_TYPE_ENTITY;
 
-        // encode the id to rgb
-        // move 16 bits to right
         f32 r = ((objectID >> 16) & 0xFF) / 255.0f;
-        // move 8 bits to right
         f32 g = ((objectID >> 8) & 0xFF) / 255.0f;
-        // get to start
         f32 b = (objectID & 0xFF) / 255.0f;
 
-        // update shader
         glUniform3f(idLocation, r, g, b);
         
         u32 index = modelIDs[i];
@@ -180,11 +167,9 @@ void renderIDPass()
 
 PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
 {
-    // convert to viewport-relative coords
     u32 relativeX = (u32)(mouse.x - viewportTopLeft.x);
     u32 relativeY = (u32)(mouse.y - viewportTopLeft.y);
 
-    // bounds check
     if (relativeX >= viewportWidth || relativeY >= viewportHeight)
     {
         PickResult result;
@@ -195,13 +180,11 @@ PickResult getEntityAtMouse(ImVec2 mouse, ImVec2 viewportTopLeft)
     // flip Y for OpenGL (origin is bottom-left)
     u32 flippedY = (viewportHeight - relativeY - 1);
 
-    // read from ID buffer
     u8 pixel[3];
     bindFramebuffer(&viewportFBs[ID_FBO_INDEX]);
     glReadPixels(relativeX, flippedY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
     unbindFramebuffer();
 
-    // reconstruct ID
     u32 id = (pixel[0] << 16) | (pixel[1] << 8) | (pixel[2]);
 
     DEBUG("PICK: mouse(%.0f,%.0f) vp(%.0f,%.0f) rel(%u,%u) flip(%u) px(%u,%u,%u) id=0x%06X vw=%u vh=%u",

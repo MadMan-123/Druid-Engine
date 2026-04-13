@@ -204,13 +204,11 @@ Vec3 EulerAngles = v3Zero;
 
 b8 manipulateTransform = false;
 
-// entity data
 u32 entityCount = 0;
 InspectorState currentInspectorState =
     EMPTY_VIEW; // set inital inspector view to be empty
 
-u32 inspectorEntityID =
-    0; // holds the index for the inspector to load component data
+u32 inspectorEntityID = 0;
 
 u32 arrowShader = 0;
 u32 colourLocation = 0;
@@ -965,7 +963,6 @@ static void renderGameScene()
     if (editDeferred)
         rendererBeginDeferredPass(renderer);
 
-    // draw each scene entity
     {
     Transform newTransform = {0};
     u32 lastBoundShader = 0;
@@ -1150,7 +1147,7 @@ static void drawViewportWindow()
     ImGui::Begin("Viewport");
 
     ImVec2 viewportWindowPos =
-        ImGui::GetWindowPos(); // screen position of the window
+        ImGui::GetWindowPos();
     ImVec2 avail = ImGui::GetContentRegionAvail();
     canMoveViewPort =
         ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
@@ -1236,10 +1233,6 @@ static void drawViewportWindow()
 
     ImGui::End();
 
-    // Debug prints
-    // DEBUG("Viewport Image Pos: (%.2f, %.2f)\n", g_viewportScreenPos.x,
-    // g_viewportScreenPos.y); DEBUG("Viewport Image Size: (%.2f x %.2f)\n",
-    // g_viewportSize.x, g_viewportSize.y);
 }
 
 static void drawDebugWindow()
@@ -1304,7 +1297,6 @@ static void drawDebugWindow()
                     resources->modelCount);
     }
 
-    // draw console line
     u32 dummy = -1; // No selection
     // ImGui::ListBox("Console", &dummy, consoleLines, MAX_CONSOLE_LINES, 10);
     ImGui::End();
@@ -1607,7 +1599,6 @@ void scanProjectArchetypes(const c8 *projectDir)
 
         // Prefer canonical flags marker emitted by generateArchetypeFiles:
         //   // DRUID_FLAGS 0xNN
-        // This avoids accidental matches from unrelated comments.
         b8 hasCanonicalFlags = false;
         const c8 *flagsMarker = strstr(buf, "// DRUID_FLAGS ");
         if (flagsMarker)
@@ -1919,8 +1910,7 @@ static void drawPrefabsWindow()
                     }
                 }
 
-                // NOTE: layout.fields always points into g_scannedFields (a static
-                // array) — never heap-allocated — so do NOT call free() on it.
+                // layout.fields points into g_scannedFields (static) — do not free()
                 // Shift registry entries AND the parallel scanned-field arrays together
                 // so layout.fields pointers remain valid after the shift.
                 for (u32 r = a; r + 1 < g_archRegistry.count; r++)
@@ -2142,7 +2132,7 @@ static void drawPrefabsWindow()
         // Per-field hot/cold flags — true = hot, false = cold
         // Indexed by [archIdx][fieldIdx], supports up to 32 archetypes × 32 fields
         static bool hcIsHot[MAX_ARCHETYPE_SYSTEMS][32];
-        static i32  hcInitialised[MAX_ARCHETYPE_SYSTEMS]; // frame count when initialised
+        static i32  hcInitialised[MAX_ARCHETYPE_SYSTEMS];
         static bool hcInitDone[MAX_ARCHETYPE_SYSTEMS];
 
         const u32 CACHE_LINE = 64u; // bytes
@@ -2874,9 +2864,9 @@ static void drawSceneListWindow()
             positions[entityCount] = {0, 0, 0};
             rotations[entityCount] = quatIdentity();
             modelIDs[entityCount] = (u32)-1; // Initialize modelID to an invalid index
-            entityMaterialIDs[entityCount] = (u32)-1; // no custom material
-            shaderHandles[entityCount] = 0; // no custom shader
-            archetypeIDs[entityCount] = (u32)-1; // no archetype assigned
+            entityMaterialIDs[entityCount] = (u32)-1;
+            shaderHandles[entityCount] = 0;
+            archetypeIDs[entityCount] = (u32)-1;
             if (ecsSlotIDs)      ecsSlotIDs[entityCount]      = (u32)-1;
             if (sceneCameraFlags) sceneCameraFlags[entityCount] = false;
             if (entityTags)      entityTags[entityCount * 32]  = '\0';
@@ -3088,7 +3078,6 @@ static void drawInspectorWindow()
 
         ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE],
                          MAX_NAME_SIZE);
-        // draw the scene entity basic data
         ImGui::DragFloat3("position", (f32 *)&positions[inspectorEntityID], 0.01f);
 
         if (ImGui::DragFloat3("rotation", (f32 *)&EulerAnglesDegrees, 0.5f))
@@ -3767,7 +3756,7 @@ static void drawSkyboxSettingsWindow()
 static b8 showBuildLog = false;
 
 //=====================================================================================================================
-// Loaded Entities — inspect runtime ECS entities spawned by game DLL / archetypes
+// loaded entities
 //=====================================================================================================================
 static void drawLoadedEntitiesWindow()
 {
@@ -3935,7 +3924,6 @@ static b8 g_hasPlaySnapshot = false;
 
 static void snapshotScene()
 {
-    // build a SceneData from the live archetype
     SceneData sd = {0};
     sd.archetypeCount = 1;
     sd.archetypes = &sceneArchetype;
@@ -3967,7 +3955,7 @@ static void restoreSnapshot()
 
         // During play mode the game DLL may have reallocated archetype arenas,
         // leaving stale pointers. Zero out before destroy to avoid heap corruption.
-        // This intentionally leaks any play-mode allocations (small, one-time).
+        // intentional leak — one-time play-mode allocs
         if (sceneArchetype.arena)
         {
             for (u32 ci = 0; ci < sceneArchetype.arenaCount; ci++)
@@ -4010,7 +3998,6 @@ static void restoreSnapshot()
         WARN("Failed to restore scene from snapshot");
     }
 
-    // clean up the temp file
     remove(fullPath);
     g_hasPlaySnapshot = false;
 }
@@ -4202,29 +4189,6 @@ void drawDockspaceAndPanels()
                 showSkyboxSettings = true;
             }
             ImGui::Separator();
-            
-            
-            //if (sceneManager && sceneManager->sceneCount > 0)
-            // {
-            //     // List existing scenes for quick switch/remove
-            //     for (u32 i = 0; i < sceneManager->sceneCount; i++)
-            //     {
-            //         c8 label[64];
-            //         snprintf(label, sizeof(label), "Scene %u", i);
-            //         if (ImGui::MenuItem(label, NULL, (i32)(sceneManager->currentScene == i)))
-            //         {
-            //             // switch scene
-            //             switchScene(sceneManager, i);
-            //         }
-            //         ImGui::SameLine();
-            //         ImGui::PushID(i);
-            //         if (ImGui::SmallButton("Remove"))
-            //         {
-            //             removeScene(sceneManager, i);
-            //         }
-            //         ImGui::PopID();
-            //     }
-            //}
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("View"))

@@ -79,7 +79,6 @@ u32 createComputeProgram(const c8 *computePath)
     glValidateProgram(program);
     checkShaderError(program, GL_VALIDATE_STATUS, true, "Shader program not valid");
 
-    // Clean up the shader as it's now linked to the program
     glDetachShader(program, shader);
     glDeleteShader(shader);
 
@@ -160,7 +159,6 @@ u32 createGraphicsProgram(const c8 *vertPath, const c8 *fragPath)
     glValidateProgram(program);
     checkShaderError(program, GL_VALIDATE_STATUS, true, "Shader program not valid");
 
-    // Clean up the shaders as they're now linked to the program
     glDetachShader(program, vertexShader);
     glDetachShader(program, fragmentShader);
     glDeleteShader(vertexShader);
@@ -295,7 +293,6 @@ u32 createGraphicsProgramWithGeometry(const c8 *vertPath,
     checkShaderError(program, GL_VALIDATE_STATUS, true,
                      "Shader program not valid");
 
-    // Clean up the shaders as they're now linked to the program
     glDetachShader(program, vertexShader);
     glDetachShader(program, geomShader);
     glDetachShader(program, fragmentShader);

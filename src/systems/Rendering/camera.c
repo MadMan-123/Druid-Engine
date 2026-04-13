@@ -19,7 +19,6 @@ Mat4 getView(const Camera* camera, b8 removeTranslation)
     Vec3 target = v3Add(camera->pos, forward);
     // Calculate the view matrix
     Mat4 view = mat4LookAt(camera->pos, target, up);
-    // If removeTranslation is true, we need to remove the translation part of the view matrix
     if (removeTranslation) 
     {
         Mat3 rotationPart = mat4ToMat3(view);

@@ -74,7 +74,6 @@ static b8 scaffoldProject(const c8 *path)
 
 static void saveConfig()
 {
-    // build a newline-delimited buffer
     c8 buf[MAX_SAVED_PROJECTS * MAX_PATH_LENGTH];
     u32 offset = 0;
     for (i32 i = 0; i < savedCount; i++)
@@ -99,12 +98,10 @@ static void loadConfig()
     if (!fd)
         return;
 
-    // parse line by line
     c8 *cursor = (c8 *)fd->data;
     c8 *end    = cursor + fd->size;
     while (cursor < end && savedCount < MAX_SAVED_PROJECTS)
     {
-        // find line end
         c8 *nl = cursor;
         while (nl < end && *nl != '\n' && *nl != '\r')
             nl++;
@@ -117,7 +114,6 @@ static void loadConfig()
             normalizePath(savedProjects[savedCount]);
             savedCount++;
         }
-        // skip \r\n
         cursor = nl + 1;
         if (cursor < end && cursor[-1] == '\r' && cursor[0] == '\n')
             cursor++;
@@ -128,19 +124,16 @@ static void loadConfig()
 
 static void addToSaved(const c8 *path)
 {
-    // remove duplicate if present
     for (i32 i = 0; i < savedCount; i++)
     {
         if (strcmp((c8 *)savedProjects[i], path) == 0)
         {
-            // shift left to remove
             for (i32 j = i; j < savedCount - 1; j++)
                 memcpy(savedProjects[j], savedProjects[j + 1], MAX_PATH_LENGTH);
             savedCount--;
             break;
         }
     }
-    // shift right to insert at front
     if (savedCount < MAX_SAVED_PROJECTS)
     {
         for (i32 i = savedCount; i > 0; i--)

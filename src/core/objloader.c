@@ -1,5 +1,3 @@
-// OBJ model loader for Druid engine
-// Loads and parses .obj files for mesh data
 #include "../../include/druid.h"
 
 //hash functions for objkey
@@ -32,7 +30,6 @@ void indexedModelCalcNormals(IndexedModel* model)
         u32 i1 = model->indices[i + 1];
         u32 i2 = model->indices[i + 2];
 
-        //bounds checking
         if (i0 >= model->positionsCount || i1 >= model->positionsCount || i2 >= model->positionsCount)
         {
             printf("Warning: Index out of bounds in normal calculation\n");
@@ -43,7 +40,6 @@ void indexedModelCalcNormals(IndexedModel* model)
         Vec3 v2 = v3Sub(model->positions[i2], model->positions[i0]);
 
         Vec3 normal = v3Cross(v1, v2);
-        //only normalize if the cross product is not zero
         f32 length = v3Mag(normal);
         if (length > 0.0001f)
             normal = v3Norm(normal);
@@ -59,12 +55,10 @@ void indexedModelCalcNormals(IndexedModel* model)
         if (length > 0.0001f)
             model->normals[i] = v3Norm(model->normals[i]);
         else
-            //default normal if calculation failed
             model->normals[i] = (Vec3){0.0f, 1.0f, 0.0f};
     }
 }
 
-//parse file metadata - first pass to count elements
 typedef struct
 {
     u32 verticesCount;
@@ -112,10 +106,8 @@ OBJMetadata parseOBJMetadata(const c8* fileName)
     return meta;
 }
 
-//create obj model with proper allocation
 OBJModel* objModelCreate(const c8* fileName)
 {
-    //first pass: get file metadata
     OBJMetadata meta = parseOBJMetadata(fileName);
     if (meta.verticesCount == 0)
     {
@@ -130,7 +122,6 @@ OBJModel* objModelCreate(const c8* fileName)
         return NULL;
     }
 
-    //allocate exact sizes based on metadata
     model->objIndicesCapacity = meta.facesCount * 6; //worst case: all quads = 6 indices
     model->verticesCapacity = meta.verticesCount;
     model->uvsCapacity = meta.hasUVs ? meta.uvsCount : 1;
@@ -141,7 +132,6 @@ OBJModel* objModelCreate(const c8* fileName)
     model->uvs = malloc(sizeof(Vec2) * model->uvsCapacity);
     model->normals = malloc(sizeof(Vec3) * model->normalsCapacity);
 
-    //check all allocations
     if (!model->objIndices || !model->vertices || !model->uvs || !model->normals)
     {
         printf("Error: Failed to allocate OBJ model arrays\n");
@@ -156,7 +146,6 @@ OBJModel* objModelCreate(const c8* fileName)
     model->hasUVs = meta.hasUVs;
     model->hasNormals = meta.hasNormals;
 
-    //second pass: parse the data
     FILE* file = fopen(fileName, "r");
     if (!file)
     {
@@ -351,7 +340,6 @@ IndexedModel* objModelToIndexedModel(OBJModel* objModel)
     {
         OBJIndex* current = &objModel->objIndices[i];
 
-        //bounds checking
         if (current->vertexIndex >= objModel->verticesCount)
         {
             printf("Warning: Vertex index %u out of bounds (max %u)\n", 

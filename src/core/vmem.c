@@ -1,18 +1,6 @@
 
 #include "../../include/druid.h"
 
-//=====================================================================================================================
-// Memory System — Arena-based
-//
-// Single OS allocation (VirtualAlloc/mmap) at startup.  The block is carved
-// into contiguous bump arenas (General, ECS, Renderer, Physics, Frame).
-// dalloc() routes to the correct arena via the MemTag.  dfree() only tracks
-// stats — arenas are bulk-freed on shutdown.
-//
-// Block layout:
-//   [General arena] [ECS arena] [Renderer arena] [Physics arena] [Frame arena]
-//=====================================================================================================================
-
 #if PLATFORM_WINDOWS
 #pragma push_macro("ERROR")
 #undef ERROR

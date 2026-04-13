@@ -40,7 +40,6 @@ u32 loadMaterialTexture(struct aiMaterial *mat, enum aiTextureType type)
     u32 textureIndex = 0;
     if (findInMap(&resources->textureIDs, fileName, &textureIndex))
     {
-        // We found the texture, now we need to get the handle
         if (textureIndex < resources->textureUsed)
         {
             return resources->textureHandles[textureIndex];
@@ -163,7 +162,6 @@ void updateMaterial(Material *material, const MaterialUniforms *uniforms)
         DEBUG("colour: %d\n", uniforms->colour);
     }
 
-    // bind textures to texture units
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, material->albedoTex);
     glUniform1i(uniforms->albedoTex, 0);
@@ -198,7 +196,6 @@ Material *loadMaterialFromAssimp(struct aiScene *scene, u32 *count)
         return NULL;
     }
 
-    // check if there are any materials
     if (scene->mNumMaterials == 0)
     {
         ERROR("Model has no materials\n");

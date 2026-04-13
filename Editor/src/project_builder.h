@@ -1,16 +1,6 @@
 #pragma once
 #include <druid.h>
 
-/*
-    project_builder.h
-    
-    Scaffolds new projects, builds them into DLLs, and loads them at runtime.
-    
-    A game DLL exports a single function: druidGetPlugin() which fills in a
-    GamePlugin struct with init/update/render/destroy pointers. The editor
-    calls those at the right times.
-*/
-
 // the game DLL exports this struct
 typedef void (*PluginInitFn)(const c8 *projectDir);
 typedef void (*PluginUpdateFn)(f32 dt);
@@ -31,7 +21,7 @@ typedef void (*GetPluginFn)(GamePlugin *out);
 // loaded DLL handle
 typedef struct GameDLL
 {
-    DLLHandle   dll;      // unified DLL handle (platform.c)
+    DLLHandle   dll;
     GamePlugin  plugin;
     b8          loaded;
 } GameDLL;

@@ -10,7 +10,7 @@ u32 initTexture(const c8* fileName)
 	}
 
 	u32 textureHandler = 0;	
-	i32 width, height, numComponents; //width, height, and no of components of image
+	i32 width, height, numComponents;
 	u8 * imageData = stbi_load(fileName, &width, &height, &numComponents, 4); //load the image and store the data
 
 	if (imageData == NULL)
@@ -44,7 +44,7 @@ u32 initTexture(const c8* fileName)
 
 	stbi_image_free(imageData);
 
-	return textureHandler; //return the texture handler
+	return textureHandler;
 }
 
 u32 createCubeMapTexture(const c8** faces,u32 count)

@@ -103,7 +103,7 @@ enum InspectorState{
     MAX_STATE
 };
 extern InspectorState currentInspectorState; 
-extern u32 inspectorEntityID; //holds the index for the inspector to load component data  
+extern u32 inspectorEntityID;
 
 extern ManipulateTransformState manipulateState;
 extern const c8** consoleLines;

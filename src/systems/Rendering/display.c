@@ -10,7 +10,7 @@ void returnError(const c8* errorString)
 
 void swapBuffer(const Display* display)
 {
-	SDL_GL_SwapWindow(display->sdlWindow); //swap buffers
+	SDL_GL_SwapWindow(display->sdlWindow);
 }
 
 void clearDisplay(f32 r, f32 g, f32 b, f32 a)
@@ -22,9 +22,9 @@ void clearDisplay(f32 r, f32 g, f32 b, f32 a)
 void initDisplay(const c8* title, Display* display, f32 width, f32 height)
 {
     //create all necessary data for the display	
-	display->sdlWindow = NULL; //initialise to generate null access violation for debugging. 
-	display->screenWidth = width; //set the width and height of the window
-	display->screenHeight = height; 
+	display->sdlWindow = NULL;
+	display->screenWidth = width;
+	display->screenHeight = height;
 	SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMEPAD); //initalise everything
 
     //setup window attributes
@@ -38,14 +38,12 @@ void initDisplay(const c8* title, Display* display, f32 width, f32 height)
 	//TODO: change to upload custom title 
 	display->sdlWindow = SDL_CreateWindow(title, (i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE); // create window
 	
-    //null check
 	if (display->sdlWindow == NULL)
 	{
 		returnError("window failed to create");
 	}
     //create the context
 	display->glContext = SDL_GL_CreateContext(display->sdlWindow);
-    //null check
 	if (display->glContext == NULL)
 	{
 		returnError("SDL_GL context failed to create");
@@ -57,8 +55,8 @@ void initDisplay(const c8* title, Display* display, f32 width, f32 height)
 		returnError("GLEW failed to initialise");
 	}
     
-	glEnable(GL_DEPTH_TEST); //enable z-buffering 
-	glEnable(GL_CULL_FACE); //dont draw faces that are not pointing at the camera
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_CULL_FACE);
     
     //clear the screen to a colour
 	glClearColor(0.0f, 1.0f, 1.0f, 1.0f);

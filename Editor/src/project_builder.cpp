@@ -1044,8 +1044,9 @@ b8 updateProject(const c8 *projectDir, c8 *outLog, u32 logSize)
     if (nf)
     {
         fclose(nf);
+        // Use full path to ninja in case it's not in PATH
         snprintf(cmd, sizeof(cmd),
-                 "cd /d \"%s\" && ninja 2>&1", engineRoot);
+                 "cd /d \"%s\" && C:\\msys64\\mingw64\\bin\\ninja.exe 2>&1", engineRoot);
     }
     else
     {
@@ -1056,7 +1057,7 @@ b8 updateProject(const c8 *projectDir, c8 *outLog, u32 logSize)
     FILE *pipe = (FILE *)platformPipeOpen(cmd);
     if (!pipe)
     {
-        snprintf(outLog, logSize, "Failed to build engine\n");
+        snprintf(outLog, logSize, "Failed to open build pipe\n");
         g_buildInProgress = false;
         return false;
     }
@@ -1071,17 +1072,32 @@ b8 updateProject(const c8 *projectDir, c8 *outLog, u32 logSize)
     outLog[off] = '\0';
     i32 ret = platformPipeClose(pipe);
 
+    // Write full log to a file for debugging
+    FILE *debugLog = fopen("build_log.txt", "w");
+    if (debugLog)
+    {
+        fprintf(debugLog, "Build command: %s\n", cmd);
+        fprintf(debugLog, "Exit code: %d\n", ret);
+        fprintf(debugLog, "Output:\n%s\n", outLog);
+        fclose(debugLog);
+        INFO("Build log written to build_log.txt");
+    }
+
     if (ret != 0)
     {
         u32 len = (u32)strlen(outLog);
         snprintf(outLog + len, logSize - len,
-                 "\n--- Engine build failed (exit code %d) ---\n", ret);
+                 "\n--- Engine build failed (exit code %d) ---\nCheck build_log.txt for details\n", ret);
         g_buildInProgress = false;
         return false;
     }
 
     // copy updated files
     b8 ok = copyEngineFiles(projectDir);
+    if (!ok)
+    {
+        snprintf(outLog, logSize, "Failed to copy engine files to project\n");
+    }
     g_buildInProgress = false;
     return ok;
 }
