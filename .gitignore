@@ -111,6 +111,8 @@ packages/
 *.log
 log/
 logs/
+build_log.txt
+imgui.ini
 
 testbed/res/128x128
 testbed/res/Audio
