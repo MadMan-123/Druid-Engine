@@ -126,9 +126,8 @@ void initSystems(const Application* app)
 	//initialize the display
 	initDisplay(app->title, app->display, width, height);
 
-	// Create global geometry buffer AFTER OpenGL context exists, BEFORE mesh loading.
-	// 500k vertices (16 MB) + 1.5M indices (6 MB)
-	resources->geoBuffer = geometryBufferCreate(500000, 1500000);
+	// create geometry buffer after OpenGL context, before mesh loading
+	resources->geoBuffer = geometryBufferCreate(2000000, 6000000);
 	if (!resources->geoBuffer)
 		WARN("GeometryBuffer creation failed, meshes will use standalone VAO/VBO/EBO");
 

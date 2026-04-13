@@ -70,8 +70,6 @@ void drawMesh(Mesh *mesh)
     g_drawCalls++;
     g_triangles += mesh->drawCount / 3;
     g_vertices  += mesh->drawCount;
-    // Do NOT unbind VAO — the next drawMesh/drawMeshInstanced will rebind anyway.
-    // Removing glBindVertexArray(0) eliminates a redundant GL state change per draw.
 }
 
 Mesh *loadMeshFromAssimp(const c8 *filename, u32 *meshCount)
@@ -331,7 +329,6 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
         interleavedData[offset++] = model.normals[i].z;
     }
 
-    // Fast path � upload into the global GeometryBuffer (no per-draw buffer binds)
     if (resources && resources->geoBuffer)
     {
         if (geometryBufferUpload(resources->geoBuffer, mesh,
@@ -341,10 +338,9 @@ void initMeshFromModel(Mesh *mesh, const IndexedModel model)
             dfree(interleavedData, model.positionsCount * stride, MEM_TAG_MESH);
             return;
         }
-        WARN("initMeshFromModel: GeometryBuffer full, falling back to standalone");
+        DEBUG("initMeshFromModel: GeometryBuffer upload failed (non-indexed or full), using standalone VAO");
     }
 
-    // Slow path dedicated VAO/VBO/EBO for this mesh
     glGenVertexArrays(1, &mesh->vao);
     glGenBuffers(1, &mesh->vbo);
     glGenBuffers(1, &mesh->ebo);

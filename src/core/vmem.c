@@ -112,8 +112,8 @@ static inline u64 alignUp(u64 value, u64 alignment)
 MemoryConfig memDefaultConfig(void)
 {
     MemoryConfig cfg = {0};
-    cfg.totalMB = 768;
-    cfg.arenaMB[MEM_ARENA_GENERAL]  = 128;
+    cfg.totalMB = 896;
+    cfg.arenaMB[MEM_ARENA_GENERAL]  = 256;
     cfg.arenaMB[MEM_ARENA_ECS]      = 256;
     cfg.arenaMB[MEM_ARENA_RENDERER] = 96;
     cfg.arenaMB[MEM_ARENA_PHYSICS]  = 128;

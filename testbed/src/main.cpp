@@ -25,10 +25,9 @@ Vec3* scales = NULL;
 u32* modelIDs = NULL;
 
 
-void init(void) 
+void init(void)
 {
-    // intentionally empty
-	initCamera(&cam, {0,0,5}, fov, 16.0f/9.0f, 0.1f, 100.0f);	// Initialize core shader UBO for optimized rendering\n	createCoreShaderUBO();
+	initCamera(&cam, {0,0,5}, fov, 16.0f/9.0f, 0.1f, 100.0f);
 
 	//get the default shader from the resources
 
@@ -58,11 +57,12 @@ void init(void)
 }
 
 void update(f32 dt) {
-    // intentionally empty
+    (void)dt;
 }
 
 void render(f32 dt) {
-    clearDisplay(0.2f, 0.2f, 0.2f, 1.0f);// Update core shader UBO once per frame\n\tstatic f32 totalTime = 0.0f;\n\ttotalTime += dt;\n\tMat4 view = getView(&cam, false);\n\tupdateCoreShaderUBO(totalTime, &cam.pos, &view, &cam.projection);
+    (void)dt;
+    clearDisplay(0.2f, 0.2f, 0.2f, 1.0f);
 	
 	//render model 0
 	glUseProgram(defaultShader);
@@ -70,7 +70,7 @@ void render(f32 dt) {
 	for(i32 i = 0; i < StaticEntites.count; i++) {
 		if(!isActive[i]) continue;
 		Transform t = {positions[i], rotations[i], scales[i]};
-		updateShaderModel(defaultShader, t);  // Only set model matrix
+		updateShaderModel(defaultShader, t);
 		//draw the model 
 		draw(model, defaultShader, false);
 
@@ -83,7 +83,6 @@ void render(f32 dt) {
 }
 
 void destroy(void) {
-    // intentionally empty
 }
 
 int main(i32 argc, char **argv) {
