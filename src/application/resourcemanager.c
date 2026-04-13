@@ -208,7 +208,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
     
     if (outCount > 0)
     {
-        // First pass: populate shaderNameMap for vert/frag pairs
+        // first pass populate shaderNameMap for vert/frag pairs
         for (u32 i = 0; i < outCount; i++)
         {
             const c8 *filePath = (const c8 *)output[i];
@@ -239,7 +239,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
             }
         }
 
-        // Second pass: process all resources
+        // second pass process all resources
         for (u32 i = 0; i < outCount; i++)
         {
             const c8 *filePath = (const c8 *)output[i];
@@ -388,9 +388,8 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
 }
 
 //=====================================================================================================================
-// Typed resource getters — index-based
+// Typed resource getters  index-based
 //=====================================================================================================================
-
 Mesh *resGetMesh(u32 index)
 {
     if (!resources || index >= resources->meshUsed) return NULL;
@@ -422,9 +421,8 @@ u32 resGetShader(u32 index)
 }
 
 //=====================================================================================================================
-// Typed resource getters — name-based
+// Typed resource getters  name-based
 //=====================================================================================================================
-
 Mesh *resGetMeshByName(const c8 *name)
 {
     if (!resources || !name) return NULL;
