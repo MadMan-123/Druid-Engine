@@ -131,7 +131,7 @@ PhysRayHit physRaycast(PhysicsWorld *world, PhysRay ray)
                         if (tmin > tmax) continue;
                     }
 
-                    if (tmin < 0.0f) tmin = 0.0f;
+                    if (tmin <= 0.0f) continue;
                     if (tmin > hit.distance) continue;
 
                     hit.hit = true;
@@ -152,8 +152,8 @@ PhysRayHit physRaycast(PhysicsWorld *world, PhysRay ray)
 
                     f32 sqrtDisc = sqrtf(disc);
                     f32 t = -bd - sqrtDisc;
-                    if (t < 0.0f) t = -bd + sqrtDisc;
-                    if (t < 0.0f || t > hit.distance) continue;
+                    if (t <= 0.0f) continue;
+                    if (t > hit.distance) continue;
 
                     hit.hit = true;
                     hit.distance = t;
