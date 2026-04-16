@@ -387,6 +387,20 @@ void init()
     DEBUG("Created Context");
     ImGuiIO &io = ImGui::GetIO();
     (void)io;
+
+    // Persist editor layout to an absolute path next to the executable
+    // so the .ini is found regardless of working directory.
+    static char iniPath[512] = "";
+    if (iniPath[0] == '\0')
+    {
+        const char *base = SDL_GetBasePath();
+        if (base)
+            snprintf(iniPath, sizeof(iniPath), "%simgui_editor.ini", base);
+        else
+            snprintf(iniPath, sizeof(iniPath), "imgui_editor.ini");
+    }
+    io.IniFilename = iniPath;
+
     io.ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
