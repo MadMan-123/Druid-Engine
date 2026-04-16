@@ -254,6 +254,38 @@ static ColliderFieldCache g_colliderCache[MAX_ARCHETYPE_SYSTEMS] = {0};
 static FieldInfo g_scannedFields[MAX_ARCHETYPE_SYSTEMS][32];
 static c8        g_scannedFieldNames[MAX_ARCHETYPE_SYSTEMS][32][128];
 
+// Physics archetype for scene entities that aren't part of any ECS archetype
+// but still need collision (e.g. static floor, walls).  Built at play-start
+// from scene entities whose colliderShape != 0 and archetypeID == (u32)-1.
+static FieldInfo g_scenePhysFields[] = {
+    { "PositionX",       sizeof(f32), FIELD_TEMP_HOT },
+    { "PositionY",       sizeof(f32), FIELD_TEMP_HOT },
+    { "PositionZ",       sizeof(f32), FIELD_TEMP_HOT },
+    { "LinearVelocityX", sizeof(f32), FIELD_TEMP_COLD },
+    { "LinearVelocityY", sizeof(f32), FIELD_TEMP_COLD },
+    { "LinearVelocityZ", sizeof(f32), FIELD_TEMP_COLD },
+    { "ForceX",          sizeof(f32), FIELD_TEMP_COLD },
+    { "ForceY",          sizeof(f32), FIELD_TEMP_COLD },
+    { "ForceZ",          sizeof(f32), FIELD_TEMP_COLD },
+    { "PhysicsBodyType", sizeof(u32), FIELD_TEMP_COLD },
+    { "Mass",            sizeof(f32), FIELD_TEMP_COLD },
+    { "InvMass",         sizeof(f32), FIELD_TEMP_COLD },
+    { "Restitution",     sizeof(f32), FIELD_TEMP_COLD },
+    { "LinearDamping",   sizeof(f32), FIELD_TEMP_COLD },
+    { "SphereRadius",    sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderHalfX",   sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderHalfY",   sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderHalfZ",   sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderShape",   sizeof(u32), FIELD_TEMP_COLD },
+    { "Scale",           sizeof(Vec3), FIELD_TEMP_COLD },
+};
+static StructLayout g_scenePhysLayout = {
+    "ScenePhysics", g_scenePhysFields,
+    sizeof(g_scenePhysFields) / sizeof(FieldInfo)
+};
+static Archetype g_scenePhysArch = {0};
+static b8        g_scenePhysCreated = false;
+
 // ---- helpers ----
 
 // Case-insensitive string comparison for matching ECS fields to scene fields.
@@ -593,6 +625,172 @@ static void cleanupEcsArchetypes()
     }
 }
 
+// Build a physics-only archetype for scene entities that have colliders but
+// are not part of any ECS archetype (e.g. static floor, walls, obstacles).
+// These entities need to exist in the physics broadphase so dynamic bodies
+// (like the Player) can collide with them.
+static void setupScenePhysicsArchetype()
+{
+    if (g_scenePhysCreated) return;
+
+    void **scnFields = getArchetypeFields(&sceneArchetype, 0);
+    if (!scnFields) return;
+    u32 total = sceneArchetype.arena[0].count;
+
+    Vec3 *positions      = (Vec3 *)scnFields[0];
+    Vec3 *scales         = (Vec3 *)scnFields[2];
+    b8   *isActive       = (b8   *)scnFields[3];
+    u32  *archetypeIDs   = (u32  *)scnFields[8];
+    u32  *physBodyTypes  = (u32  *)scnFields[12];
+    f32  *masses         = (f32  *)scnFields[13];
+    u32  *colliderShapes = (u32  *)scnFields[14];
+    f32  *sphereRadii    = (f32  *)scnFields[15];
+    f32  *halfXs         = (f32  *)scnFields[16];
+    f32  *halfYs         = (f32  *)scnFields[17];
+    f32  *halfZs         = (f32  *)scnFields[18];
+
+    // Count eligible scene entities: active, has a collider or physics body type,
+    // and either not assigned to an ECS archetype or assigned to one that has no
+    // physics fields (e.g. built-in StaticObject which only has position/scale).
+    u32 physCount = 0;
+    for (u32 i = 0; i < total; i++)
+    {
+        if (!isActive[i]) continue;
+        // Skip entities whose ECS archetype is already registered with physics
+        // and has proper physics fields (velocity, mass, collider).
+        u32 aid = archetypeIDs[i];
+        if (aid != (u32)-1 && aid < MAX_ARCHETYPE_SYSTEMS && g_ecsArchetypes[aid].arena)
+        {
+            // Check if this archetype actually has physics collision fields
+            StructLayout *lay = g_ecsArchetypes[aid].layout;
+            b8 hasPhysFields = false;
+            if (lay)
+            {
+                for (u32 f = 0; f < lay->count; f++)
+                {
+                    if (strcmp(lay->fields[f].name, "ColliderHalfX") == 0 ||
+                        strcmp(lay->fields[f].name, "SphereRadius") == 0)
+                    { hasPhysFields = true; break; }
+                }
+            }
+            if (hasPhysFields) continue;  // archetype handles its own physics
+        }
+        b8 hasCollider = colliderShapes[i] != 0;
+        b8 hasHalfExtents = halfXs[i] > 0.0f || halfYs[i] > 0.0f || halfZs[i] > 0.0f;
+        b8 hasRadius = sphereRadii[i] > 0.0f;
+        if (!hasCollider && !hasHalfExtents && !hasRadius) continue;
+        physCount++;
+    }
+
+    INFO("setupScenePhysicsArchetype: %u scene entities, %u eligible for physics", total, physCount);
+    if (physCount == 0) { INFO("  No scene physics entities found — skipping"); return; }
+
+    g_scenePhysArch.flags = 0;
+    FLAG_SET(g_scenePhysArch.flags, ARCH_PHYSICS_BODY);
+    if (!createArchetype(&g_scenePhysLayout, physCount, &g_scenePhysArch))
+    { ERROR("Failed to create scene physics archetype"); return; }
+    g_scenePhysCreated = true;
+
+    void **pf = getArchetypeFields(&g_scenePhysArch, 0);
+    if (!pf) return;
+
+    // ScenePhysics field indices (must match g_scenePhysFields order):
+    f32  *spPosX   = (f32  *)pf[0];
+    f32  *spPosY   = (f32  *)pf[1];
+    f32  *spPosZ   = (f32  *)pf[2];
+    // 3-5: LinearVelocityX/Y/Z (zeroed by default)
+    // 6-8: ForceX/Y/Z (zeroed by default)
+    u32  *spBT     = (u32  *)pf[9];
+    f32  *spMass   = (f32  *)pf[10];
+    f32  *spInvM   = (f32  *)pf[11];
+    f32  *spRest   = (f32  *)pf[12];
+    f32  *spDamp   = (f32  *)pf[13];
+    f32  *spRad    = (f32  *)pf[14];
+    f32  *spHX     = (f32  *)pf[15];
+    f32  *spHY     = (f32  *)pf[16];
+    f32  *spHZ     = (f32  *)pf[17];
+    u32  *spShape  = (u32  *)pf[18];
+    Vec3 *spScale  = (Vec3 *)pf[19];
+
+    u32 idx = 0;
+    for (u32 i = 0; i < total; i++)
+    {
+        if (!isActive[i]) continue;
+        // Same eligibility check as counting pass above
+        u32 aid = archetypeIDs[i];
+        if (aid != (u32)-1 && aid < MAX_ARCHETYPE_SYSTEMS && g_ecsArchetypes[aid].arena)
+        {
+            StructLayout *lay = g_ecsArchetypes[aid].layout;
+            b8 hasPhysFields = false;
+            if (lay)
+            {
+                for (u32 f = 0; f < lay->count; f++)
+                {
+                    if (strcmp(lay->fields[f].name, "ColliderHalfX") == 0 ||
+                        strcmp(lay->fields[f].name, "SphereRadius") == 0)
+                    { hasPhysFields = true; break; }
+                }
+            }
+            if (hasPhysFields) continue;
+        }
+        b8 hasCollider = colliderShapes[i] != 0;
+        b8 hasHalfExtents = halfXs[i] > 0.0f || halfYs[i] > 0.0f || halfZs[i] > 0.0f;
+        b8 hasRadius = sphereRadii[i] > 0.0f;
+        if (!hasCollider && !hasHalfExtents && !hasRadius) continue;
+
+        spPosX[idx]  = positions[i].x;
+        spPosY[idx]  = positions[i].y;
+        spPosZ[idx]  = positions[i].z;
+        spBT[idx]    = physBodyTypes[i];
+        spMass[idx]  = masses[i];
+        spInvM[idx]  = (masses[i] > 0.0001f) ? (1.0f / masses[i]) : 0.0f;
+        spRest[idx]  = 0.3f;
+        spDamp[idx]  = 0.01f;
+        spRad[idx]   = sphereRadii[i];
+        spScale[idx] = scales[i];
+
+        // Infer box collider from half-extents or scale if colliderShape not set
+        u32 shape = colliderShapes[i];
+        f32 hx = halfXs[i], hy = halfYs[i], hz = halfZs[i];
+        if (shape == 0 && (hx > 0.0f || hy > 0.0f || hz > 0.0f))
+            shape = 2; // Box
+        if (shape == 0 && hasRadius)
+            shape = 1; // Sphere
+        if (shape == 2 && hx == 0.0f && hy == 0.0f && hz == 0.0f)
+        {
+            // Use half the scale as box extents
+            hx = scales[i].x * 0.5f;
+            hy = scales[i].y * 0.5f;
+            hz = scales[i].z * 0.5f;
+        }
+        spHX[idx]    = hx;
+        spHY[idx]    = hy;
+        spHZ[idx]    = hz;
+        spShape[idx] = shape;
+        idx++;
+    }
+    g_scenePhysArch.arena[0].count = idx;
+    if (idx > 0) g_scenePhysArch.activeChunkCount = 1;
+
+    for (u32 e = 0; e < idx; e++)
+    {
+        INFO("  ScenePhys[%u]: pos=(%.1f,%.1f,%.1f) bt=%u invM=%.4f shape=%u half=(%.2f,%.2f,%.2f) rad=%.2f",
+             e, spPosX[e], spPosY[e], spPosZ[e], spBT[e], spInvM[e], spShape[e],
+             spHX[e], spHY[e], spHZ[e], spRad[e]);
+    }
+    INFO("Scene physics: %u static colliders registered", idx);
+}
+
+static void cleanupScenePhysicsArchetype()
+{
+    if (g_scenePhysCreated)
+    {
+        destroyArchetype(&g_scenePhysArch);
+        memset(&g_scenePhysArch, 0, sizeof(Archetype));
+        g_scenePhysCreated = false;
+    }
+}
+
 // Sync per-system archetype data back to the scene archetype so the editor
 // renderer draws entities at their ECS-updated positions / rotations.
 static void syncEcsToScene()
@@ -924,8 +1122,8 @@ static void renderGameScene()
             glDepthFunc(GL_LESS);
         }
 
-        // Draw collider gizmos for all live physics archetypes (play mode)
-        if (showColliders)
+        // Draw collider gizmos for all live physics archetypes (play mode, debug only)
+        if (showColliders && !g_gameRunning)
         {
             for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
             {
@@ -4401,11 +4599,28 @@ void doBuildAndRun()
     populateEcsArchetypes();
 
     // Initialize physics world and auto-register any physics-body archetypes
+    memset(g_archPhysRegistered, 0, sizeof(g_archPhysRegistered));
     physInit(Vec3{0.0f, -9.81f, 0.0f}, 1.0f / 60.0f);
     for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
     {
         if (FLAG_CHECK(g_archRegistry.entries[a].flags, ARCH_PHYSICS_BODY) && g_ecsArchetypes[a].arena)
+        {
             physRegisterArchetype(physicsWorld, &g_ecsArchetypes[a]);
+            g_archPhysRegistered[a] = true;
+        }
+    }
+
+    // Register static scene-entity colliders (floor, walls, etc.) with physics
+    setupScenePhysicsArchetype();
+    if (g_scenePhysCreated)
+    {
+        physRegisterArchetype(physicsWorld, &g_scenePhysArch);
+        INFO("Registered scene physics archetype with physics world (count=%u)",
+             g_scenePhysArch.arena[0].count);
+    }
+    else
+    {
+        WARN("Scene physics archetype was NOT created — no floor collisions");
     }
 
     g_gameRunning = true;
@@ -4430,6 +4645,9 @@ void doStopGame()
     physShutdown();
     memset(g_archPhysRegistered, 0, sizeof(g_archPhysRegistered));
     memset(g_colliderCache, 0, sizeof(g_colliderCache));
+
+    // Destroy scene physics archetype (uses static layout, safe to destroy anytime)
+    cleanupScenePhysicsArchetype();
 
     // Destroy per-system archetypes (must happen while DLL is still loaded
     // since the layouts belong to the DLL).
@@ -4646,37 +4864,41 @@ void drawDockspaceAndPanels()
         ImGui::EndMenuBar();
     }
 
-    // build default layout once
+    // Build default layout only on first run or if no saved layout loaded
     static b8 first_time = true;
     if (first_time)
     {
         first_time = false;
-        ImGui::DockBuilderRemoveNode(dockspace_id);
-        ImGui::DockBuilderAddNode(
-            dockspace_id,
-            dockspace_flags | ImGuiDockNodeFlags_DockSpace);
-        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+        ImGuiDockNode *existingNode = ImGui::DockBuilderGetNode(dockspace_id);
+        if (!existingNode || !existingNode->IsSplitNode())
+        {
+            ImGui::DockBuilderRemoveNode(dockspace_id);
+            ImGui::DockBuilderAddNode(
+                dockspace_id,
+                dockspace_flags | ImGuiDockNodeFlags_DockSpace);
+            ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
 
-        ImGuiID dock_main_id = dockspace_id;
-        ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(
-            dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
+            ImGuiID dock_main_id = dockspace_id;
+            ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(
+                dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
 
-        ImGuiID dock_id_middle = ImGui::DockBuilderSplitNode(
-            dock_main_id, ImGuiDir_Right, 0.20f, nullptr, &dock_main_id);
-        ImGuiID dock_id_prefabs = ImGui::DockBuilderSplitNode(
-            dock_id_middle, ImGuiDir_Up, 0.5f, nullptr, &dock_id_middle);
+            ImGuiID dock_id_middle = ImGui::DockBuilderSplitNode(
+                dock_main_id, ImGuiDir_Right, 0.20f, nullptr, &dock_main_id);
+            ImGuiID dock_id_prefabs = ImGui::DockBuilderSplitNode(
+                dock_id_middle, ImGuiDir_Up, 0.5f, nullptr, &dock_id_middle);
 
-        ImGuiID dock_id_bottom = ImGui::DockBuilderSplitNode(
-            dock_main_id, ImGuiDir_Down, 0.25f, nullptr, &dock_main_id);
+            ImGuiID dock_id_bottom = ImGui::DockBuilderSplitNode(
+                dock_main_id, ImGuiDir_Down, 0.25f, nullptr, &dock_main_id);
 
-        ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
-        ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
-        ImGui::DockBuilderDockWindow("Scene List", dock_id_prefabs);
-        ImGui::DockBuilderDockWindow("Prefabs", dock_id_middle);
-        ImGui::DockBuilderDockWindow("Scenes", dock_id_middle);
-        ImGui::DockBuilderDockWindow("Profiler", dock_id_bottom);
-        ImGui::DockBuilderDockWindow("Build Log", dock_id_bottom);
-        ImGui::DockBuilderFinish(dockspace_id);
+            ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
+            ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
+            ImGui::DockBuilderDockWindow("Scene List", dock_id_prefabs);
+            ImGui::DockBuilderDockWindow("Prefabs", dock_id_middle);
+            ImGui::DockBuilderDockWindow("Scenes", dock_id_middle);
+            ImGui::DockBuilderDockWindow("Profiler", dock_id_bottom);
+            ImGui::DockBuilderDockWindow("Build Log", dock_id_bottom);
+            ImGui::DockBuilderFinish(dockspace_id);
+        }
     }
 
     //--actual docked windows--
