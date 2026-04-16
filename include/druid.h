@@ -745,6 +745,16 @@ extern "C"
         u8  flags;
     } Archetype;
 
+    typedef struct
+    {
+        void **fields;   // NULL on failure
+        u32 chunkIdx;
+        u32 localIdx;
+        u32 poolIdx;
+    } ArchetypeSpawnData;
+
+    typedef void (*ArchetypeInitCallback)(ArchetypeSpawnData *result, void *userdata);
+
     // Archetype API (declarations only) - implementations live in systems/ecs
     DAPI b8 createArchetype(StructLayout *layout, u32 capacity,
                             Archetype *outArchetype);
@@ -766,6 +776,10 @@ extern "C"
     DAPI u32  archetypePoolSpawn(Archetype *arch);
     DAPI void archetypePoolDespawn(Archetype *arch, u32 index);
     DAPI b8   archetypePoolIsAlive(Archetype *arch, u32 index);
+    DAPI ArchetypeSpawnData archetypeSpawnIn(Archetype *arch);
+    DAPI ArchetypeSpawnData archetypeSpawnInWithCallback(Archetype *arch,
+                                                         ArchetypeInitCallback callback,
+                                                         void *userdata);
 
     // Chunk query helpers
     DAPI u32 archetypeEntityCount(Archetype *arch);

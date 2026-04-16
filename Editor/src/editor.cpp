@@ -4950,8 +4950,12 @@ void drawDockspaceAndPanels()
         for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
         {
             if (!g_ecsSystemLoaded[a] || !g_ecsSystems[a].update) continue;
-            // Buffered archetypes always tick (pool spawn can add entities at runtime)
-            if (g_ecsArchEntityCount[a] > 0 || FLAG_CHECK(g_ecsArchetypes[a].flags, ARCH_BUFFERED))
+            // Runtime-spawn archetypes must tick even with zero scene entities.
+            // Prefer explicit buffered flag, but fall back to non-zero poolCapacity
+            // in case source metadata parsing missed ARCH_BUFFERED.
+            if (g_ecsArchEntityCount[a] > 0
+                || FLAG_CHECK(g_ecsArchetypes[a].flags, ARCH_BUFFERED)
+                || g_ecsArchetypes[a].poolCapacity > 0)
                 g_ecsSystems[a].update(&g_ecsArchetypes[a], dt);
         }
         } // PROFILE_SCOPE("ECS Update")

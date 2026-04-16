@@ -46,6 +46,17 @@ static void setupChunkFieldPointers(EntityArena *chunk, StructLayout *layout,
     }
 }
 
+static b8 mapPoolIndexToChunkLocal(const Archetype *arch, u32 poolIndex,
+                                   u32 *outChunkIdx, u32 *outLocalIdx)
+{
+    if (!arch || arch->chunkCapacity == 0 || !outChunkIdx || !outLocalIdx)
+        return false;
+
+    *outChunkIdx = poolIndex / arch->chunkCapacity;
+    *outLocalIdx = poolIndex % arch->chunkCapacity;
+    return true;
+}
+
 //=====================================================================================================================
 // Chunk query helpers
 
@@ -557,9 +568,13 @@ u32 archetypePoolSpawn(Archetype *arch)
     {
         u32 index = arch->deadIndices[--arch->deadCount];
 
-        // Determine chunk and local index
-        u32 chunkIdx = index / arch->chunkCapacity;
-        u32 localIdx = index % arch->chunkCapacity;
+        u32 chunkIdx = 0;
+        u32 localIdx = 0;
+        if (!mapPoolIndexToChunkLocal(arch, index, &chunkIdx, &localIdx))
+        {
+            ERROR("archetypePoolSpawn: Failed to map index from free-list");
+            return (u32)-1;
+        }
 
         // Sanity check (should never fail if free-list is properly maintained)
         if (chunkIdx >= arch->arenaCount)
@@ -571,6 +586,11 @@ u32 archetypePoolSpawn(Archetype *arch)
         // Mark entity alive
         b8 *alive = (b8 *)arch->arena[chunkIdx].fields[0];
         alive[localIdx] = true;
+
+        // Buffered archetypes use a stable pool index. Keep chunk count as
+        // a high-water mark so chunk iteration can reach this slot.
+        if (localIdx + 1 > arch->arena[chunkIdx].count)
+            arch->arena[chunkIdx].count = localIdx + 1;
 
         // Update active chunk count if needed
         if (chunkIdx + 1 > arch->activeChunkCount)
@@ -623,6 +643,8 @@ void archetypePoolDespawn(Archetype *arch, u32 poolIndex)
     b8 *alive = (b8 *)arch->arena[chunkIdx].fields[0];
     if (localIdx < arch->arena[chunkIdx].count)
     {
+        if (!alive[localIdx]) return;
+
         alive[localIdx] = false;
 
         arch->cachedEntityCount--;
@@ -647,4 +669,66 @@ b8 archetypePoolIsAlive(Archetype *arch, u32 poolIndex)
 
     b8 *alive = (b8 *)arch->arena[chunkIdx].fields[0];
     return alive[localIdx];
+}
+
+ArchetypeSpawnData archetypeSpawnIn(Archetype *arch)
+{
+    ArchetypeSpawnData result;
+    result.fields = NULL;
+    result.chunkIdx = (u32)-1;
+    result.localIdx = (u32)-1;
+    result.poolIdx = (u32)-1;
+
+    if (!arch || !FLAG_CHECK(arch->flags, ARCH_BUFFERED))
+    {
+        ERROR("archetypeSpawnIn: NULL archetype or not buffered");
+        return result;
+    }
+
+    u32 poolIdx = archetypePoolSpawn(arch);
+    if (poolIdx == (u32)-1)
+        return result;
+
+    u32 chunkIdx = 0;
+    u32 localIdx = 0;
+    if (!mapPoolIndexToChunkLocal(arch, poolIdx, &chunkIdx, &localIdx))
+    {
+        ERROR("archetypeSpawnIn: Failed to map pool index");
+        return result;
+    }
+
+    if (chunkIdx >= arch->arenaCount)
+    {
+        ERROR("archetypeSpawnIn: Resolved chunk index out of bounds");
+        return result;
+    }
+
+    if (localIdx >= arch->arena[chunkIdx].count)
+    {
+        ERROR("archetypeSpawnIn: Resolved local index out of bounds");
+        return result;
+    }
+
+    result.fields = getArchetypeFields(arch, chunkIdx);
+    if (!result.fields)
+        return result;
+
+    result.chunkIdx = chunkIdx;
+    result.localIdx = localIdx;
+    result.poolIdx = poolIdx;
+    return result;
+}
+
+ArchetypeSpawnData archetypeSpawnInWithCallback(Archetype *arch,
+                                                ArchetypeInitCallback callback,
+                                                void *userdata)
+{
+    ArchetypeSpawnData result = archetypeSpawnIn(arch);
+
+    if (result.fields && callback)
+    {
+        callback(&result, userdata);
+    }
+
+    return result;
 }
