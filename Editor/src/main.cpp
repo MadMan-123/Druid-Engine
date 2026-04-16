@@ -207,6 +207,18 @@ void rebindArchetypeFields()
     colliderHalfXs    = (fieldCount > 16) ? (f32 *)fields[16] : nullptr;
     colliderHalfYs    = (fieldCount > 17) ? (f32 *)fields[17] : nullptr;
     colliderHalfZs    = (fieldCount > 18) ? (f32 *)fields[18] : nullptr;
+    isLight           = (fieldCount > 19) ? (b8 *)fields[19]  : nullptr;
+    lightTypes        = (fieldCount > 20) ? (u32 *)fields[20] : nullptr;
+    lightRanges       = (fieldCount > 21) ? (f32 *)fields[21] : nullptr;
+    lightColorRs      = (fieldCount > 22) ? (f32 *)fields[22] : nullptr;
+    lightColorGs      = (fieldCount > 23) ? (f32 *)fields[23] : nullptr;
+    lightColorBs      = (fieldCount > 24) ? (f32 *)fields[24] : nullptr;
+    lightIntensities  = (fieldCount > 25) ? (f32 *)fields[25] : nullptr;
+    lightDirXs        = (fieldCount > 26) ? (f32 *)fields[26] : nullptr;
+    lightDirYs        = (fieldCount > 27) ? (f32 *)fields[27] : nullptr;
+    lightDirZs        = (fieldCount > 28) ? (f32 *)fields[28] : nullptr;
+    lightInnerCones   = (fieldCount > 29) ? (f32 *)fields[29] : nullptr;
+    lightOuterCones   = (fieldCount > 30) ? (f32 *)fields[30] : nullptr;
 }
 
 // After loading an old scene whose layout has fewer fields than the current
@@ -339,6 +351,18 @@ f32 *sphereRadii = nullptr;
 f32 *colliderHalfXs = nullptr;
 f32 *colliderHalfYs = nullptr;
 f32 *colliderHalfZs = nullptr;
+b8  *isLight = nullptr;
+u32 *lightTypes = nullptr;
+f32 *lightRanges = nullptr;
+f32 *lightColorRs = nullptr;
+f32 *lightColorGs = nullptr;
+f32 *lightColorBs = nullptr;
+f32 *lightIntensities = nullptr;
+f32 *lightDirXs = nullptr;
+f32 *lightDirYs = nullptr;
+f32 *lightDirZs = nullptr;
+f32 *lightInnerCones = nullptr;
+f32 *lightOuterCones = nullptr;
 Material *materials = nullptr;
 
 void init()

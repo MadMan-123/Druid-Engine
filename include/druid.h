@@ -720,8 +720,8 @@ extern "C"
     // Archetype flags (stored in Archetype.flags as a b8 bitfield)
     #define ARCH_SINGLE       0  // holds exactly one entity (e.g. Player)
     #define ARCH_PERSISTENT   1  // survives scene switches
-    #define ARCH_BUFFERED     2  // pool semantics, Alive field at index 0
-    #define ARCH_PHYSICS_BODY 3  // engine tracks this archetype for physics simulation
+    #define ARCH_PHYSICS_BODY 2  // engine tracks this archetype for physics simulation
+    #define ARCH_BUFFERED     3  // pool semantics, Alive field at index 0
     #define ARCH_NO_SPLIT     4  // all fields in one contiguous block (no hot/cold separation)
 
     typedef struct
@@ -837,7 +837,7 @@ extern "C"
     #define MAX_ARCHETYPE_SYSTEMS 32
 
     // ArchetypeFileEntry flags (stored in ArchetypeFileEntry.flags)
-    // Reuses ARCH_SINGLE(0), ARCH_PERSISTENT(1), ARCH_BUFFERED(2), ARCH_PHYSICS_BODY(3)
+    // Reuses ARCH_SINGLE(0), ARCH_PERSISTENT(1), ARCH_PHYSICS_BODY(2), ARCH_BUFFERED(3)
     #define ARCH_FILE_UNIFORM_SCALE 4  // Scale is f32 instead of Vec3
 
     typedef struct
@@ -1263,6 +1263,10 @@ extern "C"
         u32 envMapTex;
         f32 time;
 
+        // lights SSBO
+        u32 lightSSBO;
+        u32 lightCount;
+
         // 1-byte fields
         b8  useDeferredRendering;
 
@@ -1328,6 +1332,28 @@ extern "C"
     DAPI Camera *rendererGetCamera(Renderer *r, u32 index);
     DAPI u32     rendererGetActiveCamera(Renderer *r);
 
+    // ---- Lights ----
+
+    #define LIGHT_TYPE_POINT       0
+    #define LIGHT_TYPE_DIRECTIONAL 1
+    #define LIGHT_TYPE_SPOT        2
+    #define MAX_LIGHTS             128
+
+    typedef struct
+    {
+        f32 posX, posY, posZ;
+        f32 range;
+        f32 colorR, colorG, colorB;
+        f32 intensity;
+        f32 dirX, dirY, dirZ;
+        f32 innerCone;
+        f32 outerCone;
+        u32 type;
+        f32 _pad[2];
+    } GPULight;
+
+    DAPI void  rendererUploadLights(Renderer *r, const GPULight *lights, u32 count);
+    DAPI u32   rendererGetLightSSBO(Renderer *r);
 
     //=====================================================================================================================
     // Shaders
@@ -2115,6 +2141,8 @@ extern "C"
         DAPI f32  getLookAxisX(void);
         DAPI f32  getLookAxisY(void);
         DAPI void setInputCaptureState(b8 captured);
+        DAPI void setMouseCaptured(b8 captured);
+        DAPI b8   isMouseCaptured(void);
 
     DAPI extern f32 xInputAxis;
     DAPI extern f32 yInputAxis;

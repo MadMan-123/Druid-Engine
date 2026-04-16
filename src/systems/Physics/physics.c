@@ -5,7 +5,6 @@
 
 //=====================================================================================================================
 // Constants
-//=====================================================================================================================
 
 #define MAX_PHYS_ARCHETYPES  16
 #define MAX_PHYS_PAIRS       65536
@@ -18,7 +17,6 @@
 
 //=====================================================================================================================
 // PhysFieldBinding — cached per-archetype field indices, built once at registration
-//=====================================================================================================================
 
 typedef struct
 {
@@ -40,7 +38,6 @@ typedef struct
 
 //=====================================================================================================================
 // CollisionPair — indices into registered archetypes
-//=====================================================================================================================
 
 typedef struct
 {
@@ -48,14 +45,6 @@ typedef struct
     u32 archB,  indexB, chunkB;
     u32 shapeA, shapeB;  // cached from broadphase — avoids re-inferring in narrowphase
 } CollisionPair;
-
-//=====================================================================================================================
-// Flat body SoA arrays — rebuilt every substep for the spatial hash
-//
-// DoD: separate arrays per field so broadphase iteration (position + radius only)
-// touches minimal cache lines. AoS PhysBodyFlat was 48 bytes/body — broadphase
-// only needs pos+radius (16 bytes) but loaded 48 bytes per body per cache line.
-//=====================================================================================================================
 
 static f32 g_bpPosX[MAX_PHYS_BODIES];
 static f32 g_bpPosY[MAX_PHYS_BODIES];
@@ -73,7 +62,6 @@ static u32 g_bodyCount;
 
 //=====================================================================================================================
 // Spatial hash grid — single-cell insertion + 27-neighbor query
-//=====================================================================================================================
 
 #define SH_TABLE_SIZE 262144u  // power of 2, sized for up to 1M bodies
 #define SH_SENTINEL   0xFFFFFFFFu
@@ -117,7 +105,6 @@ static void sh_insert(u32 idx)
 
 //=====================================================================================================================
 // PhysicsWorld struct
-//=====================================================================================================================
 
 struct PhysicsWorld
 {
@@ -151,7 +138,6 @@ struct PhysicsWorld
 
 //=====================================================================================================================
 // Field binding helpers
-//=====================================================================================================================
 
 static i32 findField(StructLayout *layout, const c8 *name)
 {
@@ -198,7 +184,6 @@ static PhysFieldBinding buildBinding(StructLayout *layout)
 
 //=====================================================================================================================
 // Effective collider size helpers — scale fallback when explicit sizes are 0
-//=====================================================================================================================
 
 static f32 clampf_local(f32 v, f32 lo, f32 hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -268,7 +253,6 @@ static u32 inferShape(void **fields, PhysFieldBinding *b, u32 i)
 
 //=====================================================================================================================
 // Flat body list build — iterate all registered archetypes each substep
-//=====================================================================================================================
 
 static void buildBodyList(PhysicsWorld *world)
 {
@@ -329,7 +313,6 @@ static void buildBodyList(PhysicsWorld *world)
 
 //=====================================================================================================================
 // Spatial hash broadphase — O(N) build, O(N·27·k) query
-//=====================================================================================================================
 
 static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
 {
@@ -405,7 +388,6 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
 
 //=====================================================================================================================
 // Narrowphase contact generation — sphere-sphere, sphere-box, box-box
-//=====================================================================================================================
 
 static b8 contactSphereSphere(Vec3 pa, f32 ra, Vec3 pb, f32 rb, ContactManifold *m)
 {
@@ -504,7 +486,6 @@ static b8 contactBoxBox(Vec3 pa, Vec3 ha, Vec3 pb, Vec3 hb, ContactManifold *m)
 
 //=====================================================================================================================
 // World lifecycle
-//=====================================================================================================================
 
 PhysicsWorld *physWorldCreate(Vec3 gravity, f32 timestep)
 {
@@ -538,7 +519,6 @@ void physWorldDestroy(PhysicsWorld *world)
 
 //=====================================================================================================================
 // physWorldStep — fixed-timestep simulation tick
-//=====================================================================================================================
 
 void physWorldStep(PhysicsWorld *world, f32 dt)
 {
@@ -830,7 +810,6 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
 
 //=====================================================================================================================
 // World settings
-//=====================================================================================================================
 
 void physWorldSetGravity(PhysicsWorld *world, Vec3 gravity)     { if (world) world->gravity = gravity; }
 void physWorldSetIterations(PhysicsWorld *world, u32 i)         { if (world) world->solverIterations = i; }
@@ -848,7 +827,6 @@ void physWorldSetVisibility(PhysicsWorld *world, const b8 *visible, u32 count, u
 
 //=====================================================================================================================
 // Archetype registration
-//=====================================================================================================================
 
 void physRegisterArchetype(PhysicsWorld *world, Archetype *arch)
 {
@@ -876,7 +854,6 @@ Archetype *physGetBodyArchetype(PhysicsWorld *world, u32 index)
 }
 
 // Binding accessor functions — expose cached bindings for broadphase/narrowphase queries
-//=====================================================================================================================
 
 PhysFieldBinding *physGetBindingByIndex(PhysicsWorld *world, u32 index)
 {
@@ -886,7 +863,6 @@ PhysFieldBinding *physGetBindingByIndex(PhysicsWorld *world, u32 index)
 
 //=====================================================================================================================
 // Physics DLL loading
-//=====================================================================================================================
 
 b8 loadPhysicsDLL(const c8 *dllPath, PhysicsDLL *out)
 {
@@ -916,7 +892,6 @@ void unloadPhysicsDLL(PhysicsDLL *dll)
 
 //=====================================================================================================================
 // Global physics singleton
-//=====================================================================================================================
 
 PhysicsWorld *physicsWorld = NULL;
 

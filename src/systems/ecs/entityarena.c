@@ -22,7 +22,6 @@ u32 getEntitySize(StructLayout* layout)
 
 //=====================================================================================================================
 // Chunked allocation - create a single fixed-size chunk
-//=====================================================================================================================
 
 EntityArena createEntityArenaChunk(StructLayout *layout, u32 chunkCapacity)
 {
@@ -76,7 +75,6 @@ void freeEntityArenaChunk(EntityArena *chunk)
 
 //=====================================================================================================================
 // Legacy - create Entity Arena (single big allocation, splits if > 64MB)
-//=====================================================================================================================
 
 EntityArena* createEntityArena(StructLayout* layout, u32 entityCount, u32* outArenas)
 {

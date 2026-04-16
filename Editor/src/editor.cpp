@@ -44,7 +44,19 @@ DEFINE_ARCHETYPE(SceneEntity,
     FIELD(f32, sphereRadius),     // sphere collision radius — copied to SphereRadius
     FIELD(f32, colliderHalfX),    // box half-extent X — copied to ColliderHalfX
     FIELD(f32, colliderHalfY),    // box half-extent Y — copied to ColliderHalfY
-    FIELD(f32, colliderHalfZ)     // box half-extent Z — copied to ColliderHalfZ
+    FIELD(f32, colliderHalfZ),    // box half-extent Z — copied to ColliderHalfZ
+    FIELD(b8, isLight),           // marks entity as a light source
+    FIELD(u32, lightType),        // LIGHT_TYPE_POINT/DIRECTIONAL/SPOT
+    FIELD(f32, lightRange),       // attenuation distance
+    FIELD(f32, lightColorR),      // light color R
+    FIELD(f32, lightColorG),      // light color G
+    FIELD(f32, lightColorB),      // light color B
+    FIELD(f32, lightIntensity),   // brightness multiplier
+    FIELD(f32, lightDirX),        // direction X (spot/directional)
+    FIELD(f32, lightDirY),        // direction Y (spot/directional)
+    FIELD(f32, lightDirZ),        // direction Z (spot/directional)
+    FIELD(f32, lightInnerCone),   // spot inner cone angle (cosine)
+    FIELD(f32, lightOuterCone)    // spot outer cone angle (cosine)
 );
 
 // Editor-side registry of user-created archetypes
@@ -65,6 +77,7 @@ static b8 showScenesPanel = true;
 b8 showSkyboxSettings = false;
 static b8 showCameraSettings = false;
 static b8 showColliders = true;
+static b8 showLightGizmos = true;
 static b8 showLoadedEntities = false;
 
 // Editor camera clip/fov settings — adjusted via Camera Settings panel
@@ -713,6 +726,41 @@ static void resizeViewportFramebuffers(u32 width, u32 height)
     }
 }
 
+static void uploadSceneLights()
+{
+    if (!isLight || !positions) return;
+
+    GPULight lights[MAX_LIGHTS];
+    u32 count = 0;
+    u32 total = sceneArchetype.arena[0].count;
+
+    for (u32 i = 0; i < total && count < MAX_LIGHTS; i++)
+    {
+        if (!isLight[i]) continue;
+
+        GPULight *l = &lights[count];
+        l->posX = positions[i].x;
+        l->posY = positions[i].y;
+        l->posZ = positions[i].z;
+        l->range     = lightRanges      ? lightRanges[i]      : 10.0f;
+        l->colorR    = lightColorRs     ? lightColorRs[i]     : 1.0f;
+        l->colorG    = lightColorGs     ? lightColorGs[i]     : 1.0f;
+        l->colorB    = lightColorBs     ? lightColorBs[i]     : 1.0f;
+        l->intensity = lightIntensities ? lightIntensities[i] : 1.0f;
+        l->dirX      = lightDirXs       ? lightDirXs[i]       : 0.0f;
+        l->dirY      = lightDirYs       ? lightDirYs[i]       : -1.0f;
+        l->dirZ      = lightDirZs       ? lightDirZs[i]       : 0.0f;
+        l->innerCone = lightInnerCones  ? lightInnerCones[i]  : 0.9063f;
+        l->outerCone = lightOuterCones  ? lightOuterCones[i]  : 0.8192f;
+        l->type      = lightTypes       ? lightTypes[i]        : LIGHT_TYPE_POINT;
+        l->_pad[0]   = 0.0f;
+        l->_pad[1]   = 0.0f;
+        count++;
+    }
+
+    rendererUploadLights(renderer, lights, count);
+}
+
 static void renderGameScene()
 {
     // Ensure framebuffer exists before rendering
@@ -855,6 +903,9 @@ static void renderGameScene()
         if (deferred)
         {
             rendererEndDeferredPass(renderer);
+
+            // Upload scene lights before lighting pass
+            uploadSceneLights();
 
             // Lighting pass renders to the viewport FBO
             bindFramebuffer(&viewportFBs[activeFBO]);
@@ -1028,6 +1079,8 @@ static void renderGameScene()
         // End geometry pass, run lighting into the viewport FBO
         rendererEndDeferredPass(renderer);
 
+        uploadSceneLights();
+
         bindFramebuffer(&viewportFBs[activeFBO]);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         rendererLightingPass(renderer, deferredLightingShader);
@@ -1081,6 +1134,53 @@ static void renderGameScene()
                 f32 hz = colliderHalfZs[id] > 0.0f ? colliderHalfZs[id] : 0.5f;
                 Vec3 half = {hx, hy, hz};
                 gizmoDrawBox(pos, half, col);
+            }
+        }
+    }
+
+    // Draw light gizmos for all scene entities marked as lights (edit mode)
+    if (showLightGizmos && isLight)
+    {
+        for (u32 id = 0; id < entityCount; id++)
+        {
+            if (!isActive[id] || !isLight[id]) continue;
+
+            Vec3 pos = positions[id];
+            f32 cr = lightColorRs ? lightColorRs[id] : 1.0f;
+            f32 cg = lightColorGs ? lightColorGs[id] : 1.0f;
+            f32 cb = lightColorBs ? lightColorBs[id] : 1.0f;
+            GizmoColor col = makeGizmoColor(cr, cg, cb, 1.0f);
+            u32 lt = lightTypes ? lightTypes[id] : 0;
+
+            if (lt == LIGHT_TYPE_POINT)
+            {
+                f32 r = lightRanges ? lightRanges[id] * 0.1f : 0.3f;
+                if (r < 0.1f) r = 0.1f;
+                if (r > 2.0f) r = 2.0f;
+                gizmoDrawSphere(pos, r, col);
+            }
+            else if (lt == LIGHT_TYPE_DIRECTIONAL)
+            {
+                Vec3 dir = {
+                    lightDirXs ? lightDirXs[id] : 0.0f,
+                    lightDirYs ? lightDirYs[id] : -1.0f,
+                    lightDirZs ? lightDirZs[id] : 0.0f
+                };
+                Vec3 end = v3Add(pos, v3Scale(dir, 2.0f));
+                gizmoDrawArrow(pos, end, 0.15f, col);
+            }
+            else if (lt == LIGHT_TYPE_SPOT)
+            {
+                Vec3 dir = {
+                    lightDirXs ? lightDirXs[id] : 0.0f,
+                    lightDirYs ? lightDirYs[id] : -1.0f,
+                    lightDirZs ? lightDirZs[id] : 0.0f
+                };
+                Vec3 end = v3Add(pos, v3Scale(dir, 2.0f));
+                gizmoDrawArrow(pos, end, 0.15f, col);
+                f32 outerCos = lightOuterCones ? lightOuterCones[id] : 0.8192f;
+                f32 coneRadius = sqrtf(1.0f - outerCos * outerCos) / (outerCos > 0.01f ? outerCos : 0.01f);
+                gizmoDrawCircle(end, dir, coneRadius, col);
             }
         }
     }
@@ -1621,12 +1721,9 @@ void scanProjectArchetypes(const c8 *projectDir)
                 FLAG_SET(entry->flags, ARCH_PHYSICS_BODY);
         }
 
-        // Physics archetypes should not be treated as single-instance in the editor.
-        if (FLAG_CHECK(entry->flags, ARCH_PHYSICS_BODY) && FLAG_CHECK(entry->flags, ARCH_SINGLE))
-        {
-            FLAG_CLEAR(entry->flags, ARCH_SINGLE);
-            WARN("scanProjectArchetypes: clearing ARCH_SINGLE for physics archetype '%s'", entry->name);
-        }
+        // ARCH_SINGLE + ARCH_PHYSICS_BODY is valid (e.g. Player archetype).
+        // Previously this code would clear ARCH_SINGLE for physics bodies,
+        // but the two flags are independent and can be combined.
 
         // Scan for POOL_CAPACITY define
         {
@@ -1648,6 +1745,48 @@ void scanProjectArchetypes(const c8 *projectDir)
     }
 
     free(files);
+
+    // Auto-register built-in StaticObject archetype if not found in project files
+    {
+        b8 hasStaticObject = false;
+        for (u32 a = 0; a < g_archRegistry.count; a++)
+            if (strcmp(g_archRegistry.entries[a].name, "StaticObject") == 0)
+            { hasStaticObject = true; break; }
+
+        if (!hasStaticObject && g_archRegistry.count < MAX_ARCHETYPE_SYSTEMS)
+        {
+            u32 idx = g_archRegistry.count;
+            ArchetypeFileEntry *entry = &g_archRegistry.entries[idx];
+            strncpy(entry->name, "StaticObject", MAX_SCENE_NAME - 1);
+            entry->headerPath[0] = '\0';
+            entry->sourcePath[0] = '\0';
+            entry->flags = 0;
+            FLAG_SET(entry->flags, ARCH_PHYSICS_BODY);
+            entry->poolCapacity = 0;
+
+            static const c8 *soFieldNames[] = {
+                "PositionX", "PositionY", "PositionZ", "Rotation", "Scale", "ModelID"
+            };
+            static const u32 soFieldSizes[] = {
+                sizeof(f32), sizeof(f32), sizeof(f32), sizeof(Vec4), sizeof(Vec3), sizeof(u32)
+            };
+            u32 soCount = 6;
+
+            for (u32 f = 0; f < soCount; f++)
+            {
+                strncpy(g_scannedFieldNames[idx][f], soFieldNames[f], 127);
+                g_scannedFields[idx][f].name = g_scannedFieldNames[idx][f];
+                g_scannedFields[idx][f].size = soFieldSizes[f];
+                g_scannedFields[idx][f].temperature = (f < 5) ? FIELD_TEMP_HOT : FIELD_TEMP_COLD;
+            }
+            entry->layout.name   = entry->name;
+            entry->layout.fields = g_scannedFields[idx];
+            entry->layout.count  = soCount;
+            g_archRegistry.count++;
+
+            INFO("Auto-registered built-in archetype: StaticObject");
+        }
+    }
 }
 
 static void drawPrefabsWindow()
@@ -1688,29 +1827,27 @@ static void drawPrefabsWindow()
     ImGui::Separator();
 
     ImGui::InputText("Name", archName, sizeof(archName));
-    const bool singleLockedByPhysics = archIsPhysicsBody;
-    if (singleLockedByPhysics && archIsSingle)
+
+    // isBuffered locks out isSingle (buffered pools are always multi-entity)
+    const bool singleLockedByBuffered = archIsBuffered;
+    if (singleLockedByBuffered && archIsSingle)
         archIsSingle = false;
 
-    if (singleLockedByPhysics)
+    if (singleLockedByBuffered)
         ImGui::BeginDisabled();
     ImGui::Checkbox("isSingle", &archIsSingle);
-    if (singleLockedByPhysics)
+    if (singleLockedByBuffered)
     {
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Physics body archetypes cannot be single-instance.");
+            ImGui::SetTooltip("Buffered archetypes cannot be single-instance.");
     }
+    ImGui::SameLine();
+    ImGui::Checkbox("isPhysicsBody", &archIsPhysicsBody);
     ImGui::SameLine();
     ImGui::Checkbox("isPersistent", &archIsPersistent);
     ImGui::SameLine();
-    ImGui::Checkbox("isBuffered", &archIsBuffered);
-    ImGui::SameLine();
-    if (ImGui::Checkbox("isPhysicsBody", &archIsPhysicsBody) && archIsPhysicsBody)
-        archIsSingle = false;
-
-    // Keep physics archetypes multi-entity in editor tooling.
-    if (archIsPhysicsBody)
+    if (ImGui::Checkbox("isBuffered", &archIsBuffered) && archIsBuffered)
         archIsSingle = false;
 
     if (archIsBuffered)
@@ -1836,7 +1973,7 @@ static void drawPrefabsWindow()
                 snprintf(entry->headerPath, MAX_PATH_LENGTH, "src/%s.h", archName);
                 snprintf(entry->sourcePath, MAX_PATH_LENGTH, "src/%s.%s", archName, archUseCpp ? "cpp" : "c");
                 entry->flags = 0;
-                if (archIsSingle && !archIsPhysicsBody) FLAG_SET(entry->flags, ARCH_SINGLE);
+                if (archIsSingle && !archIsBuffered) FLAG_SET(entry->flags, ARCH_SINGLE);
                 if (archIsPersistent)  FLAG_SET(entry->flags, ARCH_PERSISTENT);
                 if (archUniformScale)  FLAG_SET(entry->flags, ARCH_FILE_UNIFORM_SCALE);
                 if (archIsBuffered)    FLAG_SET(entry->flags, ARCH_BUFFERED);
@@ -1867,6 +2004,48 @@ static void drawPrefabsWindow()
         ImGui::SameLine();
         ImGui::TextWrapped("%s", resultMsg);
     }
+
+    // ---- Quick-create templates ----
+    ImGui::Separator();
+    ImGui::Text("Templates");
+    if (ImGui::Button("Create StaticObject") && hubProjectDir[0] != '\0')
+    {
+        // Check if StaticObject already exists
+        b8 exists = false;
+        for (u32 a = 0; a < g_archRegistry.count; a++)
+            if (strcmp(g_archRegistry.entries[a].name, "StaticObject") == 0)
+            { exists = true; break; }
+
+        if (exists)
+        {
+            snprintf(resultMsg, sizeof(resultMsg), "StaticObject archetype already exists.");
+        }
+        else
+        {
+            FieldInfo soFields[] = {
+                { "PositionX",      sizeof(f32),  FIELD_TEMP_HOT },
+                { "PositionY",      sizeof(f32),  FIELD_TEMP_HOT },
+                { "PositionZ",      sizeof(f32),  FIELD_TEMP_HOT },
+                { "Rotation",       sizeof(Vec4), FIELD_TEMP_HOT },
+                { "Scale",          sizeof(Vec3), FIELD_TEMP_HOT },
+                { "ModelID",        sizeof(u32),  FIELD_TEMP_HOT },
+            };
+            const c8 *soTypes[] = { "f32", "f32", "f32", "Vec4", "Vec3", "u32" };
+            u32 soCount = sizeof(soFields) / sizeof(soFields[0]);
+
+            if (generateArchetypeFiles(hubProjectDir, "StaticObject",
+                    soFields, soTypes, soCount,
+                    false, false, 0, true, false))
+            {
+                snprintf(resultMsg, sizeof(resultMsg), "Generated StaticObject archetype.");
+                scanProjectArchetypes(hubProjectDir);
+            }
+            else
+                snprintf(resultMsg, sizeof(resultMsg), "Failed to generate StaticObject archetype.");
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(isPhysicsBody, static collider, no code needed)");
 
     // ---- Registered Archetypes list ----
     ImGui::Separator();
@@ -2094,7 +2273,7 @@ static void drawPrefabsWindow()
                     {
                         entry->layout.count  = rgTotal;
                         entry->flags = 0;
-                        if (archIsSingle && !archIsPhysicsBody) FLAG_SET(entry->flags, ARCH_SINGLE);
+                        if (archIsSingle && !archIsBuffered) FLAG_SET(entry->flags, ARCH_SINGLE);
                         if (archIsPersistent)  FLAG_SET(entry->flags, ARCH_PERSISTENT);
                         if (archUniformScale)  FLAG_SET(entry->flags, ARCH_FILE_UNIFORM_SCALE);
                         if (archIsBuffered)    FLAG_SET(entry->flags, ARCH_BUFFERED);
@@ -2854,21 +3033,21 @@ static void drawSceneListWindow()
         {
             WARN("Cannot add entity: reached maximum entity count (%u)", entitySizeCache);
         }
-        else 
+        else
         {
             isActive[entityCount] = true;
             scales[entityCount] = {1, 1, 1};
             positions[entityCount] = {0, 0, 0};
             rotations[entityCount] = quatIdentity();
-            modelIDs[entityCount] = (u32)-1; // Initialize modelID to an invalid index
+            modelIDs[entityCount] = (u32)-1;
             entityMaterialIDs[entityCount] = (u32)-1;
             shaderHandles[entityCount] = 0;
             archetypeIDs[entityCount] = (u32)-1;
-            if (ecsSlotIDs)      ecsSlotIDs[entityCount]      = (u32)-1;
-            if (sceneCameraFlags) sceneCameraFlags[entityCount] = false;
-            if (entityTags)      entityTags[entityCount * 32]  = '\0';
+            if (ecsSlotIDs)       ecsSlotIDs[entityCount]       = (u32)-1;
+            if (sceneCameraFlags) sceneCameraFlags[entityCount]  = false;
+            if (entityTags)       entityTags[entityCount * 32]   = '\0';
+            if (isLight)          isLight[entityCount]           = false;
 
-            // make the inital name this
             sprintf(&names[entityCount * MAX_NAME_SIZE], "Entity %d", entityCount);
 
             entityCount++;
@@ -2927,6 +3106,8 @@ static void drawSceneListWindow()
 
         if (sceneCameraFlags && sceneCameraFlags[i])
             snprintf(buttonLabel, sizeof(buttonLabel), "%s[Camera] %s", tagPrefix, baseLabel);
+        else if (isLight && isLight[i])
+            snprintf(buttonLabel, sizeof(buttonLabel), "%s[Light] %s", tagPrefix, baseLabel);
         else
             snprintf(buttonLabel, sizeof(buttonLabel), "%s%s", tagPrefix, baseLabel);
 
@@ -3075,6 +3256,32 @@ static void drawInspectorWindow()
 
         ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE],
                          MAX_NAME_SIZE);
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
+        if (ImGui::Button("Delete"))
+        {
+            u32 rem = inspectorEntityID;
+            u32 last = entityCount - 1;
+            if (rem != last)
+            {
+                void **fields = getArchetypeFields(&sceneArchetype, 0);
+                u32 fc = sceneArchetype.layout->count;
+                for (u32 f = 0; f < fc; f++)
+                {
+                    u32 sz = sceneArchetype.layout->fields[f].size;
+                    u8 *base = (u8 *)fields[f];
+                    memcpy(base + rem * sz, base + last * sz, sz);
+                }
+            }
+            entityCount--;
+            sceneArchetype.arena[0].count = entityCount;
+            if (entityCount > 0 && inspectorEntityID >= entityCount)
+                inspectorEntityID = entityCount - 1;
+            else if (entityCount == 0)
+                currentInspectorState = EMPTY_VIEW;
+        }
+        ImGui::PopStyleColor();
+
         ImGui::DragFloat3("position", (f32 *)&positions[inspectorEntityID], 0.01f);
 
         if (ImGui::DragFloat3("rotation", (f32 *)&EulerAnglesDegrees, 0.5f))
@@ -3131,6 +3338,7 @@ static void drawInspectorWindow()
                     // ---- Collider ----
                     ImGui::SeparatorText("Collider");
                     static const c8 *shapeNames[] = { "None", "Sphere", "Box" };
+                    static bool colliderMatchTransform[4096] = {false};
                     if (colliderShapes)
                     {
                         int cs = (int)colliderShapes[eid];
@@ -3138,12 +3346,41 @@ static void drawInspectorWindow()
                         if (ImGui::Combo("Shape##phys", &cs, shapeNames, 3))
                             colliderShapes[eid] = (u32)cs;
 
+                        if (cs > 0 && eid < 4096)
+                        {
+                            ImGui::Checkbox("Match Transform##phys", &colliderMatchTransform[eid]);
+                            if (colliderMatchTransform[eid])
+                                ImGui::TextDisabled("  Collider auto-syncs to entity scale");
+                        }
+
+                        // Auto-sync collider to entity transform when toggled on
+                        if (cs > 0 && eid < 4096 && colliderMatchTransform[eid])
+                        {
+                            Vec3 s = scales[eid];
+                            if (cs == 1 && sphereRadii)
+                            {
+                                f32 maxAxis = s.x;
+                                if (s.y > maxAxis) maxAxis = s.y;
+                                if (s.z > maxAxis) maxAxis = s.z;
+                                sphereRadii[eid] = maxAxis;
+                            }
+                            else if (cs == 2 && colliderHalfXs && colliderHalfYs && colliderHalfZs)
+                            {
+                                colliderHalfXs[eid] = s.x;
+                                colliderHalfYs[eid] = s.y;
+                                colliderHalfZs[eid] = s.z;
+                            }
+                        }
+
                         if (cs == 1 && sphereRadii)  // Sphere
                         {
+                            if (eid < 4096 && colliderMatchTransform[eid]) ImGui::BeginDisabled();
                             ImGui::DragFloat("Radius##phys", &sphereRadii[eid], 0.05f, 0.01f, 500.0f, "%.2f m");
+                            if (eid < 4096 && colliderMatchTransform[eid]) ImGui::EndDisabled();
                         }
                         else if (cs == 2 && colliderHalfXs && colliderHalfYs && colliderHalfZs)  // Box
                         {
+                            if (eid < 4096 && colliderMatchTransform[eid]) ImGui::BeginDisabled();
                             f32 he[3] = { colliderHalfXs[eid], colliderHalfYs[eid], colliderHalfZs[eid] };
                             if (ImGui::DragFloat3("Half Extents##phys", he, 0.05f, 0.01f, 500.0f, "%.2f m"))
                             {
@@ -3153,6 +3390,7 @@ static void drawInspectorWindow()
                             }
                             ImGui::TextDisabled("  Width x2=%.2f  Height x2=%.2f  Depth x2=%.2f",
                                 he[0]*2.f, he[1]*2.f, he[2]*2.f);
+                            if (eid < 4096 && colliderMatchTransform[eid]) ImGui::EndDisabled();
                         }
                         if (cs == 0) ImGui::TextDisabled("  No collision shape — passes through everything");
                     }
@@ -3209,6 +3447,87 @@ static void drawInspectorWindow()
                     {
                         ImGui::Spacing();
                         ImGui::TextDisabled("Velocity and damping visible in play mode");
+                    }
+                }
+            }
+        }
+
+        // ---- Light ----
+        if (isLight)
+        {
+            u32 eid = inspectorEntityID;
+            bool lightEnabled = isLight[eid];
+            if (ImGui::Checkbox("Light Source", &lightEnabled))
+            {
+                isLight[eid] = lightEnabled;
+                if (lightEnabled)
+                {
+                    if (lightTypes)        lightTypes[eid] = LIGHT_TYPE_POINT;
+                    if (lightColorRs)      lightColorRs[eid] = 1.0f;
+                    if (lightColorGs)      lightColorGs[eid] = 1.0f;
+                    if (lightColorBs)      lightColorBs[eid] = 1.0f;
+                    if (lightIntensities)  lightIntensities[eid] = 1.0f;
+                    if (lightRanges)       lightRanges[eid] = 10.0f;
+                    if (lightDirXs)        lightDirXs[eid] = 0.0f;
+                    if (lightDirYs)        lightDirYs[eid] = -1.0f;
+                    if (lightDirZs)        lightDirZs[eid] = 0.0f;
+                    if (lightInnerCones)   lightInnerCones[eid] = 0.9063f;  // cos(25 deg)
+                    if (lightOuterCones)   lightOuterCones[eid] = 0.8192f;  // cos(35 deg)
+                }
+            }
+
+            if (isLight[eid])
+            {
+                if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    static const c8 *lightTypeNames[] = { "Point", "Directional", "Spot" };
+                    if (lightTypes)
+                    {
+                        int lt = (int)lightTypes[eid];
+                        if (lt < 0 || lt > 2) lt = 0;
+                        if (ImGui::Combo("Type##light", &lt, lightTypeNames, 3))
+                            lightTypes[eid] = (u32)lt;
+                    }
+
+                    if (lightColorRs && lightColorGs && lightColorBs)
+                    {
+                        f32 col[3] = { lightColorRs[eid], lightColorGs[eid], lightColorBs[eid] };
+                        if (ImGui::ColorEdit3("Color##light", col))
+                        {
+                            lightColorRs[eid] = col[0];
+                            lightColorGs[eid] = col[1];
+                            lightColorBs[eid] = col[2];
+                        }
+                    }
+
+                    if (lightIntensities)
+                        ImGui::DragFloat("Intensity##light", &lightIntensities[eid], 0.05f, 0.0f, 100.0f, "%.2f");
+
+                    u32 lt = lightTypes ? lightTypes[eid] : 0;
+
+                    if (lt != LIGHT_TYPE_DIRECTIONAL && lightRanges)
+                        ImGui::DragFloat("Range##light", &lightRanges[eid], 0.1f, 0.1f, 1000.0f, "%.1f m");
+
+                    if (lt == LIGHT_TYPE_DIRECTIONAL || lt == LIGHT_TYPE_SPOT)
+                    {
+                        if (lightDirXs && lightDirYs && lightDirZs)
+                        {
+                            f32 dir[3] = { lightDirXs[eid], lightDirYs[eid], lightDirZs[eid] };
+                            if (ImGui::DragFloat3("Direction##light", dir, 0.01f, -1.0f, 1.0f, "%.3f"))
+                            {
+                                lightDirXs[eid] = dir[0];
+                                lightDirYs[eid] = dir[1];
+                                lightDirZs[eid] = dir[2];
+                            }
+                        }
+                    }
+
+                    if (lt == LIGHT_TYPE_SPOT)
+                    {
+                        if (lightInnerCones)
+                            ImGui::DragFloat("Inner Cone##light", &lightInnerCones[eid], 0.005f, 0.0f, 1.0f, "%.4f (cos)");
+                        if (lightOuterCones)
+                            ImGui::DragFloat("Outer Cone##light", &lightOuterCones[eid], 0.005f, 0.0f, 1.0f, "%.4f (cos)");
                     }
                 }
             }
@@ -3373,12 +3692,8 @@ static void drawInspectorWindow()
                 }
                 ImGui::PopID();
             }
+            ImGui::EndListBox();
         }
-        
-        
-
-
-        ImGui::EndListBox();
 
         // ---- Model Info ----
         if (ImGui::CollapsingHeader("Model Info", ImGuiTreeNodeFlags_DefaultOpen))
@@ -3926,6 +4241,7 @@ static void snapshotScene()
     sd.archetypes = &sceneArchetype;
     strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
     sceneArchetype.arena[0].count = entityCount;
+    sceneArchetype.cachedEntityCount = entityCount;
     if (entityCount > 0 && sceneArchetype.activeChunkCount == 0)
         sceneArchetype.activeChunkCount = 1;
     sd.materialCount = resources->materialUsed;
@@ -4017,15 +4333,35 @@ void doBuildAndRun()
     }
 
     c8 dllPath[MAX_PATH_LENGTH];
+    b8 dllLoaded = false;
+
 #ifdef _WIN32
-    snprintf(dllPath, sizeof(dllPath), "%s/bin/libgame.dll", hubProjectDir);
+    // Try common DLL naming conventions and output directories (MinGW, MSVC Debug/Release)
+    static const c8 *dllCandidates[] = {
+        "bin/libgame.dll",
+        "bin/game.dll",
+        "bin/Debug/game.dll",
+        "bin/Debug/libgame.dll",
+        "bin/Release/game.dll",
+        "bin/Release/libgame.dll"
+    };
+    for (u32 ci = 0; ci < sizeof(dllCandidates) / sizeof(dllCandidates[0]); ci++)
+    {
+        snprintf(dllPath, sizeof(dllPath), "%s/%s", hubProjectDir, dllCandidates[ci]);
+        if (fileExists(dllPath) && loadGameDLL(dllPath, &g_gameDLL))
+        {
+            dllLoaded = true;
+            break;
+        }
+    }
 #else
     snprintf(dllPath, sizeof(dllPath), "%s/bin/libgame.so", hubProjectDir);
+    dllLoaded = loadGameDLL(dllPath, &g_gameDLL);
 #endif
 
-    if (!loadGameDLL(dllPath, &g_gameDLL))
+    if (!dllLoaded)
     {
-        ERROR("Failed to load game DLL: %s", dllPath);
+        ERROR("Failed to load game DLL (tried multiple paths under %s/bin/)", hubProjectDir);
         return;
     }
 
@@ -4068,7 +4404,7 @@ void doBuildAndRun()
     physInit(Vec3{0.0f, -9.81f, 0.0f}, 1.0f / 60.0f);
     for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
     {
-        if (FLAG_CHECK(g_archRegistry.entries[a].flags, ARCH_PHYSICS_BODY))
+        if (FLAG_CHECK(g_archRegistry.entries[a].flags, ARCH_PHYSICS_BODY) && g_ecsArchetypes[a].arena)
             physRegisterArchetype(physicsWorld, &g_ecsArchetypes[a]);
     }
 
@@ -4209,6 +4545,10 @@ void drawDockspaceAndPanels()
             if (ImGui::MenuItem("Draw Colliders", NULL, showColliders))
             {
                 showColliders = !showColliders;
+            }
+            if (ImGui::MenuItem("Draw Lights", NULL, showLightGizmos))
+            {
+                showLightGizmos = !showLightGizmos;
             }
             if (ImGui::MenuItem("Loaded Entities", NULL, showLoadedEntities))
             {
@@ -4434,6 +4774,7 @@ void drawDockspaceAndPanels()
             strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
             // Make sure the arena knows the live entity count
             sceneArchetype.arena[0].count = entityCount;
+            sceneArchetype.cachedEntityCount = entityCount;
             if (entityCount > 0 && sceneArchetype.activeChunkCount == 0)
                 sceneArchetype.activeChunkCount = 1;
             // Sync material data

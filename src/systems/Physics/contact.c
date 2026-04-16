@@ -3,12 +3,7 @@
 
 //=====================================================================================================================
 // Handle-based collider API (PhysicsWorld-managed)
-//
-// The contact solver itself runs inline inside physWorldStep (physics.c).
-// These functions provide the handle-based collider creation/management API
-// declared in druid.h. Currently only sphere colliders are used (via the
-// SphereRadius archetype field), so these are minimal stubs.
-//=====================================================================================================================
+
 
 u32 physColliderCreateSphere(PhysicsWorld *world, f32 radius)
 {

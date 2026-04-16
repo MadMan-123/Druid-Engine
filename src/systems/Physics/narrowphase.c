@@ -4,7 +4,6 @@
 
 //=====================================================================================================================
 // Forward declarations for internal physics bindings
-//=====================================================================================================================
 
 // Defined in physics.c — represents cached field indices for a registered archetype
 typedef struct
@@ -21,15 +20,7 @@ typedef struct
 extern PhysFieldBinding *physGetBindingByIndex(PhysicsWorld *world, u32 index);
 
 //=====================================================================================================================
-// Narrowphase queries — raycasts and overlap tests against registered archetypes
-//
-// All bodies are treated as spheres (position + SphereRadius field).
-// GJK/EPA and mesh BVH are future work.
-//=====================================================================================================================
-
-//=====================================================================================================================
 // Raycasting — ray vs sphere for all registered bodies
-//=====================================================================================================================
 
 PhysRayHit physRaycast(PhysicsWorld *world, PhysRay ray)
 {
@@ -144,7 +135,6 @@ u32 physRaycastAll(PhysicsWorld *world, PhysRay ray, PhysRayHit *hits, u32 maxHi
 
 //=====================================================================================================================
 // Overlap queries
-//=====================================================================================================================
 
 u32 physOverlapSphere(PhysicsWorld *world, Vec3 center, f32 radius,
                       u32 *outBodies, u32 maxBodies)

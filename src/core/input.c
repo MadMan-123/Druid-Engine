@@ -55,7 +55,7 @@ static Vec2 getPrimaryJoystickAxis(JoystickCode axis1, JoystickCode axis2)
 
 void initInput()
 {
-	// SDL_Init already called by initDisplay — do not re-init here
+	// SDL_Init already called by initDisplay  do not re-init here
 	state = SDL_GetKeyboardState(NULL);
 
 	int connectedCount = 0;
@@ -310,6 +310,22 @@ void getMouseDelta(f32*x,f32*y)
 void setInputCaptureState(b8 captured)
 {
 	imguiCapturingInput = captured;
+}
+
+static b8 mouseCaptured = false;
+
+void setMouseCaptured(b8 captured)
+{
+	if (renderer && renderer->display && renderer->display->sdlWindow)
+	{
+		SDL_SetWindowRelativeMouseMode(renderer->display->sdlWindow, captured);
+		mouseCaptured = captured;
+	}
+}
+
+b8 isMouseCaptured(void)
+{
+	return mouseCaptured;
 }
 
 

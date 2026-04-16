@@ -7,13 +7,6 @@
 static void frustumExtract(const Mat4 *vp, Frustum *out);
 static b8   frustumTestSphere(const Frustum *f, f32 cx, f32 cy, f32 cz, f32 r);
 
-//=====================================================================================================================
-// Renderer — global rendering context
-//
-// Uses the generic Buffer struct for cameras, instance buffers and GBuffers.
-// Acquire a slot, use it, release when done.
-//=====================================================================================================================
-
 Renderer *renderer = NULL;
 
 Renderer *createRenderer(Display *display, f32 fov, f32 nearClip, f32 farClip,
@@ -77,6 +70,8 @@ Renderer *createRenderer(Display *display, f32 fov, f32 nearClip, f32 farClip,
 
     r->activeCamera = (u32)-1; // no default camera — caller must acquire one
     r->defaultIBuffer = (u32)-1;
+    r->lightSSBO = 0;
+    r->lightCount = 0;
 
     // acquire a default instance buffer
     // Try full capacity first; if GPU can't allocate 128MB persistent-mapped SSBO,
@@ -174,6 +169,10 @@ void rendererBeginFrame(Renderer *r, f32 dt)
     {
         indirectBufferReset(r->indirectBuffer);
     }
+
+    // keep light SSBO bound at slot 3 for all shaders
+    if (r->lightSSBO)
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, r->lightSSBO);
 }
 
 void rendererFlushInstances(Renderer *r, u32 ibufferIndex, u32 shaderProgram)
@@ -233,6 +232,9 @@ void destroyRenderer(Renderer *r)
     if (r->indirectBuffer)
         indirectBufferDestroy(r->indirectBuffer);
 
+    if (r->lightSSBO)
+        glDeleteBuffers(1, &r->lightSSBO);
+
     if (renderer == r)
         renderer = NULL;
 
@@ -242,7 +244,6 @@ void destroyRenderer(Renderer *r)
 
 //=====================================================================================================================
 // Convenience acquire / release wrappers
-//=====================================================================================================================
 
 u32 rendererAcquireCamera(Renderer *r, Vec3 pos, f32 fov, f32 aspect,
                           f32 nearClip, f32 farClip)
@@ -329,7 +330,6 @@ void rendererReleaseGBuffer(Renderer *r, u32 index)
 
 //=====================================================================================================================
 // Deferred rendering pipeline
-//=====================================================================================================================
 
 DAPI b8 rendererEnableDeferred(Renderer *r, u32 width, u32 height)
 {
@@ -427,6 +427,10 @@ DAPI void rendererLightingPass(Renderer *r, u32 lightingShader)
         glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
     glUniform1i(s_locEnvMap, 3);
 
+    // Ensure light SSBO is bound for the lighting shader
+    if (r->lightSSBO)
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, r->lightSSBO);
+
     // Disable depth writes so the fullscreen quad doesn't pollute the depth buffer
     glDisable(GL_DEPTH_TEST);
 
@@ -480,14 +484,7 @@ DAPI void rendererLightingPass(Renderer *r, u32 lightingShader)
     glActiveTexture(GL_TEXTURE0);
 }
 
-//=====================================================================================================================
-// Deferred rendering pipeline - lighting
-//=====================================================================================================================
-// TODO: Implement dedicated lighting data UBO/SSBO for flexible light management
 
-//=====================================================================================================================
-// Default archetype render — forward pass for archetypes with no custom render callback
-//=====================================================================================================================
 
 // Cached field binding for rendererDefaultArchetypeRender — avoids per-frame strcmp
 typedef struct
@@ -557,7 +554,6 @@ static RenderFieldCache *getRenderFieldCache(StructLayout *layout)
 //=====================================================================================================================
 // Frustum culling helpers (Gribb-Hartmann method, column-major VP matrix)
 // vp.m[col][row] — extract planes so that dot(plane, worldPos) >= 0 is inside
-//=====================================================================================================================
 static void frustumExtract(const Mat4 *vp, Frustum *out)
 {
     // Column-major: vp->m[col][row]
@@ -1131,7 +1127,6 @@ per_entity_fallback:;
 //=====================================================================================================================
 // Direct instanced mesh submission
 // rendererSubmitInstance — queue one entity; rendererFlushInstancedModels — batch draw all queued
-//=====================================================================================================================
 
 // Per-model submission queue — lives in static storage, reset each flush
 #define SUBMIT_MAX_GROUPS  256
@@ -1239,7 +1234,6 @@ void rendererFlushInstancedModels(Renderer *r)
 
     //=====================================================================================================================
     // INDIRECT RENDERING PATH — build indirect command buffer instead of per-model loops
-    //=====================================================================================================================
     if (r->indirectBuffer)
     {
         indirectBufferReset(r->indirectBuffer);
@@ -1337,4 +1331,47 @@ u32 rendererGetActiveCamera(Renderer *r)
 {
     if (!r) return (u32)-1;
     return r->activeCamera;
+}
+
+// ---- Lights SSBO (binding point 3) ----
+
+typedef struct
+{
+    u32 count;
+    u32 _pad[3];
+    GPULight lights[MAX_LIGHTS];
+} LightSSBOData;
+
+void rendererUploadLights(Renderer *r, const GPULight *lights, u32 count)
+{
+    if (!r) return;
+    if (count > MAX_LIGHTS) count = MAX_LIGHTS;
+
+    if (r->lightSSBO == 0)
+    {
+        glGenBuffers(1, &r->lightSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, r->lightSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(LightSSBOData), NULL, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
+
+    LightSSBOData *data = (LightSSBOData *)frameAlloc(sizeof(LightSSBOData));
+    if (!data) return;
+    memset(data, 0, sizeof(LightSSBOData));
+    data->count = count;
+    if (count > 0)
+        memcpy(data->lights, lights, sizeof(GPULight) * count);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, r->lightSSBO);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(u32) * 4 + sizeof(GPULight) * count, data);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, r->lightSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    r->lightCount = count;
+}
+
+u32 rendererGetLightSSBO(Renderer *r)
+{
+    if (!r) return 0;
+    return r->lightSSBO;
 }

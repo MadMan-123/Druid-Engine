@@ -6,7 +6,6 @@
 
 //=====================================================================================================================
 // Profiler - RDTSC scope timing, GPU timer queries, state change + geometry counters
-//=====================================================================================================================
 
 static ProfileFrame g_profFrame;
 static ProfileFrame g_prevFrame;
@@ -216,7 +215,6 @@ void profileCountFree(u64 bytes)     { g_heapFreeCount++; if (g_heapLiveBytes >=
 
 //=====================================================================================================================
 // Cache topology detection + estimation
-//=====================================================================================================================
 
 static CacheInfo g_cacheInfo = {0};
 static b8        g_cacheDetected = false;

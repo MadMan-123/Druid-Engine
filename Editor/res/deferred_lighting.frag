@@ -1,14 +1,11 @@
-#version 420
+#version 430
 
 out vec4 FragColor;
 in vec2 TexCoords;
 
-// GBuffer textures
-uniform sampler2D gPosition;   // rgb = world pos, a = metallic
-uniform sampler2D gNormal;      // rgb = normal, a = roughness
-uniform sampler2D gAlbedoSpec;  // rgb = albedo, a = emissive
-
-// Environment cubemap for IBL reflections
+uniform sampler2D gPosition;
+uniform sampler2D gNormal;
+uniform sampler2D gAlbedoSpec;
 uniform samplerCube envMap;
 
 layout (std140, binding = 0) uniform CoreShaderData
@@ -19,8 +16,25 @@ layout (std140, binding = 0) uniform CoreShaderData
     mat4 projection;
 };
 
-uniform vec3 u_sunPos;
-uniform float u_sunRadius;
+struct Light
+{
+    float posX, posY, posZ;
+    float range;
+    float colorR, colorG, colorB;
+    float intensity;
+    float dirX, dirY, dirZ;
+    float innerCone;
+    float outerCone;
+    uint  type;
+    float _pad0, _pad1;
+};
+
+layout (std430, binding = 3) buffer LightBuffer
+{
+    uint  lightCount;
+    uint  _pad[3];
+    Light lights[];
+};
 
 const float PI = 3.14159265359;
 
@@ -59,6 +73,50 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+vec3 evalLight(Light l, vec3 fragPos, vec3 N, vec3 V, float NdotV, vec3 albedo, float metallic, float roughness, vec3 F0)
+{
+    vec3 lightPos = vec3(l.posX, l.posY, l.posZ);
+    vec3 lightCol = vec3(l.colorR, l.colorG, l.colorB) * l.intensity;
+    vec3 lightDir = vec3(l.dirX, l.dirY, l.dirZ);
+
+    vec3 L;
+    float atten = 1.0;
+
+    if (l.type == 1u) // directional
+    {
+        L = normalize(-lightDir);
+    }
+    else // point or spot
+    {
+        vec3 toLight = lightPos - fragPos;
+        float dist = length(toLight);
+        L = toLight / max(dist, 0.0001);
+
+        float falloff = clamp(1.0 - (dist / max(l.range, 0.001)), 0.0, 1.0);
+        atten = falloff * falloff;
+
+        if (l.type == 2u) // spot
+        {
+            float theta = dot(L, normalize(-lightDir));
+            float epsilon = l.innerCone - l.outerCone;
+            float spotAtten = clamp((theta - l.outerCone) / max(epsilon, 0.0001), 0.0, 1.0);
+            atten *= spotAtten;
+        }
+    }
+
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0);
+
+    float NDF = distributionGGX(N, H, roughness);
+    float G   = geometrySmith(N, V, L, roughness);
+    vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3 specular = NDF * G * F / max(4.0 * NdotV * NdotL + 0.0001, 0.0001);
+    vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
+
+    return (kD * albedo / PI + specular) * lightCol * NdotL * atten;
+}
+
 void main()
 {
     vec4 posMetal    = texture(gPosition, TexCoords);
@@ -72,15 +130,12 @@ void main()
     vec3  albedo       = albedoEmiss.rgb;
     float emissiveVal  = albedoEmiss.a;
 
-    // Skip empty pixels
     if (normRough.rgb == vec3(0.0))
         discard;
 
-    // Emissive objects bypass lighting — output bright color directly
     if (emissiveVal > 0.0)
     {
         vec3 emissiveColor = albedo * (1.0 + emissiveVal * 4.0);
-        // Tone map
         emissiveColor = emissiveColor / (emissiveColor + vec3(1.0));
         emissiveColor = pow(emissiveColor, vec3(1.0 / 2.2));
         FragColor = vec4(emissiveColor, 1.0);
@@ -89,45 +144,14 @@ void main()
 
     vec3 V = normalize(camPos - FragPos);
     float NdotV = max(dot(N, V), 0.0);
-
     vec3 F0 = mix(vec3(0.04), albedo, metallicVal);
 
     vec3 Lo = vec3(0.0);
 
-    // Directional fill light
+    // Accumulate all lights from the SSBO
+    for (uint i = 0u; i < lightCount; i++)
     {
-        vec3 L = normalize(vec3(0.5, 1.0, 0.3));
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-        vec3 lightColor = vec3(1.0, 0.98, 0.95) * 0.5;
-
-        float NDF = distributionGGX(N, H, roughnessVal);
-        float G   = geometrySmith(N, V, L, roughnessVal);
-        vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        vec3 specular = NDF * G * F / max(4.0 * NdotV * NdotL + 0.0001, 0.0001);
-        vec3 kD = (vec3(1.0) - F) * (1.0 - metallicVal);
-        Lo += (kD * albedo / PI + specular) * lightColor * NdotL;
-    }
-
-    // Sun point light
-    {
-        vec3 toSun = u_sunPos - FragPos;
-        float dist = length(toSun);
-        vec3 L = normalize(toSun);
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
-        float attenuation = 1.0 / (1.0 + 0.001 * dist * dist);
-        vec3 lightColor = vec3(1.0, 0.9, 0.7) * 80.0 * attenuation;
-
-        float NDF = distributionGGX(N, H, roughnessVal);
-        float G   = geometrySmith(N, V, L, roughnessVal);
-        vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        vec3 specular = NDF * G * F / max(4.0 * NdotV * NdotL + 0.0001, 0.0001);
-        vec3 kD = (vec3(1.0) - F) * (1.0 - metallicVal);
-        Lo += (kD * albedo / PI + specular) * lightColor * NdotL;
+        Lo += evalLight(lights[i], FragPos, N, V, NdotV, albedo, metallicVal, roughnessVal, F0);
     }
 
     // Environment mapping (IBL)
@@ -145,6 +169,10 @@ void main()
     vec3 ambient = diffuseIBL + specularIBL;
 
     vec3 result = ambient + Lo;
+
+    // Fallback: no lights = unlit albedo so the scene isn't black
+    if (lightCount == 0u)
+        result = albedo;
 
     // Tone mapping (Reinhard)
     result = result / (result + vec3(1.0));

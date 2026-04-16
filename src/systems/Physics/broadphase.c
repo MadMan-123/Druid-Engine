@@ -4,7 +4,6 @@
 
 //=====================================================================================================================
 // Forward declarations for internal physics bindings
-//=====================================================================================================================
 
 // Defined in physics.c — represents cached field indices for a registered archetype
 typedef struct
@@ -22,7 +21,6 @@ extern PhysFieldBinding *physGetBindingByIndex(PhysicsWorld *world, u32 index);
 
 //=====================================================================================================================
 // Spatial Hash Grid — placeholder for future spatial partitioning
-//=====================================================================================================================
 
 struct SpatialHashGrid
 {
@@ -37,7 +35,6 @@ struct SpatialHashGrid
 
 //=====================================================================================================================
 // Broadphase API
-//=====================================================================================================================
 
 void physBroadphaseRebuild(PhysicsWorld *world)
 {

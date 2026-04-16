@@ -1,12 +1,6 @@
 
 #include "../../../include/druid.h"
 
-//=====================================================================================================================
-// Rigidbody force / impulse application
-//
-// Maps flat entity index to chunk + local offset, scans layout for field names,
-// then modifies SoA arrays directly. No angular dynamics — torque is a no-op.
-//=====================================================================================================================
 
 static i32 fieldIdx(StructLayout *layout, const c8 *name)
 {

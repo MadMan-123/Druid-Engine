@@ -3,7 +3,6 @@
 
 //=====================================================================================================================
 // Internal helpers
-//=====================================================================================================================
 
 // total bytes per entity for fields of a given temperature
 static u32 getEntitySizeForTemp(StructLayout *layout, FieldTemperature temp)
@@ -49,7 +48,6 @@ static void setupChunkFieldPointers(EntityArena *chunk, StructLayout *layout,
 
 //=====================================================================================================================
 // Chunk query helpers
-//=====================================================================================================================
 
 u32 archetypeEntityCount(Archetype *arch)
 {
@@ -68,7 +66,6 @@ void archetypeSetChunkSize(Archetype *arch, u32 sizeBytes)
 
 //=====================================================================================================================
 // Hot/Cold contiguous data accessors
-//=====================================================================================================================
 
 void *archetypeGetHotData(Archetype *arch)
 {
@@ -92,7 +89,6 @@ u32 archetypeGetColdEntitySize(Archetype *arch)
 
 //=====================================================================================================================
 // createArchetype
-//=====================================================================================================================
 
 b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
 {
@@ -264,7 +260,6 @@ b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
 
 //=====================================================================================================================
 // destroyArchetype
-//=====================================================================================================================
 
 b8 destroyArchetype(Archetype *arch)
 {
@@ -322,7 +317,6 @@ b8 destroyArchetype(Archetype *arch)
 
 //=====================================================================================================================
 // Entity creation / removal (chunk-aware)
-//=====================================================================================================================
 
 // grow archetype by reallocating contiguous blocks, copies field-by-field
 static b8 archetypeGrow(Archetype *arch, u32 newChunkCount)
@@ -528,7 +522,6 @@ b8 removeEntityFromArchetype(Archetype *arch, u32 arenaIndex, u32 index)
 
 //=====================================================================================================================
 // Field access
-//=====================================================================================================================
 
 void **getArchetypeFields(Archetype *arch, u32 arenaIndex)
 {
@@ -549,7 +542,6 @@ void **getArchetypeFields(Archetype *arch, u32 arenaIndex)
 
 //=====================================================================================================================
 // Pool API for buffered archetypes (chunk-aware)
-//=====================================================================================================================
 
 u32 archetypePoolSpawn(Archetype *arch)
 {
@@ -561,7 +553,6 @@ u32 archetypePoolSpawn(Archetype *arch)
 
     // ========================================================================
     // HOT PATH (O(1)): Free-list based spawn for reusable dead entities
-    // ========================================================================
     if (arch->deadCount > 0)
     {
         u32 index = arch->deadIndices[--arch->deadCount];
@@ -592,7 +583,6 @@ u32 archetypePoolSpawn(Archetype *arch)
 
     // ========================================================================
     // SLOW PATH: Growth (when pre-allocated pool exhausted)
-    // ========================================================================
     if (arch->poolCapacity == 0 || archetypeEntityCount(arch) < arch->poolCapacity)
     {
         u32 newCount = arch->arenaCount + 1;

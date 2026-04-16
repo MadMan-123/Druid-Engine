@@ -62,6 +62,18 @@ extern f32 *sphereRadii;
 extern f32 *colliderHalfXs;
 extern f32 *colliderHalfYs;
 extern f32 *colliderHalfZs;
+extern b8  *isLight;
+extern u32 *lightTypes;
+extern f32 *lightRanges;
+extern f32 *lightColorRs;
+extern f32 *lightColorGs;
+extern f32 *lightColorBs;
+extern f32 *lightIntensities;
+extern f32 *lightDirXs;
+extern f32 *lightDirYs;
+extern f32 *lightDirZs;
+extern f32 *lightInnerCones;
+extern f32 *lightOuterCones;
 extern Mesh* cubeMesh;
 extern Material* materials;
 
