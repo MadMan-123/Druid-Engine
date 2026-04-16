@@ -86,21 +86,87 @@ static inline u32 sh_hash(i32 ix, i32 iy, i32 iz)
     return h & (SH_TABLE_SIZE - 1u);
 }
 
+// Auxiliary chain for multi-cell insertions.  When a large body spans more
+// than one cell we need extra "ghost" entries that map back to the same body
+// index but live in different hash buckets.  g_shNext[] only has MAX_PHYS_BODIES
+// slots (one per real body), so ghosts go into a separate pool.
+#define SH_MAX_GHOSTS (MAX_PHYS_BODIES * 4)
+static u32 g_shGhostBody[SH_MAX_GHOSTS];
+static u32 g_shGhostNext[SH_MAX_GHOSTS];
+static u32 g_shGhostCount = 0;
+
 static void sh_clear(void)
 {
     // Only clear buckets that were actually touched — avoids memset of 65K entries
     for (u32 i = 0; i < g_shDirtyCount; i++) g_shTable[g_shDirtyBuckets[i]] = SH_SENTINEL;
     for (u32 i = 0; i < g_bodyCount;    i++) g_shNext[i] = SH_SENTINEL;
+    for (u32 i = 0; i < g_shGhostCount; i++) g_shGhostNext[i] = SH_SENTINEL;
     g_shDirtyCount = 0;
+}
+
+static void sh_insertSingle(u32 idx, i32 cx, i32 cy, i32 cz, b8 isGhost)
+{
+    u32 h = sh_hash(cx, cy, cz);
+    if (g_shTable[h] == SH_SENTINEL && g_shDirtyCount < SH_TABLE_SIZE)
+        g_shDirtyBuckets[g_shDirtyCount++] = h;
+    if (!isGhost)
+    {
+        g_shNext[idx] = g_shTable[h];
+        g_shTable[h]  = idx;
+    }
+    else if (g_shGhostCount < SH_MAX_GHOSTS)
+    {
+        u32 gi = g_shGhostCount++;
+        g_shGhostBody[gi] = idx;
+        g_shGhostNext[gi] = g_shTable[h];
+        // Ghost indices are offset by MAX_PHYS_BODIES so the lookup can
+        // distinguish them from real body indices.
+        g_shTable[h] = MAX_PHYS_BODIES + gi;
+    }
 }
 
 static void sh_insert(u32 idx)
 {
-    u32 h = sh_hash(sh_floor(g_bpPosX[idx]), sh_floor(g_bpPosY[idx]), sh_floor(g_bpPosZ[idx]));
-    if (g_shTable[h] == SH_SENTINEL && g_shDirtyCount < SH_TABLE_SIZE)
-        g_shDirtyBuckets[g_shDirtyCount++] = h;
-    g_shNext[idx] = g_shTable[h];
-    g_shTable[h]  = idx;
+    // Use actual box extents for AABB when available, bounding sphere otherwise
+    f32 extX, extY, extZ;
+    if (g_bpShape[idx] == PSHAPE_BOX && (g_bpHalfX[idx] > 0.0f || g_bpHalfY[idx] > 0.0f || g_bpHalfZ[idx] > 0.0f))
+    {
+        extX = g_bpHalfX[idx];
+        extY = g_bpHalfY[idx];
+        extZ = g_bpHalfZ[idx];
+    }
+    else
+    {
+        extX = extY = extZ = g_bpRadius[idx];
+    }
+
+    f32 maxExt = extX > extY ? extX : extY;
+    if (extZ > maxExt) maxExt = extZ;
+    if (maxExt <= g_shCellSize)
+    {
+        sh_insertSingle(idx, sh_floor(g_bpPosX[idx]), sh_floor(g_bpPosY[idx]),
+                         sh_floor(g_bpPosZ[idx]), false);
+        return;
+    }
+    i32 minX = sh_floor(g_bpPosX[idx] - extX), maxX = sh_floor(g_bpPosX[idx] + extX);
+    i32 minY = sh_floor(g_bpPosY[idx] - extY), maxY = sh_floor(g_bpPosY[idx] + extY);
+    i32 minZ = sh_floor(g_bpPosZ[idx] - extZ), maxZ = sh_floor(g_bpPosZ[idx] + extZ);
+    // Cap to avoid degenerate cases flooding the hash table
+    i32 span = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (span > 512)
+    {
+        sh_insertSingle(idx, sh_floor(g_bpPosX[idx]), sh_floor(g_bpPosY[idx]),
+                         sh_floor(g_bpPosZ[idx]), false);
+        return;
+    }
+    b8 first = true;
+    for (i32 ix = minX; ix <= maxX; ix++)
+    for (i32 iy = minY; iy <= maxY; iy++)
+    for (i32 iz = minZ; iz <= maxZ; iz++)
+    {
+        sh_insertSingle(idx, ix, iy, iz, !first);
+        first = false;
+    }
 }
 
 //=====================================================================================================================
@@ -336,8 +402,19 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
     if (g_shCellSize < 0.01f) g_shCellSize = 1.0f;
     g_shInvCell  = 1.0f / g_shCellSize;
 
+    g_shGhostCount = 0;
     sh_clear();
     for (u32 i = 0; i < g_bodyCount; i++) sh_insert(i);
+
+    // Track which pairs we've already emitted so multi-cell ghosts don't
+    // generate duplicates.  Simple bitset would be huge, so use a small
+    // seen-pair hash set (open addressing, power-of-two).
+    #define SEEN_SIZE 4096u
+    #define SEEN_MASK (SEEN_SIZE - 1u)
+    static u64 seenPairs[SEEN_SIZE];
+    static u32 seenSlots[SEEN_SIZE];
+    u32 seenCount = 0;
+    memset(seenPairs, 0xFF, sizeof(seenPairs));
 
     u32 pairCount = 0;
     for (u32 i = 0; i < g_bodyCount; i++)
@@ -351,39 +428,81 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
         for (i32 nz = cz - 1; nz <= cz + 1; nz++)
         {
             u32 h = sh_hash(nx, ny, nz);
-            u32 j = g_shTable[h];
-            while (j != SH_SENTINEL)
+            u32 raw = g_shTable[h];
+            while (raw != SH_SENTINEL)
             {
-                if (j > i) // generate each pair exactly once
+                // Resolve ghost entries to real body index
+                u32 j;
+                u32 nextRaw;
+                if (raw >= MAX_PHYS_BODIES)
                 {
-                    // Both static — no collision response needed
-                    if (g_bpBodyType[i] == PHYS_BODY_STATIC &&
-                        g_bpBodyType[j] == PHYS_BODY_STATIC)
+                    u32 gi = raw - MAX_PHYS_BODIES;
+                    j = g_shGhostBody[gi];
+                    nextRaw = g_shGhostNext[gi];
+                }
+                else
+                {
+                    j = raw;
+                    nextRaw = g_shNext[j];
+                }
+
+                if (j != i)
+                {
+                    // Canonical order for dedup: smaller index first
+                    u32 lo = i < j ? i : j;
+                    u32 hi = i < j ? j : i;
+                    u64 key = ((u64)lo << 32) | hi;
+                    u32 sh = (u32)(key ^ (key >> 17)) & SEEN_MASK;
+                    b8 duplicate = false;
+                    for (u32 probe = 0; probe < 8; probe++)
                     {
-                        j = g_shNext[j]; continue;
-                    }
-                    // Bounding sphere overlap test (fast reject)
-                    f32 dx = g_bpPosX[i] - g_bpPosX[j];
-                    f32 dy = g_bpPosY[i] - g_bpPosY[j];
-                    f32 dz = g_bpPosZ[i] - g_bpPosZ[j];
-                    f32 sr = g_bpRadius[i] + g_bpRadius[j];
-                    if (dx*dx + dy*dy + dz*dz < sr * sr)
-                    {
-                        if (pairCount < maxPairs)
+                        u32 slot = (sh + probe) & SEEN_MASK;
+                        if (seenPairs[slot] == key) { duplicate = true; break; }
+                        if (seenPairs[slot] == 0xFFFFFFFFFFFFFFFFULL)
                         {
-                            CollisionPair *p = &pairs[pairCount++];
-                            p->archA  = g_bpArchIdx[i];  p->chunkA = g_bpChunkIdx[i]; p->indexA = g_bpEntityIdx[i];
-                            p->archB  = g_bpArchIdx[j];  p->chunkB = g_bpChunkIdx[j]; p->indexB = g_bpEntityIdx[j];
-                            p->shapeA = g_bpShape[i];
-                            p->shapeB = g_bpShape[j];
+                            seenPairs[slot] = key;
+                            if (seenCount < SEEN_SIZE) seenSlots[seenCount++] = slot;
+                            break;
+                        }
+                    }
+
+                    if (!duplicate)
+                    {
+                        // Both static — no collision response needed
+                        if (g_bpBodyType[i] == PHYS_BODY_STATIC &&
+                            g_bpBodyType[j] == PHYS_BODY_STATIC)
+                        {
+                            raw = nextRaw; continue;
+                        }
+                        // Bounding sphere overlap test (fast reject)
+                        f32 dx = g_bpPosX[i] - g_bpPosX[j];
+                        f32 dy = g_bpPosY[i] - g_bpPosY[j];
+                        f32 dz = g_bpPosZ[i] - g_bpPosZ[j];
+                        f32 sr = g_bpRadius[i] + g_bpRadius[j];
+                        if (dx*dx + dy*dy + dz*dz < sr * sr)
+                        {
+                            if (pairCount < maxPairs)
+                            {
+                                CollisionPair *p = &pairs[pairCount++];
+                                p->archA  = g_bpArchIdx[i];  p->chunkA = g_bpChunkIdx[i]; p->indexA = g_bpEntityIdx[i];
+                                p->archB  = g_bpArchIdx[j];  p->chunkB = g_bpChunkIdx[j]; p->indexB = g_bpEntityIdx[j];
+                                p->shapeA = g_bpShape[i];
+                                p->shapeB = g_bpShape[j];
+                            }
                         }
                     }
                 }
-                j = g_shNext[j];
+                raw = nextRaw;
             }
         }
     }
+
+    // Clean up seen-pair set for next call
+    for (u32 s = 0; s < seenCount; s++) seenPairs[seenSlots[s]] = 0xFFFFFFFFFFFFFFFFULL;
+
     return pairCount;
+    #undef SEEN_SIZE
+    #undef SEEN_MASK
 }
 
 //=====================================================================================================================
@@ -406,14 +525,16 @@ static b8 contactSphereSphere(Vec3 pa, f32 ra, Vec3 pb, f32 rb, ContactManifold 
     return true;
 }
 
-// normal points FROM box TOWARD sphere (i.e. push-out direction for sphere)
+// All contact normals point from A to B. The impulse solver, position
+// correction and separating-velocity check all depend on this convention.
+
 static b8 contactSphereBox(Vec3 sp, f32 sr, Vec3 bp, Vec3 bh, ContactManifold *m)
 {
     f32 cpx = clampf_local(sp.x, bp.x - bh.x, bp.x + bh.x);
     f32 cpy = clampf_local(sp.y, bp.y - bh.y, bp.y + bh.y);
     f32 cpz = clampf_local(sp.z, bp.z - bh.z, bp.z + bh.z);
 
-    f32 dx = sp.x - cpx, dy = sp.y - cpy, dz = sp.z - cpz;
+    f32 dx = cpx - sp.x, dy = cpy - sp.y, dz = cpz - sp.z;
     f32 d2 = dx*dx + dy*dy + dz*dz;
     if (d2 >= sr * sr && d2 > 1e-12f) return false;
 
@@ -429,30 +550,28 @@ static b8 contactSphereBox(Vec3 sp, f32 sr, Vec3 bp, Vec3 bh, ContactManifold *m
     }
     else
     {
-        // Sphere center inside box — minimum penetration axis
         f32 ox = bh.x - fabsf(sp.x - bp.x);
         f32 oy = bh.y - fabsf(sp.y - bp.y);
         f32 oz = bh.z - fabsf(sp.z - bp.z);
         if (ox <= oy && ox <= oz)
         {
-            cp->normal = (Vec3){sp.x > bp.x ? 1.0f : -1.0f, 0.0f, 0.0f};
+            cp->normal = (Vec3){sp.x > bp.x ? -1.0f : 1.0f, 0.0f, 0.0f};
             cp->depth  = ox + sr;
         }
         else if (oy <= oz)
         {
-            cp->normal = (Vec3){0.0f, sp.y > bp.y ? 1.0f : -1.0f, 0.0f};
+            cp->normal = (Vec3){0.0f, sp.y > bp.y ? -1.0f : 1.0f, 0.0f};
             cp->depth  = oy + sr;
         }
         else
         {
-            cp->normal = (Vec3){0.0f, 0.0f, sp.z > bp.z ? 1.0f : -1.0f};
+            cp->normal = (Vec3){0.0f, 0.0f, sp.z > bp.z ? -1.0f : 1.0f};
             cp->depth  = oz + sr;
         }
     }
     return true;
 }
 
-// normal points FROM B TOWARD A
 static b8 contactBoxBox(Vec3 pa, Vec3 ha, Vec3 pb, Vec3 hb, ContactManifold *m)
 {
     f32 ox = ha.x + hb.x - fabsf(pa.x - pb.x);
@@ -468,17 +587,17 @@ static b8 contactBoxBox(Vec3 pa, Vec3 ha, Vec3 pb, Vec3 hb, ContactManifold *m)
 
     if (ox <= oy && ox <= oz)
     {
-        cp->normal = (Vec3){pa.x > pb.x ? 1.0f : -1.0f, 0.0f, 0.0f};
+        cp->normal = (Vec3){pa.x > pb.x ? -1.0f : 1.0f, 0.0f, 0.0f};
         cp->depth  = ox;
     }
     else if (oy <= oz)
     {
-        cp->normal = (Vec3){0.0f, pa.y > pb.y ? 1.0f : -1.0f, 0.0f};
+        cp->normal = (Vec3){0.0f, pa.y > pb.y ? -1.0f : 1.0f, 0.0f};
         cp->depth  = oy;
     }
     else
     {
-        cp->normal = (Vec3){0.0f, 0.0f, pa.z > pb.z ? 1.0f : -1.0f};
+        cp->normal = (Vec3){0.0f, 0.0f, pa.z > pb.z ? -1.0f : 1.0f};
         cp->depth  = oz;
     }
     return true;
@@ -500,6 +619,7 @@ PhysicsWorld *physWorldCreate(Vec3 gravity, f32 timestep)
     // Initialize spatial hash table — dirty tracking only clears used buckets
     for (u32 i = 0; i < SH_TABLE_SIZE; i++) g_shTable[i] = SH_SENTINEL;
     g_shDirtyCount = 0;
+    g_shGhostCount = 0;
 
     return world;
 }
@@ -513,6 +633,7 @@ void physWorldDestroy(PhysicsWorld *world)
     g_shCellSize   = 0.0f;
     g_shInvCell    = 0.0f;
     g_shDirtyCount = 0;
+    g_shGhostCount = 0;
 
     dfree(world, sizeof(PhysicsWorld), MEM_TAG_PHYSICS);
 }
@@ -621,6 +742,17 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
             // ── 2. Broadphase — spatial hash ────────────────────────────────
             buildBodyList(world);
             world->pairCount = broadphaseGetPairs(world->pairs, MAX_PHYS_PAIRS);
+            if (world->physFrameCounter < 3)
+            {
+                INFO("PhysStep[%u]: archetypes=%u bodies=%u ghosts=%u pairs=%u cellSize=%.2f",
+                     world->physFrameCounter, world->bodyArchetypeCount,
+                     g_bodyCount, g_shGhostCount, world->pairCount, g_shCellSize);
+                for (u32 bi = 0; bi < g_bodyCount && bi < 8; bi++)
+                    INFO("  body[%u]: pos=(%.1f,%.1f,%.1f) bt=%u shape=%u r=%.2f half=(%.2f,%.2f,%.2f)",
+                         bi, g_bpPosX[bi], g_bpPosY[bi], g_bpPosZ[bi],
+                         g_bpBodyType[bi], g_bpShape[bi], g_bpRadius[bi],
+                         g_bpHalfX[bi], g_bpHalfY[bi], g_bpHalfZ[bi]);
+            }
 
             // ── 3. Narrowphase — contact generation ─────────────────────────
             world->manifoldCount = 0;
@@ -681,8 +813,7 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                 if (hit) world->manifoldCount++;
             }
 
-            // ── 4. Sequential impulse solver ────────────────────────────────
-            #define BAUMGARTE 0.2f
+            // ── 4. Sequential impulse solver (velocity) ────────────────────
             #define SLOP      0.005f
 
             for (u32 iter = 0; iter < world->solverIterations; iter++)
@@ -725,26 +856,55 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                         f32 rvY = vyB[iB] - vyA[iA];
                         f32 rvZ = vzB[iB] - vzA[iA];
                         f32 rvn = rvX * n.x + rvY * n.y + rvZ * n.z;
-                        if (rvn > 0.0f) continue; // separating
+                        if (rvn > 0.0f) continue;
 
                         f32 j = -(1.0f + e) * rvn / totalInvMass;
                         vxA[iA] -= n.x * j * imA; vyA[iA] -= n.y * j * imA; vzA[iA] -= n.z * j * imA;
                         vxB[iB] += n.x * j * imB; vyB[iB] += n.y * j * imB; vzB[iB] += n.z * j * imB;
+                    }
+                }
+            }
 
-                        // Baumgarte position correction (pure position-space, no /dt)
-                        f32 corr = c->depth - SLOP;
-                        if (corr > 0.0f)
-                        {
-                            f32 corrMag = corr * BAUMGARTE / totalInvMass;
-                            f32 *pxA = (f32 *)fA[bA->posX]; f32 *pyA = (f32 *)fA[bA->posY]; f32 *pzA = (f32 *)fA[bA->posZ];
-                            f32 *pxB = (f32 *)fB[bB->posX]; f32 *pyB = (f32 *)fB[bB->posY]; f32 *pzB = (f32 *)fB[bB->posZ];
-                            pxA[iA] -= n.x * corrMag * imA;
-                            pyA[iA] -= n.y * corrMag * imA;
-                            pzA[iA] -= n.z * corrMag * imA;
-                            pxB[iB] += n.x * corrMag * imB;
-                            pyB[iB] += n.y * corrMag * imB;
-                            pzB[iB] += n.z * corrMag * imB;
-                        }
+            // ── 4b. Position correction (single pass, after velocity solve) ──
+            for (u32 mi = 0; mi < world->manifoldCount; mi++)
+            {
+                ContactManifold *manifold = &world->manifolds[mi];
+                CollisionPair   *pair     = &world->pairs[manifold->bodyA];
+                PhysFieldBinding *bA = &world->bindings[pair->archA];
+                PhysFieldBinding *bB = &world->bindings[pair->archB];
+
+                void **fA = getArchetypeFields(world->bodyArchetypes[pair->archA], pair->chunkA);
+                void **fB = getArchetypeFields(world->bodyArchetypes[pair->archB], pair->chunkB);
+                if (!fA || !fB) continue;
+
+                u32 iA = pair->indexA, iB = pair->indexB;
+                f32 imA = ((f32 *)fA[bA->invMass])[iA];
+                f32 imB = ((f32 *)fB[bB->invMass])[iB];
+
+                u32 *btA = (bA->bodyType >= 0) ? (u32 *)fA[bA->bodyType] : NULL;
+                u32 *btB = (bB->bodyType >= 0) ? (u32 *)fB[bB->bodyType] : NULL;
+                if (imA == 0.0f && imB == 0.0f) continue;
+                if (btA && btA[iA] != PHYS_BODY_DYNAMIC) imA = 0.0f;
+                if (btB && btB[iB] != PHYS_BODY_DYNAMIC) imB = 0.0f;
+                f32 totalInvMass = imA + imB;
+                if (totalInvMass == 0.0f) continue;
+
+                for (u32 ci = 0; ci < manifold->pointCount; ci++)
+                {
+                    ContactPoint *c = &manifold->points[ci];
+                    f32 corr = c->depth - SLOP;
+                    if (corr > 0.0f)
+                    {
+                        f32 corrMag = corr / totalInvMass;
+                        Vec3 n = c->normal;
+                        f32 *pxA = (f32 *)fA[bA->posX]; f32 *pyA = (f32 *)fA[bA->posY]; f32 *pzA = (f32 *)fA[bA->posZ];
+                        f32 *pxB = (f32 *)fB[bB->posX]; f32 *pyB = (f32 *)fB[bB->posY]; f32 *pzB = (f32 *)fB[bB->posZ];
+                        pxA[iA] -= n.x * corrMag * imA;
+                        pyA[iA] -= n.y * corrMag * imA;
+                        pzA[iA] -= n.z * corrMag * imA;
+                        pxB[iB] += n.x * corrMag * imB;
+                        pyB[iB] += n.y * corrMag * imB;
+                        pzB[iB] += n.z * corrMag * imB;
                     }
                 }
             }
@@ -839,6 +999,9 @@ void physRegisterArchetype(PhysicsWorld *world, Archetype *arch)
     world->bodyArchetypeCount++;
 
     PhysFieldBinding *b = &world->bindings[idx];
+    INFO("physRegisterArchetype[%u]: '%s' count=%u posX=%d velX=%d bt=%d invMass=%d halfX=%d shape=%d radius=%d scale=%d",
+         idx, arch->layout->name, arch->arena[0].count,
+         b->posX, b->velX, b->bodyType, b->invMass, b->halfX, b->shape, b->radius, b->scaleField);
     if (b->posX < 0 || b->velX < 0)
         WARN("physRegisterArchetype: '%s' missing Position or LinearVelocity fields", arch->layout->name);
     if (b->radius < 0 && b->halfX < 0)
