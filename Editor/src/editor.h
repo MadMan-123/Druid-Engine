@@ -78,6 +78,7 @@ extern Mesh* cubeMesh;
 extern Material* materials;
 
 extern b8 canMoveViewPort;
+extern b8 g_runtimeFreeView;
 extern b8 manipulateTransform;
 extern u32 shader;
 extern f32 viewportWidthPixels;
@@ -95,6 +96,7 @@ extern u32 fboShader;
 extern u32 deferredLightingShader;
 extern b8 canMoveAxis;
 extern b8 showSkyboxSettings;
+extern b8 showColliders;
 extern Vec3 manipulateAxis;
 
 extern c8 scenePathBuffer[512];
@@ -129,6 +131,11 @@ void destroy();
 // Project build & game DLL management (implemented in editor.cpp)
 void doBuildAndRun();
 void doStopGame();
+void resetRuntimeFreeViewState();
+
+// Snap sceneCam to the first active Player entity (eye-height adjusted).
+// Returns true when a Player entity was found.
+b8 snapRuntimeFreeViewToPlayerEntity();
 
 // Editsor UI drawing entry point (panels, dockspace, etc.)
 void drawDockspaceAndPanels();

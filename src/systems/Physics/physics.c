@@ -355,7 +355,9 @@ static void buildBodyList(PhysicsWorld *world)
                 g_bpPosX[idx]      = posX[i];
                 g_bpPosY[idx]      = posY[i];
                 g_bpPosZ[idx]      = posZ[i];
-                g_bpBodyType[idx]  = bt ? bt[i] : PHYS_BODY_DYNAMIC;
+                // If an archetype omits PhysicsBodyType, treat it as static by
+                // default so world geometry does not become dynamic implicitly.
+                g_bpBodyType[idx]  = bt ? bt[i] : PHYS_BODY_STATIC;
                 g_bpShape[idx]     = inferShape(fields, b, i);
 
                 if (g_bpShape[idx] == PSHAPE_BOX)
@@ -686,7 +688,10 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                     f32 *frcX    = (f32 *)fields[b->forceX];
                     f32 *frcY    = (f32 *)fields[b->forceY];
                     f32 *frcZ    = (f32 *)fields[b->forceZ];
+                    // Guard invMass — archetypes without the field can't be integrated.
+                    if (b->invMass < 0) { visIdx += count; continue; }
                     f32 *invMass = (f32 *)fields[b->invMass];
+                    f32 *massArr = (b->mass >= 0) ? (f32 *)fields[b->mass] : NULL;
                     f32 *damp    = (b->damping >= 0) ? (f32 *)fields[b->damping] : NULL;
                     u32 *bt      = (b->bodyType >= 0) ? (u32 *)fields[b->bodyType] : NULL;
 
@@ -697,8 +702,12 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                         if (vis && (visIdx + i) < visCount
                             && !vis[visIdx + i] && !isLodFrame)
                             continue;
+                        // No body type field → treat as static (same convention as broadphase)
+                        if (!bt || bt[i] != PHYS_BODY_DYNAMIC) continue;
+                        // auto-compute invMass on first use (dynamic bodies only)
+                        if (massArr && invMass[i] == 0.0f && massArr[i] > 0.0f)
+                            invMass[i] = 1.0f / massArr[i];
                         if (invMass[i] == 0.0f) continue;
-                        if (bt && bt[i] != PHYS_BODY_DYNAMIC) continue;
                         f32 m = 1.0f / invMass[i];
                         frcX[i] += m * world->gravity.x;
                         frcY[i] += m * world->gravity.y;
@@ -929,18 +938,19 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                     f32 *frcX  = (f32 *)fields[b->forceX];
                     f32 *frcY  = (f32 *)fields[b->forceY];
                     f32 *frcZ  = (f32 *)fields[b->forceZ];
+                    u32 *bt    = (b->bodyType >= 0) ? (u32 *)fields[b->bodyType] : NULL;
+                    f32 *invM  = (b->invMass  >= 0) ? (f32 *)fields[b->invMass]  : NULL;
 
-                    // Position integration (SIMD): pos += vel * dt
-                    // Use MulScalar to scale velocity, then Add — avoids allocating a
-                    // uniform dtArray just to broadcast a single scalar.
-                    f32 *scaledVel = frameAlloc(count * sizeof(f32));
-
-                    simdMulScalar(velX, subDt, scaledVel, count);
-                    simdAdd(posX, scaledVel, posX, count);
-                    simdMulScalar(velY, subDt, scaledVel, count);
-                    simdAdd(posY, scaledVel, posY, count);
-                    simdMulScalar(velZ, subDt, scaledVel, count);
-                    simdAdd(posZ, scaledVel, posZ, count);
+                    // Integrate positions for DYNAMIC bodies only.
+                    // Static/Kinematic bodies must not drift from residual velocity.
+                    for (u32 i = 0; i < count; i++)
+                    {
+                        if (bt && bt[i] != PHYS_BODY_DYNAMIC) continue;
+                        if (!bt && invM && invM[i] == 0.0f) continue;
+                        posX[i] += velX[i] * subDt;
+                        posY[i] += velY[i] * subDt;
+                        posZ[i] += velZ[i] * subDt;
+                    }
 
                     // Reset forces (simple memset for now, TODO: add simdZero)
                     memset(frcX, 0, count * sizeof(f32));
@@ -1023,6 +1033,113 @@ PhysFieldBinding *physGetBindingByIndex(PhysicsWorld *world, u32 index)
     if (!world || index >= world->bodyArchetypeCount) return NULL;
     return &world->bindings[index];
 }
+
+//=====================================================================================================================
+// Rigidbody operations
+
+// Resolves poolIdx → (binding, fields, localIdx) for a registered archetype.
+// poolIdx is the value returned by archetypeSpawnIn().poolIdx  (chunkIdx * chunkCapacity + localIdx).
+static b8 resolveBody(PhysicsWorld *world, Archetype *arch, u32 poolIdx,
+                      PhysFieldBinding **outB, void ***outFields, u32 *outLocal)
+{
+    if (!world || !arch) return false;
+
+    PhysFieldBinding *binding = NULL;
+    for (u32 a = 0; a < world->bodyArchetypeCount; a++)
+    {
+        if (world->bodyArchetypes[a] == arch) { binding = &world->bindings[a]; break; }
+    }
+    if (!binding) return false;
+
+    u32 chunkIdx = poolIdx / arch->chunkCapacity;
+    u32 localIdx = poolIdx % arch->chunkCapacity;
+    if (chunkIdx >= arch->activeChunkCount) return false;
+
+    void **fields = getArchetypeFields(arch, chunkIdx);
+    if (!fields) return false;
+
+    *outB      = binding;
+    *outFields = fields;
+    *outLocal  = localIdx;
+    return true;
+}
+
+void physBodyApplyForce(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 force)
+{
+    PhysFieldBinding *b; void **fields; u32 i;
+    if (!resolveBody(world, arch, index, &b, &fields, &i)) return;
+    if (b->forceX < 0) return;
+    ((f32 *)fields[b->forceX])[i] += force.x;
+    ((f32 *)fields[b->forceY])[i] += force.y;
+    ((f32 *)fields[b->forceZ])[i] += force.z;
+}
+
+void physBodyApplyTorque(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 torque)
+{
+    // No angular velocity fields in the current SoA layout — stub until added.
+    (void)world; (void)arch; (void)index; (void)torque;
+}
+
+void physBodyApplyImpulse(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 impulse)
+{
+    PhysFieldBinding *b; void **fields; u32 i;
+    if (!resolveBody(world, arch, index, &b, &fields, &i)) return;
+    if (b->velX < 0 || b->invMass < 0) return;
+    f32 im = ((f32 *)fields[b->invMass])[i];
+    if (im == 0.0f) return;
+    ((f32 *)fields[b->velX])[i] += impulse.x * im;
+    ((f32 *)fields[b->velY])[i] += impulse.y * im;
+    ((f32 *)fields[b->velZ])[i] += impulse.z * im;
+}
+
+void physBodyApplyImpulseAt(PhysicsWorld *world, Archetype *arch, u32 index,
+                             Vec3 impulse, Vec3 point)
+{
+    // Angular portion ignored — no angular velocity field yet.
+    (void)point;
+    physBodyApplyImpulse(world, arch, index, impulse);
+}
+
+void physBodySetVelocity(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 vel)
+{
+    PhysFieldBinding *b; void **fields; u32 i;
+    if (!resolveBody(world, arch, index, &b, &fields, &i)) return;
+    if (b->velX < 0) return;
+    ((f32 *)fields[b->velX])[i] = vel.x;
+    ((f32 *)fields[b->velY])[i] = vel.y;
+    ((f32 *)fields[b->velZ])[i] = vel.z;
+}
+
+Vec3 physBodyGetVelocity(PhysicsWorld *world, Archetype *arch, u32 index)
+{
+    PhysFieldBinding *b; void **fields; u32 i;
+    if (!resolveBody(world, arch, index, &b, &fields, &i)) return (Vec3){0};
+    if (b->velX < 0) return (Vec3){0};
+    return (Vec3){
+        ((f32 *)fields[b->velX])[i],
+        ((f32 *)fields[b->velY])[i],
+        ((f32 *)fields[b->velZ])[i]
+    };
+}
+
+Vec3 physBodyGetPosition(PhysicsWorld *world, Archetype *arch, u32 index)
+{
+    PhysFieldBinding *b; void **fields; u32 i;
+    if (!resolveBody(world, arch, index, &b, &fields, &i)) return (Vec3){0};
+    if (b->posX < 0) return (Vec3){0};
+    return (Vec3){
+        ((f32 *)fields[b->posX])[i],
+        ((f32 *)fields[b->posY])[i],
+        ((f32 *)fields[b->posZ])[i]
+    };
+}
+
+// Singleton convenience wrappers — use the global physicsWorld.
+void physApplyForce   (Archetype *arch, u32 index, Vec3 force)   { physBodyApplyForce   (physicsWorld, arch, index, force);   }
+void physApplyImpulse (Archetype *arch, u32 index, Vec3 impulse) { physBodyApplyImpulse (physicsWorld, arch, index, impulse); }
+void physSetVelocity  (Archetype *arch, u32 index, Vec3 vel)     { physBodySetVelocity  (physicsWorld, arch, index, vel);     }
+Vec3 physGetVelocity  (Archetype *arch, u32 index)               { return physBodyGetVelocity (physicsWorld, arch, index);    }
+Vec3 physGetPosition  (Archetype *arch, u32 index)               { return physBodyGetPosition(physicsWorld, arch, index);    }
 
 //=====================================================================================================================
 // Physics DLL loading

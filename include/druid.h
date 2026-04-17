@@ -701,16 +701,24 @@ extern "C"
     {#name "Z", sizeof(f32), FIELD_TEMP_HOT},                                  \
     {#name "W", sizeof(f32), FIELD_TEMP_HOT}
 
-#ifdef DRUID_H
-#define DEFINE_ARCHETYPE(name, ...)                                            \
-    FieldInfo name##_fields[] = {__VA_ARGS__};                                 \
-    StructLayout name = {#name, name##_fields,                                 \
-                         (u32)(sizeof(name##_fields) / sizeof(FieldInfo))};
-#else
-#define DEFINE_ARCHETYPE(name, ...)                                            \
-    extern FieldInfo name##_fields[];                                          \
-    extern StructLayout name;
-#endif
+// X-macro helpers — not for direct use
+#define _ARCH_ENUM_ENTRY(ename, fname, ftype, ftemp)  ename,
+#define _ARCH_FIELD_ENTRY(ename, fname, ftype, ftemp) { fname, sizeof(ftype), FIELD_TEMP_##ftemp },
+
+// DECLARE_ARCHETYPE — goes in .h files
+// Generates: field index enum, extern field array, extern layout
+// Each field entry: F(ENUM_NAME, "field_name", ctype, HOT|COLD)
+#define DECLARE_ARCHETYPE(name, FIELDS)                  \
+    enum { FIELDS(_ARCH_ENUM_ENTRY) name##_FIELD_COUNT };\
+    extern DSAPI FieldInfo    name##_fields[];            \
+    extern DSAPI StructLayout name##_layout;
+
+// DEFINE_ARCHETYPE — goes in .c files
+// Generates: FieldInfo array + StructLayout (enum comes from the header)
+#define DEFINE_ARCHETYPE(name, FIELDS)                                               \
+    DSAPI FieldInfo name##_fields[] = { FIELDS(_ARCH_FIELD_ENTRY) };                \
+    DSAPI StructLayout name##_layout = { #name, name##_fields,                       \
+                                          (u32)(sizeof(name##_fields) / sizeof(FieldInfo)) };
 
     //=====================================================================================================================
     // Archetypes
@@ -2325,12 +2333,21 @@ extern "C"
     DAPI void physColliderSetMaterial(PhysicsWorld *world, u32 handle, PhysMaterial mat);
     DAPI AABB physColliderComputeAABB(PhysicsWorld *world, u32 handle, Vec3 pos, Vec4 rot);
 
-    // Rigidbody
-    DAPI void physBodyApplyForce(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 force);
-    DAPI void physBodyApplyTorque(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 torque);
-    DAPI void physBodyApplyImpulse(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 impulse);
-    DAPI void physBodyApplyImpulseAt(PhysicsWorld *world, Archetype *arch, u32 index,
-                                     Vec3 impulse, Vec3 point);
+    // Rigidbody — full form takes explicit world pointer
+    DAPI void physBodyApplyForce    (PhysicsWorld *world, Archetype *arch, u32 index, Vec3 force);
+    DAPI void physBodyApplyTorque   (PhysicsWorld *world, Archetype *arch, u32 index, Vec3 torque);
+    DAPI void physBodyApplyImpulse  (PhysicsWorld *world, Archetype *arch, u32 index, Vec3 impulse);
+    DAPI void physBodyApplyImpulseAt(PhysicsWorld *world, Archetype *arch, u32 index, Vec3 impulse, Vec3 point);
+    DAPI void physBodySetVelocity   (PhysicsWorld *world, Archetype *arch, u32 index, Vec3 vel);
+    DAPI Vec3 physBodyGetVelocity   (PhysicsWorld *world, Archetype *arch, u32 index);
+    DAPI Vec3 physBodyGetPosition   (PhysicsWorld *world, Archetype *arch, u32 index);
+
+    // Rigidbody — singleton wrappers that use the global physicsWorld
+    DAPI void physApplyForce  (Archetype *arch, u32 index, Vec3 force);
+    DAPI void physApplyImpulse(Archetype *arch, u32 index, Vec3 impulse);
+    DAPI void physSetVelocity (Archetype *arch, u32 index, Vec3 vel);
+    DAPI Vec3 physGetVelocity (Archetype *arch, u32 index);
+    DAPI Vec3 physGetPosition (Archetype *arch, u32 index);
 
     // Broadphase
     DAPI void physBroadphaseRebuild(PhysicsWorld *world);

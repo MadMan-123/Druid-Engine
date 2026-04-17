@@ -24,40 +24,47 @@
 #endif
 #define ERROR(message, ...) logOutput(LOG_ERROR, message, ##__VA_ARGS__)
 
-// SceneEntity archetype definition (moved from druid.h)
-DEFINE_ARCHETYPE(SceneEntity,
-    FIELD(Vec3, position),
-    FIELD(Vec4, rotation),
-    FIELD(Vec3, scale),
-    FIELD(b8, isActive),
-    FIELD(c8[MAX_NAME_SIZE], name),
-    FIELD(u32, modelID),
-    FIELD(u32, shaderHandle),
-    FIELD(u32, materialID),
-    FIELD(u32, archetypeID),      // index into g_archRegistry (which archetype type)
-    FIELD(b8, isSceneCamera),
-    FIELD(u32, ecsSlotID),        // runtime slot index within the ECS archetype's SoA buffer
-    FIELD(c8[32], tag),           // user-defined tag for filtering in hierarchy
-    FIELD(u32, physicsBodyType),  // PHYS_BODY_STATIC/DYNAMIC/KINEMATIC — copied to physics archetype
-    FIELD(f32, mass),             // initial mass — copied to physics archetype at play-start
-    FIELD(u32, colliderShape),    // 0=None 1=Sphere 2=Box — copied to ColliderShape
-    FIELD(f32, sphereRadius),     // sphere collision radius — copied to SphereRadius
-    FIELD(f32, colliderHalfX),    // box half-extent X — copied to ColliderHalfX
-    FIELD(f32, colliderHalfY),    // box half-extent Y — copied to ColliderHalfY
-    FIELD(f32, colliderHalfZ),    // box half-extent Z — copied to ColliderHalfZ
-    FIELD(b8, isLight),           // marks entity as a light source
-    FIELD(u32, lightType),        // LIGHT_TYPE_POINT/DIRECTIONAL/SPOT
-    FIELD(f32, lightRange),       // attenuation distance
-    FIELD(f32, lightColorR),      // light color R
-    FIELD(f32, lightColorG),      // light color G
-    FIELD(f32, lightColorB),      // light color B
-    FIELD(f32, lightIntensity),   // brightness multiplier
-    FIELD(f32, lightDirX),        // direction X (spot/directional)
-    FIELD(f32, lightDirY),        // direction Y (spot/directional)
-    FIELD(f32, lightDirZ),        // direction Z (spot/directional)
-    FIELD(f32, lightInnerCone),   // spot inner cone angle (cosine)
-    FIELD(f32, lightOuterCone)    // spot outer cone angle (cosine)
-);
+// SceneEntity archetype definition — field order matches rebindArchetypeFields() expectations
+#define SCENEENTITY_FIELDS(FIELD)                                                   \
+    FIELD(SE_POS,           "position",          Vec3, HOT)                         \
+    FIELD(SE_ROT,           "rotation",          Vec4, HOT)                         \
+    FIELD(SE_SCALE,         "scale",             Vec3, HOT)                         \
+    FIELD(SE_ACTIVE,        "isActive",          b8,   HOT)                         \
+    FIELD(SE_NAME,          "name",              c8[MAX_NAME_SIZE], COLD)           \
+    FIELD(SE_MODEL_ID,      "modelID",           u32,  COLD)                        \
+    FIELD(SE_SHADER,        "shaderHandle",      u32,  COLD)                        \
+    FIELD(SE_MATERIAL,      "materialID",        u32,  COLD)                        \
+    FIELD(SE_ARCH_ID,       "archetypeID",       u32,  COLD)                        \
+    FIELD(SE_SCENE_CAM,     "isSceneCamera",     b8,   COLD)                        \
+    FIELD(SE_ECS_SLOT,      "ecsSlotID",         u32,  COLD)                        \
+    FIELD(SE_TAG,           "tag",               c8[32], COLD)                      \
+    FIELD(SE_PHYS_TYPE,     "physicsBodyType",   u32,  COLD)                        \
+    FIELD(SE_MASS,          "mass",              f32,  COLD)                        \
+    FIELD(SE_COLLIDER_SHAPE,"colliderShape",     u32,  COLD)                        \
+    FIELD(SE_SPHERE_R,      "sphereRadius",      f32,  COLD)                        \
+    FIELD(SE_HALF_X,        "colliderHalfX",     f32,  COLD)                        \
+    FIELD(SE_HALF_Y,        "colliderHalfY",     f32,  COLD)                        \
+    FIELD(SE_HALF_Z,        "colliderHalfZ",     f32,  COLD)                        \
+    FIELD(SE_IS_LIGHT,      "isLight",           b8,   COLD)                        \
+    FIELD(SE_LIGHT_TYPE,    "lightType",         u32,  COLD)                        \
+    FIELD(SE_LIGHT_RANGE,   "lightRange",        f32,  COLD)                        \
+    FIELD(SE_LIGHT_R,       "lightColorR",       f32,  COLD)                        \
+    FIELD(SE_LIGHT_G,       "lightColorG",       f32,  COLD)                        \
+    FIELD(SE_LIGHT_B,       "lightColorB",       f32,  COLD)                        \
+    FIELD(SE_LIGHT_INT,     "lightIntensity",    f32,  COLD)                        \
+    FIELD(SE_LIGHT_DIR_X,   "lightDirX",         f32,  COLD)                        \
+    FIELD(SE_LIGHT_DIR_Y,   "lightDirY",         f32,  COLD)                        \
+    FIELD(SE_LIGHT_DIR_Z,   "lightDirZ",         f32,  COLD)                        \
+    FIELD(SE_LIGHT_IN_CONE, "lightInnerCone",    f32,  COLD)                        \
+    FIELD(SE_LIGHT_OUT_CONE,"lightOuterCone",    f32,  COLD)
+
+// Enum for field indices
+enum { SCENEENTITY_FIELDS(_ARCH_ENUM_ENTRY) SceneEntity_FIELD_COUNT };
+
+// Field metadata
+FieldInfo SceneEntity_fields[] = { SCENEENTITY_FIELDS(_ARCH_FIELD_ENTRY) };
+StructLayout SceneEntity = { "SceneEntity", SceneEntity_fields,
+                             (u32)(sizeof(SceneEntity_fields) / sizeof(FieldInfo)) };
 
 // Editor-side registry of user-created archetypes
 static ArchetypeRegistry g_archRegistry = {0};
@@ -76,7 +83,7 @@ static b8 showProfiler = false;
 static b8 showScenesPanel = true;
 b8 showSkyboxSettings = false;
 static b8 showCameraSettings = false;
-static b8 showColliders = true;
+b8 showColliders = true;
 static b8 showLightGizmos = true;
 static b8 showLoadedEntities = false;
 
@@ -1029,6 +1036,20 @@ static void renderGameScene()
         for (u32 id = 0; id < entityCount; id++)
         {
             if (!isActive[id]) continue;
+
+            // In play mode, entities assigned to ECS archetypes are rendered
+            // in the ECS render pass below. Skip them here to prevent
+            // double-rendering (ghost/duplicate models with mismatched materials).
+            if (archetypeIDs)
+            {
+                u32 aid = archetypeIDs[id];
+                if (aid != (u32)-1
+                    && aid < MAX_ARCHETYPE_SYSTEMS
+                    && g_ecsSystemLoaded[aid]
+                    && g_ecsArchetypes[aid].arena)
+                    continue;
+            }
+
             newTransform = {positions[id], rotations[id], scales[id]};
 
             u32 modelID = modelIDs[id];
@@ -1423,8 +1444,15 @@ static void renderGameScene()
 
     // Flush gizmo overlay (draws on top with depth test disabled)
     {
-        Mat4 view = getView(&sceneCam, false);
-        Mat4 vp = mat4Mul(sceneCam.projection, view);
+        Camera *gizmoCam = &sceneCam;
+        if (g_gameRunning && renderer)
+        {
+            Camera *activeCam = rendererGetCamera(renderer, renderer->activeCamera);
+            if (activeCam) gizmoCam = activeCam;
+        }
+
+        Mat4 view = getView(gizmoCam, false);
+        Mat4 vp = mat4Mul(gizmoCam->projection, view);
         gizmoEndFrame(vp);
     }
 
@@ -1532,7 +1560,14 @@ static void drawViewportWindow()
 
 static void drawDebugWindow()
 {
-    const c8 *inspectorStateNames[] = {"EMPTY_VIEW", "ENTITY_VIEW", "SKYBOX_VIEW"};
+    const c8 *inspectorStateName = "UNKNOWN";
+    switch (currentInspectorState)
+    {
+    case EMPTY_VIEW:  inspectorStateName = "EMPTY_VIEW";  break;
+    case ENTITY_VIEW: inspectorStateName = "ENTITY_VIEW"; break;
+    case SKYBOX_VIEW: inspectorStateName = "SKYBOX_VIEW"; break;
+    default: break;
+    }
     ImGui::Begin("Debug");
 
     // VSync toggle
@@ -1547,9 +1582,8 @@ static void drawDebugWindow()
     ImGui::Text("Entity Count: %d", entityCount);
     ImGui::Text("Entity Size: %d", entitySize);
     ImGui::Text("Inspector Entity ID: %d", inspectorEntityID);
-    ImGui::Text("Inspector State: %d",
-                inspectorStateNames[currentInspectorState]);
-    ImGui::Text("Viewport Size: %.0f x %.0f", viewportWidth, viewportHeight);
+    ImGui::Text("Inspector State: %s", inspectorStateName);
+    ImGui::Text("Viewport Size: %u x %u", viewportWidth, viewportHeight);
     
     // Multi-FBO System Info
     ImGui::Separator();
@@ -1592,7 +1626,8 @@ static void drawDebugWindow()
                     resources->modelCount);
     }
 
-    u32 dummy = -1; // No selection
+    i32 dummy = -1; // No selection
+    (void)dummy;
     // ImGui::ListBox("Console", &dummy, consoleLines, MAX_CONSOLE_LINES, 10);
     ImGui::End();
 }
@@ -1770,30 +1805,55 @@ void scanProjectArchetypes(const c8 *projectDir)
         buf[sz] = '\0';
         fclose(f);
 
-        // Look for "FieldInfo <name>_fields[]"
-        const c8 *marker = strstr(buf, "FieldInfo ");
-        if (!marker || !strstr(marker, "_fields[]"))
-        {
-            free(buf);
-            free(files[fi]);
-            continue;
-        }
-
-        // Extract archetype name: between "FieldInfo " and "_fields[]"
-        const c8 *nameStart = marker + strlen("FieldInfo ");
-        const c8 *nameEnd   = strstr(nameStart, "_fields[]");
-        if (!nameEnd || nameEnd <= nameStart)
-        {
-            free(buf);
-            free(files[fi]);
-            continue;
-        }
-
+        // Detect archetype source files — two supported formats:
+        //   Old: DSAPI FieldInfo Name_fields[] = { ... }
+        //   New: DEFINE_ARCHETYPE(Name, NAME_FIELDS)
         c8 archName[MAX_SCENE_NAME] = {0};
-        u32 nameLen = (u32)(nameEnd - nameStart);
-        if (nameLen >= MAX_SCENE_NAME) nameLen = MAX_SCENE_NAME - 1;
-        memcpy(archName, nameStart, nameLen);
-        archName[nameLen] = '\0';
+        b8 isNewFormat = false;
+
+        const c8 *marker = strstr(buf, "FieldInfo ");
+        if (marker && strstr(marker, "_fields[]"))
+        {
+            // Old format — extract name between "FieldInfo " and "_fields[]"
+            const c8 *nameStart = marker + strlen("FieldInfo ");
+            const c8 *nameEnd   = strstr(nameStart, "_fields[]");
+            if (!nameEnd || nameEnd <= nameStart)
+            {
+                free(buf);
+                free(files[fi]);
+                continue;
+            }
+            u32 nameLen = (u32)(nameEnd - nameStart);
+            if (nameLen >= MAX_SCENE_NAME) nameLen = MAX_SCENE_NAME - 1;
+            memcpy(archName, nameStart, nameLen);
+            archName[nameLen] = '\0';
+        }
+        else
+        {
+            // New format — look for DEFINE_ARCHETYPE(Name, ...)
+            const c8 *da = strstr(buf, "DEFINE_ARCHETYPE(");
+            if (!da)
+            {
+                free(buf);
+                free(files[fi]);
+                continue;
+            }
+            da += strlen("DEFINE_ARCHETYPE(");
+            // skip whitespace
+            while (*da == ' ' || *da == '\t') da++;
+            const c8 *daEnd = da;
+            while (*daEnd && *daEnd != ',' && *daEnd != ')' && *daEnd != ' ' && *daEnd != '\t') daEnd++;
+            u32 nameLen = (u32)(daEnd - da);
+            if (nameLen == 0 || nameLen >= MAX_SCENE_NAME)
+            {
+                free(buf);
+                free(files[fi]);
+                continue;
+            }
+            memcpy(archName, da, nameLen);
+            archName[nameLen] = '\0';
+            isNewFormat = true;
+        }
 
         // Skip "game" or "game.c" - that's the main game plugin, not an archetype
         if (strcmp(archName, "game") == 0)
@@ -1828,64 +1888,163 @@ void scanProjectArchetypes(const c8 *projectDir)
 
         u32 regIdx = g_archRegistry.count;
 
-        // Parse { "name", sizeof(type) } entries and store field info
+        // Parse field entries and store field info.
+        // Old format: { "name", sizeof(type) } entries in the .c file.
+        // New format: FIELD(ENUM, "name", type, HOT|COLD) entries in the .h file's FIELDS macro.
         u32 fieldCount = 0;
-        const c8 *scan = strstr(buf, "_fields[] = {");
-        if (scan)
+
+        if (!isNewFormat)
         {
-            scan = strchr(scan, '{');
-            if (scan) scan++; // skip the opening {
-
-            while (scan && fieldCount < 32)
+            // --- Old format: parse from the already-loaded .c buffer ---
+            const c8 *scan = strstr(buf, "_fields[] = {");
+            if (scan)
             {
-                // find next field entry — accept both { "name" and {"name" (with or without space)
-                const c8 *e1 = strstr(scan, "{ \"");
-                const c8 *e2 = strstr(scan, "{\"");
-                const c8 *entryStart = NULL;
-                u32       nameOff    = 0; // offset from entryStart to the opening quote
-                if (e1 && e2) { entryStart = (e1 < e2) ? e1 : e2; nameOff = (entryStart == e1) ? 3 : 2; }
-                else if (e1)  { entryStart = e1; nameOff = 3; }
-                else if (e2)  { entryStart = e2; nameOff = 2; }
-                if (!entryStart) break;
-                // make sure we haven't passed the closing };
-                const c8 *closeBrace = strstr(scan, "};");
-                if (closeBrace && entryStart > closeBrace) break;
+                scan = strchr(scan, '{');
+                if (scan) scan++; // skip the opening {
 
-                // Extract field name between quotes
-                const c8 *ns = entryStart + nameOff;
-                const c8 *ne = strchr(ns, '"');
-                if (ne && (u32)(ne - ns) < 128)
+                while (scan && fieldCount < 32)
                 {
-                    memset(g_scannedFieldNames[regIdx][fieldCount], 0, 128);
-                    memcpy(g_scannedFieldNames[regIdx][fieldCount], ns, (u32)(ne - ns));
-                }
+                    // find next field entry — accept both { "name" and {"name"
+                    const c8 *e1 = strstr(scan, "{ \"");
+                    const c8 *e2 = strstr(scan, "{\"");
+                    const c8 *entryStart = NULL;
+                    u32       nameOff    = 0;
+                    if (e1 && e2) { entryStart = (e1 < e2) ? e1 : e2; nameOff = (entryStart == e1) ? 3 : 2; }
+                    else if (e1)  { entryStart = e1; nameOff = 3; }
+                    else if (e2)  { entryStart = e2; nameOff = 2; }
+                    if (!entryStart) break;
+                    const c8 *closeBrace = strstr(scan, "};");
+                    if (closeBrace && entryStart > closeBrace) break;
 
-                // Extract type from sizeof(Type)
-                u32 parsedSize = 0;
-                const c8 *szOf = strstr(entryStart, "sizeof(");
-                if (szOf)
-                {
-                    szOf += 7;
-                    const c8 *szEnd = strchr(szOf, ')');
-                    if (szEnd)
+                    const c8 *ns = entryStart + nameOff;
+                    const c8 *ne = strchr(ns, '"');
+                    if (ne && (u32)(ne - ns) < 128)
                     {
-                        c8 typeBuf[64] = {0};
-                        u32 tlen = (u32)(szEnd - szOf);
-                        if (tlen < 64) memcpy(typeBuf, szOf, tlen);
-                        parsedSize = knownTypeSize(typeBuf);
+                        memset(g_scannedFieldNames[regIdx][fieldCount], 0, 128);
+                        memcpy(g_scannedFieldNames[regIdx][fieldCount], ns, (u32)(ne - ns));
                     }
+
+                    u32 parsedSize = 0;
+                    const c8 *szOf = strstr(entryStart, "sizeof(");
+                    if (szOf)
+                    {
+                        szOf += 7;
+                        const c8 *szEnd = strchr(szOf, ')');
+                        if (szEnd)
+                        {
+                            c8 typeBuf[64] = {0};
+                            u32 tlen = (u32)(szEnd - szOf);
+                            if (tlen < 64) memcpy(typeBuf, szOf, tlen);
+                            parsedSize = knownTypeSize(typeBuf);
+                        }
+                    }
+
+                    g_scannedFields[regIdx][fieldCount].name = g_scannedFieldNames[regIdx][fieldCount];
+                    g_scannedFields[regIdx][fieldCount].size = parsedSize;
+
+                    scan = entryStart + 3;
+                    fieldCount++;
+
+                    const c8 *entryEnd = strchr(scan, '}');
+                    if (entryEnd) scan = entryEnd + 1;
+                    else break;
                 }
+            }
+        }
+        else
+        {
+            // --- New format: parse FIELD(ENUM, "name", type, HOT|COLD) from the .h file ---
+            // Build path to the .h file: same directory as the .c file, same base name.
+            c8 hPath[MAX_PATH_LENGTH] = {0};
+            strncpy(hPath, path, MAX_PATH_LENGTH - 1);
+            u32 hLen = (u32)strlen(hPath);
+            // Replace trailing ".c" or ".cpp" with ".h"
+            if (hLen >= 4 && strcmp(hPath + hLen - 4, ".cpp") == 0)
+                strcpy(hPath + hLen - 4, ".h");
+            else if (hLen >= 2 && strcmp(hPath + hLen - 2, ".c") == 0)
+                strcpy(hPath + hLen - 2, ".h");
 
-                g_scannedFields[regIdx][fieldCount].name = g_scannedFieldNames[regIdx][fieldCount];
-                g_scannedFields[regIdx][fieldCount].size = parsedSize;
+            FILE *hf = fopen(hPath, "r");
+            if (hf)
+            {
+                fseek(hf, 0, SEEK_END);
+                long hsz = ftell(hf);
+                fseek(hf, 0, SEEK_SET);
+                if (hsz > 0 && hsz <= 65536)
+                {
+                    c8 *hbuf = (c8 *)malloc((u32)hsz + 1);
+                    fread(hbuf, 1, (u32)hsz, hf);
+                    hbuf[hsz] = '\0';
+                    fclose(hf);
 
-                scan = entryStart + 3;
-                fieldCount++;
+                    // Find the #define ARCHNAME_FIELDS(FIELD) macro
+                    // Build the search token: "ARCHNAME_FIELDS("
+                    c8 upperName[MAX_SCENE_NAME * 2] = {0};
+                    for (u32 ci = 0; archName[ci]; ci++)
+                        upperName[ci] = (archName[ci] >= 'a' && archName[ci] <= 'z')
+                                        ? (c8)(archName[ci] - 32) : archName[ci];
+                    c8 fieldsMacroToken[MAX_SCENE_NAME * 2 + 16] = {0};
+                    snprintf(fieldsMacroToken, sizeof(fieldsMacroToken), "%s_FIELDS(", upperName);
 
-                // advance past this entry
-                const c8 *entryEnd = strchr(scan, '}');
-                if (entryEnd) scan = entryEnd + 1;
-                else break;
+                    const c8 *hScan = strstr(hbuf, fieldsMacroToken);
+                    if (hScan)
+                    {
+                        // Walk through FIELD( entries until end of macro (no trailing backslash)
+                        while (hScan && fieldCount < 32)
+                        {
+                            const c8 *fe = strstr(hScan, "FIELD(");
+                            if (!fe) break;
+
+                            // Skip past "FIELD("
+                            fe += 6;
+                            // Skip enum name argument (up to first comma)
+                            const c8 *comma1 = strchr(fe, ',');
+                            if (!comma1) break;
+                            comma1++;
+                            // Skip whitespace before the quoted name
+                            while (*comma1 == ' ' || *comma1 == '\t') comma1++;
+                            if (*comma1 != '"') { hScan = comma1; continue; }
+                            const c8 *ns = comma1 + 1;
+                            const c8 *ne = strchr(ns, '"');
+                            if (!ne || (u32)(ne - ns) >= 128) { hScan = comma1 + 1; continue; }
+
+                            memset(g_scannedFieldNames[regIdx][fieldCount], 0, 128);
+                            memcpy(g_scannedFieldNames[regIdx][fieldCount], ns, (u32)(ne - ns));
+
+                            // Skip past closing quote and comma to get the type argument
+                            const c8 *comma2 = strchr(ne + 1, ',');
+                            u32 parsedSize = 0;
+                            if (comma2)
+                            {
+                                comma2++;
+                                while (*comma2 == ' ' || *comma2 == '\t') comma2++;
+                                const c8 *typeEnd = comma2;
+                                while (*typeEnd && *typeEnd != ',' && *typeEnd != ')' &&
+                                       *typeEnd != ' ' && *typeEnd != '\t' &&
+                                       *typeEnd != '\r' && *typeEnd != '\n' && *typeEnd != '\\')
+                                    typeEnd++;
+                                c8 typeBuf[64] = {0};
+                                u32 tlen = (u32)(typeEnd - comma2);
+                                if (tlen > 0 && tlen < 64)
+                                {
+                                    memcpy(typeBuf, comma2, tlen);
+                                    parsedSize = knownTypeSize(typeBuf);
+                                }
+                            }
+
+                            g_scannedFields[regIdx][fieldCount].name = g_scannedFieldNames[regIdx][fieldCount];
+                            g_scannedFields[regIdx][fieldCount].size = parsedSize;
+                            fieldCount++;
+                            hScan = ne + 1;
+                        }
+                    }
+
+                    free(hbuf);
+                }
+                else
+                {
+                    fclose(hf);
+                }
             }
         }
 
@@ -2506,7 +2665,6 @@ static void drawPrefabsWindow()
         // Per-field hot/cold flags — true = hot, false = cold
         // Indexed by [archIdx][fieldIdx], supports up to 32 archetypes × 32 fields
         static bool hcIsHot[MAX_ARCHETYPE_SYSTEMS][32];
-        static i32  hcInitialised[MAX_ARCHETYPE_SYSTEMS];
         static bool hcInitDone[MAX_ARCHETYPE_SYSTEMS];
 
         const u32 CACHE_LINE = 64u; // bytes
@@ -3860,7 +4018,6 @@ static void drawInspectorWindow()
         }
 
         u32 currentModelID = modelIDs[inspectorEntityID];
-        u32 selectedIndex = (currentModelID < resources->modelUsed) ? currentModelID : 0;
         
         // Show warning if entity has no model assigned
         if (currentModelID == (u32)-1)
@@ -4963,6 +5120,38 @@ void drawDockspaceAndPanels()
         // Sync ECS-updated data (position, rotation, …) back to the scene
         // archetype so the editor renderer draws entities correctly.
         syncEcsToScene();
+
+        // Keep placed Player guide model(s) in sync with gameplay camera.
+        // This is useful when the gameplay controller runs outside the editor ECS
+        // path and still needs a visible third-person proxy in the scene.
+        {
+            i32 playerArchIdx = -1;
+            for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
+            {
+                if (strcmp(g_archRegistry.entries[a].name, "Player") == 0)
+                {
+                    playerArchIdx = (i32)a;
+                    break;
+                }
+            }
+
+            if (playerArchIdx >= 0 && archetypeIDs && positions && rotations && renderer)
+            {
+                Camera *cam = rendererGetCamera(renderer, renderer->activeCamera);
+                if (cam)
+                {
+                    // Keep in sync with Player.c eye offset.
+                    const f32 eyeHeight = 1.6f;
+                    Vec3 bodyPos = {cam->pos.x, cam->pos.y - eyeHeight, cam->pos.z};
+                    for (u32 id = 0; id < entityCount; id++)
+                    {
+                        if (!isActive[id]) continue;
+                        if ((i32)archetypeIDs[id] != playerArchIdx) continue;
+                        positions[id] = bodyPos;
+                    }
+                }
+            }
+        }
     }
 
     ImGui::End(); // MainDockSpace

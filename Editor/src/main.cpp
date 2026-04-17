@@ -171,6 +171,10 @@ void processInput(void *appData)
     if (canMoveViewPort)
         capture = false;
 
+    // In play mode the game/plugin should always receive raw input.
+    if (g_gameRunning)
+        capture = false;
+
     setInputCaptureState(capture);
 }
 
