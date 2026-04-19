@@ -610,6 +610,7 @@ void init()
         snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
         if (fileExists(projRes) || true)  // readResources handles missing dir gracefully
             readResources(resources, projRes);
+        buildShaderSourceTable(projRes);
 
         if (g_startupModelRefs && g_startupModelRefCount > 0)
         {

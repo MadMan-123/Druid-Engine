@@ -158,6 +158,13 @@ void applySceneCameraEntityToSceneCam();
 // Release material registry GPU resources (preview FBO, GBuffer, sphere mesh).
 void shutdownMaterialRegistry();
 
+// Build/reset the shader source-path tracking table from resDir.
+// Call once after the initial readResources() on project open.
+void buildShaderSourceTable(const c8 *resDir);
+
+// Reload all project resources (new assets + force-recompile all shaders).
+void reloadProjectResources();
+
 // Load the project skybox if present, otherwise fall back to defaults.
 void loadPreferredSkybox();
 

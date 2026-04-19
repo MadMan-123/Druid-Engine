@@ -17,6 +17,15 @@
 #include "../deps/imgui/imgui_internal.h"
 #include "entitypicker.h"
 
+#ifdef _WIN32
+#pragma push_macro("ERROR")
+#undef ERROR
+#include <windows.h>
+#pragma pop_macro("ERROR")
+#else
+#include <sys/stat.h>
+#endif
+
 // Some platform/third-party headers may define ERROR as a non-callable macro.
 // Force this translation unit to use the engine logging API macro.
 #ifdef ERROR
@@ -293,8 +302,9 @@ static StructLayout g_scenePhysLayout = {
 static Archetype g_scenePhysArch = {0};
 static b8        g_scenePhysCreated = false;
 
-// ---- Material Registry state ----
-static b8          showMaterialRegistry  = false;
+// ---- Resource Manager state (hosts Materials, Textures, Shaders, Models tabs) ----
+static b8          showResourceManager   = false;
+static i32         g_resourceManagerTab  = 3;   // 0=Textures 1=Shaders 2=Models 3=Materials
 static i32         g_selectedMaterialIdx = -1;
 static c8          g_matNameFilter[128]  = "";
 
@@ -304,6 +314,12 @@ static Framebuffer g_matPreviewOutputFBO = {0};
 static Mesh       *g_matPreviewSphere    = nullptr;
 static b8          g_matPreviewReady     = false;
 static const u32   MATPREVIEW_SIZE       = 256;
+
+// Model preview resources
+static GBuffer     g_modelPreviewGBuffer   = {0};
+static Framebuffer g_modelPreviewOutputFBO = {0};
+static b8          g_modelPreviewReady     = false;
+static i32         g_selectedModelIdx      = -1;
 
 // Render the selected material onto a sphere using the full deferred pipeline.
 // Must be called after uploadSceneLights() has run (i.e. after drawViewportWindow).
@@ -414,6 +430,302 @@ void shutdownMaterialRegistry()
         g_matPreviewSphere = nullptr;
     }
     g_matPreviewReady = false;
+
+    if (g_modelPreviewGBuffer.fbo)
+    {
+        glDeleteFramebuffers(1, &g_modelPreviewGBuffer.fbo);
+        if (g_modelPreviewGBuffer.positionTex)  glDeleteTextures(1, &g_modelPreviewGBuffer.positionTex);
+        if (g_modelPreviewGBuffer.normalTex)    glDeleteTextures(1, &g_modelPreviewGBuffer.normalTex);
+        if (g_modelPreviewGBuffer.albedoSpecTex)glDeleteTextures(1, &g_modelPreviewGBuffer.albedoSpecTex);
+        if (g_modelPreviewGBuffer.depthTex)     glDeleteTextures(1, &g_modelPreviewGBuffer.depthTex);
+        g_modelPreviewGBuffer = {0};
+    }
+    if (g_modelPreviewOutputFBO.fbo)
+    {
+        destroyFramebuffer(&g_modelPreviewOutputFBO);
+        g_modelPreviewOutputFBO = {0};
+    }
+    g_modelPreviewReady = false;
+}
+
+static void renderModelPreview(u32 modelIdx)
+{
+    if (!resources || modelIdx >= resources->modelUsed) return;
+    if (!shader || !deferredLightingShader || !screenQuadMesh) return;
+    Model *model = &resources->modelBuffer[modelIdx];
+    if (model->meshCount == 0) return;
+
+    if (!g_modelPreviewReady)
+    {
+        g_modelPreviewGBuffer   = createGBuffer(MATPREVIEW_SIZE, MATPREVIEW_SIZE);
+        g_modelPreviewOutputFBO = createFramebuffer(MATPREVIEW_SIZE, MATPREVIEW_SIZE, GL_RGBA8, false);
+        g_modelPreviewReady = (g_modelPreviewGBuffer.fbo != 0 && g_modelPreviewOutputFBO.fbo != 0);
+        if (!g_modelPreviewReady) return;
+    }
+
+    GLint prevFBO; glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+    GLint prevViewport[4]; glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+    f32 r    = (model->boundingRadius > 0.0f) ? model->boundingRadius : 1.0f;
+    Vec3 camPos = {r * 1.2f, r * 0.6f, r * 2.0f};
+    Vec3 target = {0.0f, 0.0f, 0.0f};
+    Vec3 up     = {0.0f, 1.0f, 0.0f};
+    Mat4 view   = mat4LookAt(camPos, target, up);
+    Mat4 proj   = mat4Perspective(radians(45.0f), 1.0f, r * 0.01f, r * 20.0f);
+    updateCoreShaderUBO(0.0f, &camPos, &view, &proj);
+
+    // G-Buffer pass
+    glBindFramebuffer(GL_FRAMEBUFFER, g_modelPreviewGBuffer.fbo);
+    glViewport(0, 0, (GLsizei)MATPREVIEW_SIZE, (GLsizei)MATPREVIEW_SIZE);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    glUseProgram(shader);
+    Mat4 modelMat = mat4Identity();
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, (f32 *)&modelMat);
+    GLint baseLoc = glGetUniformLocation(shader, "u_modelBaseIndex");
+    if (baseLoc >= 0) glUniform1i(baseLoc, -1);
+    MaterialUniforms mu = getMaterialUniforms(shader);
+
+    // Fallback material used when a mesh has no material assignment, so we always
+    // call updateMaterial — preventing stale scene G-buffer textures from bleeding in.
+    Material fallbackMat = {0};
+    fallbackMat.colour   = {0.8f, 0.8f, 0.8f};
+    fallbackMat.roughness = 0.5f;
+
+    for (u32 m = 0; m < model->meshCount; m++)
+    {
+        u32 meshIdx = model->meshIndices[m];
+        if (meshIdx >= resources->meshUsed) continue;
+        Material *matToUse = &fallbackMat;
+        if (model->materialIndices && m < model->materialCount)
+        {
+            u32 matIdx = model->materialIndices[m];
+            if (matIdx < resources->materialUsed)
+                matToUse = &resources->materialBuffer[matIdx];
+        }
+        updateMaterial(matToUse, &mu);
+        drawMesh(&resources->meshBuffer[meshIdx]);
+    }
+
+    // Lighting pass
+    glBindFramebuffer(GL_FRAMEBUFFER, g_modelPreviewOutputFBO.fbo);
+    glViewport(0, 0, (GLsizei)MATPREVIEW_SIZE, (GLsizei)MATPREVIEW_SIZE);
+    glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+
+    glUseProgram(deferredLightingShader);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_modelPreviewGBuffer.positionTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gPosition"), 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_modelPreviewGBuffer.normalTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gNormal"), 1);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, g_modelPreviewGBuffer.albedoSpecTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gAlbedoSpec"), 2);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "envMap"), 3);
+
+    glBindVertexArray(screenQuadMesh->vao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    glEnable(GL_DEPTH_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+}
+
+// ---- Shader hot-reload ----
+
+struct TrackedProjectShader {
+    c8  name[128];
+    c8  vertPath[512];
+    c8  fragPath[512];
+    u64 vertMtime;
+    u64 fragMtime;
+    b8  valid;
+};
+struct EditorTrackedShader {
+    const c8 *vertPath;
+    const c8 *fragPath;
+    u32      *handlePtr;
+    u64       vertMtime;
+    u64       fragMtime;
+};
+
+static TrackedProjectShader g_trackedProjectShaders[128] = {};
+static u32                  g_trackedProjectShaderCount  = 0;
+static u64                  g_lastResCheckMs             = 0;
+static EditorTrackedShader  g_editorShaders[] = {
+    { "../res/shader.vert",            "../res/shader.frag",            &shader,                0, 0 },
+    { "../res/arrow.vert",             "../res/arrow.frag",             &arrowShader,           0, 0 },
+    { "../res/Skybox.vert",            "../res/Skybox.frag",            &skyboxShader,          0, 0 },
+    { "../res/FBOShader.vert",         "../res/FBOShader.frag",         &fboShader,             0, 0 },
+    { "../res/deferred_lighting.vert", "../res/deferred_lighting.frag", &deferredLightingShader,0, 0 },
+    { "../res/idShader.vert",          "../res/idShader.frag",          &idShader,              0, 0 },
+};
+static const u32 g_editorShaderCount = (u32)(sizeof(g_editorShaders) / sizeof(g_editorShaders[0]));
+
+static u64 getFileMtime(const c8 *path)
+{
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA d;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &d)) return 0;
+    ULARGE_INTEGER ul;
+    ul.LowPart  = d.ftLastWriteTime.dwLowDateTime;
+    ul.HighPart = d.ftLastWriteTime.dwHighDateTime;
+    return (u64)ul.QuadPart;
+#else
+    struct stat st;
+    return (stat(path, &st) == 0) ? (u64)st.st_mtime : 0;
+#endif
+}
+
+// Populate project shader tracking table from scratch.
+// Also snapshots current mtimes for editor shaders as the change-detection baseline.
+// Call once after project resources are loaded (main.cpp) and after manual reload.
+void buildShaderSourceTable(const c8 *resDir)
+{
+    // Baseline editor shader mtimes so we only recompile when files actually change
+    for (u32 i = 0; i < g_editorShaderCount; i++) {
+        g_editorShaders[i].vertMtime = getFileMtime(g_editorShaders[i].vertPath);
+        g_editorShaders[i].fragMtime = getFileMtime(g_editorShaders[i].fragPath);
+    }
+    g_trackedProjectShaderCount = 0;
+    if (!resources || !resDir || resDir[0] == '\0') return;
+    HashMap *map = &resources->shaderIDs;
+    for (u32 i = 0; i < map->capacity && g_trackedProjectShaderCount < 128; i++) {
+        if (!map->pairs[i].occupied) continue;
+        const c8 *name = (const c8 *)map->pairs[i].key;
+        c8 vertPath[512], fragPath[512];
+        snprintf(vertPath, sizeof(vertPath), "%s%s.vert", resDir, name);
+        snprintf(fragPath, sizeof(fragPath), "%s%s.frag", resDir, name);
+        if (!fileExists(vertPath) || !fileExists(fragPath)) continue;
+        TrackedProjectShader &t = g_trackedProjectShaders[g_trackedProjectShaderCount++];
+        strncpy(t.name,     name,     sizeof(t.name)     - 1); t.name[sizeof(t.name)-1]         = '\0';
+        strncpy(t.vertPath, vertPath, sizeof(t.vertPath) - 1); t.vertPath[sizeof(t.vertPath)-1] = '\0';
+        strncpy(t.fragPath, fragPath, sizeof(t.fragPath) - 1); t.fragPath[sizeof(t.fragPath)-1] = '\0';
+        t.vertMtime = getFileMtime(vertPath);
+        t.fragMtime = getFileMtime(fragPath);
+        t.valid = true;
+    }
+}
+
+// Merge new project shaders into the tracking table without resetting existing entries.
+static void mergeShaderSourceTable(const c8 *resDir)
+{
+    if (!resources || !resDir || resDir[0] == '\0') return;
+    HashMap *map = &resources->shaderIDs;
+    for (u32 i = 0; i < map->capacity && g_trackedProjectShaderCount < 128; i++) {
+        if (!map->pairs[i].occupied) continue;
+        const c8 *name = (const c8 *)map->pairs[i].key;
+        b8 found = false;
+        for (u32 j = 0; j < g_trackedProjectShaderCount; j++)
+            if (strcmp(g_trackedProjectShaders[j].name, name) == 0) { found = true; break; }
+        if (found) continue;
+        c8 vertPath[512], fragPath[512];
+        snprintf(vertPath, sizeof(vertPath), "%s%s.vert", resDir, name);
+        snprintf(fragPath, sizeof(fragPath), "%s%s.frag", resDir, name);
+        if (!fileExists(vertPath) || !fileExists(fragPath)) continue;
+        TrackedProjectShader &t = g_trackedProjectShaders[g_trackedProjectShaderCount++];
+        strncpy(t.name,     name,     sizeof(t.name)     - 1); t.name[sizeof(t.name)-1]         = '\0';
+        strncpy(t.vertPath, vertPath, sizeof(t.vertPath) - 1); t.vertPath[sizeof(t.vertPath)-1] = '\0';
+        strncpy(t.fragPath, fragPath, sizeof(t.fragPath) - 1); t.fragPath[sizeof(t.fragPath)-1] = '\0';
+        t.vertMtime = getFileMtime(vertPath);
+        t.fragMtime = getFileMtime(fragPath);
+        t.valid = true;
+    }
+}
+
+// Recompile all tracked shaders whose source mtimes have changed.
+static void recompileChangedShaders()
+{
+    // Editor shaders
+    for (u32 i = 0; i < g_editorShaderCount; i++) {
+        EditorTrackedShader &e = g_editorShaders[i];
+        u64 newVert = getFileMtime(e.vertPath);
+        u64 newFrag = getFileMtime(e.fragPath);
+        if (newVert == e.vertMtime && newFrag == e.fragMtime) continue;
+        u32 oldProg = *e.handlePtr;
+        u32 newProg = createGraphicsProgram(e.vertPath, e.fragPath);
+        if (newProg == 0) { ERROR("Hot-reload: failed to recompile %s", e.vertPath); continue; }
+        if (shaderHandles && oldProg != 0)
+            for (u32 j = 0; j < entityCount; j++)
+                if (shaderHandles[j] == oldProg) shaderHandles[j] = newProg;
+        freeShader(oldProg);
+        *e.handlePtr = newProg;
+        e.vertMtime  = newVert;
+        e.fragMtime  = newFrag;
+        INFO("Shader recompiled: %s", e.vertPath);
+        if (e.handlePtr == &shader) {
+            materialUniforms = getMaterialUniforms(shader);
+        } else if (e.handlePtr == &arrowShader) {
+            colourLocation = glGetUniformLocation(arrowShader, "colour");
+        } else if (e.handlePtr == &skyboxShader) {
+            skyboxViewLoc = glGetUniformLocation(skyboxShader, "view");
+            skyboxProjLoc = glGetUniformLocation(skyboxShader, "projection");
+        } else if (e.handlePtr == &idShader) {
+            idLocation = glGetUniformLocation(idShader, "entityID");
+        }
+    }
+    // Project shaders
+    for (u32 i = 0; i < g_trackedProjectShaderCount; i++) {
+        TrackedProjectShader &t = g_trackedProjectShaders[i];
+        if (!t.valid) continue;
+        u64 newVert = getFileMtime(t.vertPath);
+        u64 newFrag = getFileMtime(t.fragPath);
+        if (newVert == t.vertMtime && newFrag == t.fragMtime) continue;
+        u32 idx = 0;
+        if (!findInMap(&resources->shaderIDs, t.name, &idx)) continue;
+        u32 oldProg = resources->shaderHandles[idx];
+        u32 newProg = createGraphicsProgram(t.vertPath, t.fragPath);
+        if (newProg == 0) { ERROR("Hot-reload: failed to recompile project shader %s", t.name); continue; }
+        if (shaderHandles && oldProg != 0)
+            for (u32 j = 0; j < entityCount; j++)
+                if (shaderHandles[j] == oldProg) shaderHandles[j] = newProg;
+        freeShader(oldProg);
+        resources->shaderHandles[idx] = newProg;
+        t.vertMtime = newVert;
+        t.fragMtime = newFrag;
+        INFO("Project shader recompiled: %s", t.name);
+    }
+}
+
+// Manual full reload: pick up new assets, merge new shader tracking entries,
+// then force-recompile all tracked shaders regardless of mtime.
+void reloadProjectResources()
+{
+    if (!hubProjectDir[0] || !resources) return;
+    c8 projRes[MAX_PATH_LENGTH];
+    snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
+    readResources(resources, projRes);
+    mergeShaderSourceTable(projRes);
+    // Force all tracked shaders to recompile by zeroing mtimes
+    for (u32 i = 0; i < g_editorShaderCount; i++)
+        g_editorShaders[i].vertMtime = g_editorShaders[i].fragMtime = 0;
+    for (u32 i = 0; i < g_trackedProjectShaderCount; i++)
+        g_trackedProjectShaders[i].vertMtime = g_trackedProjectShaders[i].fragMtime = 0;
+    recompileChangedShaders();
+    INFO("Project resources reloaded");
+}
+
+// Poll for file changes every 2 seconds; recompile changed shaders automatically.
+static void checkForResourceChanges()
+{
+    if (!hubProjectDir[0] || !resources) return;
+    u64 now = (u64)SDL_GetTicks();
+    if (now - g_lastResCheckMs < 2000) return;
+    g_lastResCheckMs = now;
+
+    c8 projRes[MAX_PATH_LENGTH];
+    snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
+    readResources(resources, projRes);
+    mergeShaderSourceTable(projRes);
+    recompileChangedShaders();
 }
 
 // ---- helpers ----
@@ -3934,7 +4246,8 @@ static void drawInspectorWindow()
                 if (effectiveIdx < resources->materialUsed)
                 {
                     g_selectedMaterialIdx = (i32)effectiveIdx;
-                    showMaterialRegistry  = true;
+                    showResourceManager   = true;
+                    g_resourceManagerTab  = 3;
                 }
             }
 
@@ -4408,41 +4721,261 @@ static void drawSkyboxSettingsWindow()
     ImGui::End();
 }
 
-static void drawMaterialRegistryWindow()
-{
-    if (!showMaterialRegistry) return;
-    if (!resources)            return;
+// ---- Resource Manager tabs ----
 
-    ImGui::SetNextWindowSize(ImVec2(780, 560), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Material Registry", &showMaterialRegistry))
-    { ImGui::End(); return; }
+static void drawResourceTab_Textures()
+{
+    if (!resources) return;
+    static c8 texFilter[128] = "";
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Filter##texF", texFilter, sizeof(texFilter));
+    ImGui::SameLine();
+    ImGui::TextDisabled("%u / %u used", resources->textureUsed, resources->textureCount);
+    ImGui::Separator();
+
+    const f32 thumbSize = 64.0f;
+    ImGui::BeginChild("##texList", ImVec2(0, 0), false);
+    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+    {
+        if (!resources->textureIDs.pairs[i].occupied) continue;
+        const c8 *name = (const c8 *)resources->textureIDs.pairs[i].key;
+        u32 idx        = *(u32 *)resources->textureIDs.pairs[i].value;
+        if (idx >= resources->textureUsed) continue;
+        if (texFilter[0] != '\0' && !strstr(name, texFilter)) continue;
+
+        u32 glHandle = resources->textureHandles[idx];
+        ImGui::PushID((int)idx);
+        if (glHandle)
+            ImGui::Image((void *)(intptr_t)glHandle, ImVec2(thumbSize, thumbSize), ImVec2(0,1), ImVec2(1,0));
+        else
+        {
+            ImGui::Dummy(ImVec2(thumbSize, thumbSize));
+            ImGui::GetWindowDrawList()->AddRect(
+                ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                IM_COL32(120,120,120,180));
+        }
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::Text("%s", name);
+        ImGui::TextDisabled("slot %u  GL %u", idx, glHandle);
+        ImGui::EndGroup();
+        ImGui::Separator();
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+}
+
+static void drawResourceTab_Shaders()
+{
+    if (!resources) return;
+    ImGui::TextDisabled("%u project  +  %u editor  shaders tracked",
+        g_trackedProjectShaderCount, g_editorShaderCount);
+    ImGui::Separator();
+
+    ImGui::BeginChild("##shaderList", ImVec2(0, 0), false);
+
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.75f, 0.3f, 1.0f));
+    ImGui::TextUnformatted("Editor shaders");
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    for (u32 i = 0; i < g_editorShaderCount; i++)
+    {
+        EditorTrackedShader &e = g_editorShaders[i];
+        ImGui::PushID((int)i);
+        ImGui::BeginGroup();
+        ImGui::Text("%s", e.vertPath);
+        ImGui::TextDisabled("frag: %s  GL: %u", e.fragPath, *e.handlePtr);
+        if (ImGui::SmallButton("Recompile"))
+        {
+            u32 old = *e.handlePtr;
+            u32 np  = createGraphicsProgram(e.vertPath, e.fragPath);
+            if (np) {
+                if (shaderHandles && old)
+                    for (u32 j = 0; j < entityCount; j++)
+                        if (shaderHandles[j] == old) shaderHandles[j] = np;
+                freeShader(old);
+                *e.handlePtr = np;
+                e.vertMtime = getFileMtime(e.vertPath);
+                e.fragMtime = getFileMtime(e.fragPath);
+                if (e.handlePtr == &shader)       materialUniforms = getMaterialUniforms(shader);
+                else if (e.handlePtr == &arrowShader) colourLocation = glGetUniformLocation(arrowShader, "colour");
+                else if (e.handlePtr == &skyboxShader) {
+                    skyboxViewLoc = glGetUniformLocation(skyboxShader, "view");
+                    skyboxProjLoc = glGetUniformLocation(skyboxShader, "projection");
+                } else if (e.handlePtr == &idShader) idLocation = glGetUniformLocation(idShader, "entityID");
+                INFO("Recompiled: %s", e.vertPath);
+            } else ERROR("Failed to recompile: %s", e.vertPath);
+        }
+        ImGui::EndGroup();
+        ImGui::Separator();
+        ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.85f, 0.5f, 1.0f));
+    ImGui::TextUnformatted("Project shaders");
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    if (g_trackedProjectShaderCount == 0)
+        ImGui::TextDisabled("No project shaders loaded.");
+    for (u32 i = 0; i < g_trackedProjectShaderCount; i++)
+    {
+        TrackedProjectShader &t = g_trackedProjectShaders[i];
+        if (!t.valid) continue;
+        u32 idx = 0;
+        u32 glHandle = 0;
+        if (findInMap(&resources->shaderIDs, t.name, &idx))
+            glHandle = resources->shaderHandles[idx];
+        ImGui::PushID((int)(1000 + i));
+        ImGui::BeginGroup();
+        ImGui::Text("%s", t.name);
+        ImGui::TextDisabled("vert: %s  GL: %u", t.vertPath, glHandle);
+        ImGui::TextDisabled("frag: %s", t.fragPath);
+        if (ImGui::SmallButton("Recompile##proj"))
+        {
+            u32 np = createGraphicsProgram(t.vertPath, t.fragPath);
+            if (np && glHandle) {
+                if (shaderHandles)
+                    for (u32 j = 0; j < entityCount; j++)
+                        if (shaderHandles[j] == glHandle) shaderHandles[j] = np;
+                freeShader(glHandle);
+                resources->shaderHandles[idx] = np;
+                t.vertMtime = getFileMtime(t.vertPath);
+                t.fragMtime = getFileMtime(t.fragPath);
+                INFO("Recompiled project shader: %s", t.name);
+            } else ERROR("Failed to recompile project shader: %s", t.name);
+        }
+        ImGui::EndGroup();
+        ImGui::Separator();
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+}
+
+static void drawResourceTab_Models()
+{
+    if (!resources) return;
+
+    // Left panel — model list
+    ImGui::BeginChild("##modelList", ImVec2(220, 0), true);
+    ImGui::TextDisabled("%u / %u models", resources->modelUsed, resources->modelCount);
+    ImGui::Separator();
+    for (u32 i = 0; i < resources->modelIDs.capacity; i++)
+    {
+        if (!resources->modelIDs.pairs[i].occupied) continue;
+        const c8 *name = (const c8 *)resources->modelIDs.pairs[i].key;
+        u32 idx        = *(u32 *)resources->modelIDs.pairs[i].value;
+        if (idx >= resources->modelUsed) continue;
+        Model *m = &resources->modelBuffer[idx];
+        ImGui::PushID((int)idx);
+        bool selected = (g_selectedModelIdx == (i32)idx);
+        c8 label[128];
+        snprintf(label, sizeof(label), "%s##mdl%u", name, idx);
+        if (ImGui::Selectable(label, selected))
+            g_selectedModelIdx = (i32)idx;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("meshes: %u  radius: %.2f", m->meshCount, m->boundingRadius);
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // Right panel — preview + info
+    ImGui::BeginChild("##modelDetail", ImVec2(0, 0), false);
+
+    if (g_selectedModelIdx < 0 || (u32)g_selectedModelIdx >= resources->modelUsed)
+    {
+        ImGui::TextDisabled("Select a model from the list.");
+        ImGui::EndChild();
+        return;
+    }
+
+    u32 modelIdx = (u32)g_selectedModelIdx;
+    Model *m = &resources->modelBuffer[modelIdx];
+
+    // Find model name
+    const c8 *modelName = "(unnamed)";
+    for (u32 i = 0; i < resources->modelIDs.capacity; i++)
+    {
+        if (!resources->modelIDs.pairs[i].occupied) continue;
+        if (*(u32 *)resources->modelIDs.pairs[i].value == modelIdx)
+        { modelName = (const c8 *)resources->modelIDs.pairs[i].key; break; }
+    }
+
+    // Rendered preview centred in panel
+    renderModelPreview(modelIdx);
+    if (g_modelPreviewOutputFBO.texture)
+    {
+        static const f32 MDL_PREV = 180.0f;
+        f32 panelW  = ImGui::GetContentRegionAvail().x;
+        f32 offsetX = (panelW - MDL_PREV) * 0.5f;
+        if (offsetX > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
+        ImGui::Image(
+            (void *)(intptr_t)g_modelPreviewOutputFBO.texture,
+            ImVec2(MDL_PREV, MDL_PREV),
+            ImVec2(0, 1), ImVec2(1, 0));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Deferred preview with scene lights");
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("%s", modelName);
+    ImGui::Separator();
+    ImGui::TextDisabled("Slot:          %u", modelIdx);
+    ImGui::TextDisabled("Meshes:        %u", m->meshCount);
+    ImGui::TextDisabled("Materials:     %u", m->materialCount);
+    ImGui::TextDisabled("Bounding r:    %.3f", m->boundingRadius);
+
+    // Per-mesh material assignments
+    if (m->meshCount > 0 && m->materialIndices)
+    {
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Mesh materials:");
+        for (u32 mi = 0; mi < m->meshCount && mi < m->materialCount; mi++)
+        {
+            u32 matIdx = m->materialIndices[mi];
+            const c8 *matName = "(unknown)";
+            if (matIdx < resources->materialUsed)
+            {
+                for (u32 k = 0; k < resources->materialIDs.capacity; k++)
+                {
+                    if (!resources->materialIDs.pairs[k].occupied) continue;
+                    if (*(u32 *)resources->materialIDs.pairs[k].value == matIdx)
+                    { matName = (const c8 *)resources->materialIDs.pairs[k].key; break; }
+                }
+            }
+            ImGui::TextDisabled("  [%u] %s", mi, matName);
+        }
+    }
+
+    ImGui::EndChild();
+}
+
+static void drawResourceTab_Materials()
+{
+    if (!resources) return;
 
     // Left panel — material list
     ImGui::BeginChild("##matList", ImVec2(220, 0), true);
-
     ImGui::SetNextItemWidth(-1);
     ImGui::InputText("##filter", g_matNameFilter, sizeof(g_matNameFilter));
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Filter materials by name");
     ImGui::Separator();
 
-    // Collect (name, index) pairs from the hashmap so we can display them
     for (u32 i = 0; i < resources->materialIDs.capacity; i++)
     {
         if (!resources->materialIDs.pairs[i].occupied) continue;
         const c8 *name = (const c8 *)resources->materialIDs.pairs[i].key;
         u32 idx        = *(u32 *)resources->materialIDs.pairs[i].value;
         if (idx >= resources->materialUsed) continue;
-
-        // Name filter
         if (g_matNameFilter[0] != '\0' && !strstr(name, g_matNameFilter)) continue;
-
         bool selected = (g_selectedMaterialIdx == (i32)idx);
         ImGui::PushID((int)idx);
         if (ImGui::Selectable(name, selected))
             g_selectedMaterialIdx = (i32)idx;
         ImGui::PopID();
     }
-
     ImGui::Spacing();
     if (ImGui::Button("+ New Material", ImVec2(-1, 0)))
     {
@@ -4458,7 +4991,7 @@ static void drawMaterialRegistryWindow()
             insertMap(&resources->materialIDs, newName, &resources->materialUsed);
             resources->materialUsed++;
             g_selectedMaterialIdx = (i32)newIdx;
-            INFO("Material Registry: created '%s' at index %u", newName, newIdx);
+            INFO("Created material '%s' at index %u", newName, newIdx);
         }
         else WARN("Material buffer full");
     }
@@ -4466,22 +4999,18 @@ static void drawMaterialRegistryWindow()
 
     ImGui::SameLine();
 
-    // Right panel — editor + preview
+    // Right panel — preview + editor
     ImGui::BeginChild("##matEdit", ImVec2(0, 0), false);
-
     if (g_selectedMaterialIdx < 0 || (u32)g_selectedMaterialIdx >= resources->materialUsed)
     {
-        ImGui::Spacing();
         ImGui::TextDisabled("Select a material from the list to edit it.");
         ImGui::EndChild();
-        ImGui::End();
         return;
     }
 
     u32 matIdx = (u32)g_selectedMaterialIdx;
     Material *mat = &resources->materialBuffer[matIdx];
 
-    // Find this material's name in the hashmap for display
     const c8 *matName = "(unnamed)";
     for (u32 i = 0; i < resources->materialIDs.capacity; i++)
     {
@@ -4490,65 +5019,89 @@ static void drawMaterialRegistryWindow()
         { matName = (const c8 *)resources->materialIDs.pairs[i].key; break; }
     }
 
-    // Sphere preview — left column
-    ImGui::BeginGroup();
+    // Preview centred above properties (stacked vertically to keep the panel narrow)
+    static const f32 PREV_DISP = 180.0f;
     if (deferredLightingShader && screenQuadMesh)
     {
         renderMaterialPreview(matIdx);
+        f32 panelW  = ImGui::GetContentRegionAvail().x;
+        f32 offsetX = (panelW - PREV_DISP) * 0.5f;
+        if (offsetX > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
         ImGui::Image(
             (void *)(intptr_t)g_matPreviewOutputFBO.texture,
-            ImVec2((f32)MATPREVIEW_SIZE, (f32)MATPREVIEW_SIZE),
+            ImVec2(PREV_DISP, PREV_DISP),
             ImVec2(0, 1), ImVec2(1, 0));
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Preview uses the full deferred pipeline with scene lights");
+            ImGui::SetTooltip("Full deferred pipeline preview with scene lights");
     }
-    else
-    {
-        ImGui::TextDisabled("Preview unavailable\n(deferred shader not loaded)");
-    }
-    ImGui::EndGroup();
+    else ImGui::TextDisabled("Preview unavailable (deferred shader not loaded)");
 
-    ImGui::SameLine();
-
-    // Properties column
-    ImGui::BeginGroup();
+    ImGui::Spacing();
     ImGui::Text("Material: %s  [%u]", matName, matIdx);
     ImGui::Separator();
-
-    drawTextureSelector("Albedo",    &mat->albedoTex,    "##RegAlb");
-    drawTextureSelector("Normal",    &mat->normalTex,    "##RegNrm");
-    drawTextureSelector("Metallic",  &mat->metallicTex,  "##RegMet");
-    drawTextureSelector("Roughness", &mat->roughnessTex, "##RegRou");
-
+    ImGui::SetNextItemWidth(-1); drawTextureSelector("Albedo",    &mat->albedoTex,    "##RegAlb");
+    ImGui::SetNextItemWidth(-1); drawTextureSelector("Normal",    &mat->normalTex,    "##RegNrm");
+    ImGui::SetNextItemWidth(-1); drawTextureSelector("Metallic",  &mat->metallicTex,  "##RegMet");
+    ImGui::SetNextItemWidth(-1); drawTextureSelector("Roughness", &mat->roughnessTex, "##RegRou");
     ImGui::Spacing();
-    ImGui::ColorEdit3("Colour##reg",       (f32 *)&mat->colour);
-    ImGui::SliderFloat("Metallic##reg",    &mat->metallic,       0.0f, 1.0f);
-    ImGui::SliderFloat("Roughness##reg",   &mat->roughness,      0.0f, 1.0f);
-    ImGui::SliderFloat("Emissive##reg",    &mat->emissive,       0.0f, 10.0f);
-    ImGui::SliderFloat("Transparency##reg",&mat->transparency,   0.0f, 1.0f);
-
+    ImGui::SetNextItemWidth(-1); ImGui::ColorEdit3("Colour##reg",        (f32 *)&mat->colour);
+    ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Metallic##reg",     &mat->metallic,       0.0f, 1.0f);
+    ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Roughness##reg",    &mat->roughness,      0.0f, 1.0f);
+    ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Emissive##reg",     &mat->emissive,       0.0f, 10.0f);
+    ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Transparency##reg", &mat->transparency,   0.0f, 1.0f);
     ImGui::Spacing();
     ImGui::Separator();
-
-    // Assign to selected entity
     if (currentInspectorState == ENTITY_VIEW && inspectorEntityID < entityCount && entityMaterialIDs)
     {
         if (ImGui::Button("Assign to Selected Entity"))
         {
             entityMaterialIDs[inspectorEntityID] = matIdx;
-            INFO("Material Registry: assigned mat %u to entity %u", matIdx, inspectorEntityID);
+            INFO("Assigned mat %u to entity %u", matIdx, inspectorEntityID);
         }
         ImGui::SameLine();
         const c8 *ename = names ? &names[inspectorEntityID * MAX_NAME_SIZE] : "?";
         ImGui::TextDisabled("-> %s", (ename && ename[0]) ? ename : "(unnamed)");
     }
-    else
-    {
-        ImGui::TextDisabled("Select an entity in the scene to assign this material.");
-    }
-    ImGui::EndGroup();
+    else ImGui::TextDisabled("Select an entity in the scene to assign this material.");
 
     ImGui::EndChild();
+}
+
+static void drawResourceManagerWindow()
+{
+    if (!showResourceManager) return;
+    if (!resources) return;
+
+    ImGui::SetNextWindowSize(ImVec2(660, 560), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Resource Manager", &showResourceManager))
+    { ImGui::End(); return; }
+
+    // If tab was set externally (e.g. from inspector Edit button), jump to it
+    static i32 pendingTab = -1;
+    if (g_resourceManagerTab >= 0) { pendingTab = g_resourceManagerTab; g_resourceManagerTab = -1; }
+
+    if (ImGui::BeginTabBar("##resTabs"))
+    {
+        auto setTabActive = [&](i32 tabIdx) -> ImGuiTabItemFlags {
+            if (pendingTab == tabIdx) { pendingTab = -1; return ImGuiTabItemFlags_SetSelected; }
+            return ImGuiTabItemFlags_None;
+        };
+
+        if (ImGui::BeginTabItem("Textures", nullptr, setTabActive(0)))
+        { drawResourceTab_Textures(); ImGui::EndTabItem(); }
+
+        if (ImGui::BeginTabItem("Shaders", nullptr, setTabActive(1)))
+        { drawResourceTab_Shaders(); ImGui::EndTabItem(); }
+
+        if (ImGui::BeginTabItem("Models", nullptr, setTabActive(2)))
+        { drawResourceTab_Models(); ImGui::EndTabItem(); }
+
+        if (ImGui::BeginTabItem("Materials", nullptr, setTabActive(3)))
+        { drawResourceTab_Materials(); ImGui::EndTabItem(); }
+
+        ImGui::EndTabBar();
+    }
+
     ImGui::End();
 }
 
@@ -5059,8 +5612,8 @@ void drawDockspaceAndPanels()
             }
             if (ImGui::MenuItem("Loaded Entities", NULL, showLoadedEntities))
                 showLoadedEntities = !showLoadedEntities;
-            if (ImGui::MenuItem("Material Registry", NULL, showMaterialRegistry))
-                showMaterialRegistry = !showMaterialRegistry;
+            if (ImGui::MenuItem("Resource Manager", NULL, showResourceManager))
+                showResourceManager = !showResourceManager;
             ImGui::EndMenu();
         }
 
@@ -5104,6 +5657,11 @@ void drawDockspaceAndPanels()
                     INFO("Standalone game built and packaged to export/");
                 else
                     ERROR("Failed to build standalone game.");
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Reload Resources"))
+            {
+                reloadProjectResources();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Open Project Folder"))
@@ -5203,7 +5761,8 @@ void drawDockspaceAndPanels()
     drawBuildLogWindow();
     drawConsoleWindow();
     drawLoadedEntitiesWindow();
-    drawMaterialRegistryWindow();
+    drawResourceManagerWindow();
+    checkForResourceChanges();
 
     // Calculate timestep for physics and game updates
     f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
