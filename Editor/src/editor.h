@@ -155,6 +155,9 @@ void scanProjectArchetypes(const c8 *projectDir);
 // Sync the editor camera from the designated scene-camera entity, if present.
 void applySceneCameraEntityToSceneCam();
 
+// Release material registry GPU resources (preview FBO, GBuffer, sphere mesh).
+void shutdownMaterialRegistry();
+
 // Load the project skybox if present, otherwise fall back to defaults.
 void loadPreferredSkybox();
 

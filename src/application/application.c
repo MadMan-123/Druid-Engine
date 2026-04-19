@@ -166,7 +166,8 @@ void startApplication(Application* app)
 		{ PROFILE_SCOPE("Render"); applicationRenderStep(app, dt);  }
 
 		profileEndFrame();
-
+		
+		
 		//fps counter
 		frameCount++;
 		f64 elapsedTime = (f64)(current - fpsTime) / performanceFreq;

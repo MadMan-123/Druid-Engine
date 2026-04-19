@@ -858,6 +858,7 @@ void destroy()
     modelIDs = NULL;
     shaderHandles = NULL;
     entityMaterialIDs = NULL;
+    shutdownMaterialRegistry();
     freeMesh(cubeMesh);
     freeShader(shader);
     freeShader(arrowShader);

@@ -293,6 +293,129 @@ static StructLayout g_scenePhysLayout = {
 static Archetype g_scenePhysArch = {0};
 static b8        g_scenePhysCreated = false;
 
+// ---- Material Registry state ----
+static b8          showMaterialRegistry  = false;
+static i32         g_selectedMaterialIdx = -1;
+static c8          g_matNameFilter[128]  = "";
+
+// Preview resources (lazily initialised on first use, destroyed in destroy())
+static GBuffer     g_matPreviewGBuffer   = {0};
+static Framebuffer g_matPreviewOutputFBO = {0};
+static Mesh       *g_matPreviewSphere    = nullptr;
+static b8          g_matPreviewReady     = false;
+static const u32   MATPREVIEW_SIZE       = 256;
+
+// Render the selected material onto a sphere using the full deferred pipeline.
+// Must be called after uploadSceneLights() has run (i.e. after drawViewportWindow).
+static void renderMaterialPreview(u32 matIdx)
+{
+    if (!resources || matIdx >= resources->materialUsed) return;
+
+    // Lazy init
+    if (!g_matPreviewReady)
+    {
+        g_matPreviewGBuffer   = createGBuffer(MATPREVIEW_SIZE, MATPREVIEW_SIZE);
+        g_matPreviewOutputFBO = createFramebuffer(MATPREVIEW_SIZE, MATPREVIEW_SIZE, GL_RGBA8, false);
+        g_matPreviewSphere    = createSphereMesh();
+        g_matPreviewReady = (g_matPreviewGBuffer.fbo != 0
+                           && g_matPreviewOutputFBO.fbo != 0
+                           && g_matPreviewSphere != nullptr);
+        if (!g_matPreviewReady) return;
+    }
+
+    Material *mat = &resources->materialBuffer[matIdx];
+
+    // Save GL state
+    GLint prevFBO;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+    GLint prevViewport[4];
+    glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+    // Override core UBO with a fixed preview camera
+    Vec3 previewCamPos = {0.0f, 0.4f, 2.6f};
+    Vec3 previewTarget = {0.0f, 0.0f, 0.0f};
+    Vec3 up            = {0.0f, 1.0f, 0.0f};
+    Mat4 previewView   = mat4LookAt(previewCamPos, previewTarget, up);
+    Mat4 previewProj   = mat4Perspective(radians(45.0f), 1.0f, 0.1f, 20.0f);
+    updateCoreShaderUBO(0.0f, &previewCamPos, &previewView, &previewProj);
+
+    // --- G-Buffer pass ---
+    glBindFramebuffer(GL_FRAMEBUFFER, g_matPreviewGBuffer.fbo);
+    glViewport(0, 0, (GLsizei)MATPREVIEW_SIZE, (GLsizei)MATPREVIEW_SIZE);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    glUseProgram(shader);
+    Mat4 identity = mat4Identity();
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, (f32 *)&identity);
+    GLint baseLoc = glGetUniformLocation(shader, "u_modelBaseIndex");
+    if (baseLoc >= 0) glUniform1i(baseLoc, -1);
+    MaterialUniforms mu = getMaterialUniforms(shader);
+    updateMaterial(mat, &mu);
+    drawMesh(g_matPreviewSphere);
+
+    // --- Lighting pass (identical to scene deferred pass) ---
+    glBindFramebuffer(GL_FRAMEBUFFER, g_matPreviewOutputFBO.fbo);
+    glViewport(0, 0, (GLsizei)MATPREVIEW_SIZE, (GLsizei)MATPREVIEW_SIZE);
+    glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+
+    glUseProgram(deferredLightingShader);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_matPreviewGBuffer.positionTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gPosition"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_matPreviewGBuffer.normalTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gNormal"), 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, g_matPreviewGBuffer.albedoSpecTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gAlbedoSpec"), 2);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "envMap"), 3);
+
+    // Light SSBO (binding 3) was already populated by uploadSceneLights() this frame
+    glBindVertexArray(screenQuadMesh->vao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    glEnable(GL_DEPTH_TEST);
+
+    // Restore framebuffer and viewport (UBO restored by rendererBeginFrame next frame)
+    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+}
+
+void shutdownMaterialRegistry()
+{
+    if (g_matPreviewGBuffer.fbo)
+    {
+        glDeleteFramebuffers(1, &g_matPreviewGBuffer.fbo);
+        if (g_matPreviewGBuffer.positionTex)  glDeleteTextures(1, &g_matPreviewGBuffer.positionTex);
+        if (g_matPreviewGBuffer.normalTex)    glDeleteTextures(1, &g_matPreviewGBuffer.normalTex);
+        if (g_matPreviewGBuffer.albedoSpecTex)glDeleteTextures(1, &g_matPreviewGBuffer.albedoSpecTex);
+        if (g_matPreviewGBuffer.depthTex)     glDeleteTextures(1, &g_matPreviewGBuffer.depthTex);
+        g_matPreviewGBuffer = {0};
+    }
+    if (g_matPreviewOutputFBO.fbo)
+    {
+        destroyFramebuffer(&g_matPreviewOutputFBO);
+        g_matPreviewOutputFBO = {0};
+    }
+    if (g_matPreviewSphere)
+    {
+        freeMesh(g_matPreviewSphere);
+        g_matPreviewSphere = nullptr;
+    }
+    g_matPreviewReady = false;
+}
+
 // ---- helpers ----
 
 // Case-insensitive string comparison for matching ECS fields to scene fields.
@@ -3581,7 +3704,8 @@ static void drawInspectorWindow()
     {
     default:
     case InspectorState::EMPTY_VIEW:
-        ImGui::Text("Nowt to see here");
+        ImGui::Spacing();
+        ImGui::TextDisabled("Select an entity in the viewport or scene list.");
         break;
     case InspectorState::SKYBOX_VIEW:
         ImGui::Text("Skybox Settings");
@@ -3592,12 +3716,11 @@ static void drawInspectorWindow()
     case InspectorState::ENTITY_VIEW:
         if (!positions || !rotations || !scales || !isActive || !names
             || !modelIDs || inspectorEntityID >= entityCount) {
-            ImGui::Text("No entity selected or scene not loaded.");
+            ImGui::TextDisabled("No entity selected or scene not loaded.");
             break;
         }
 
-        // Sync euler display whenever a different entity is selected
-        // (covers both viewport picks and scene-list clicks)
+        // Sync euler angles whenever a different entity is selected
         {
             static u32 lastInspectorID = (u32)-1;
             if (inspectorEntityID != lastInspectorID)
@@ -3610,13 +3733,22 @@ static void drawInspectorWindow()
             }
         }
 
-        ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE],
-                         MAX_NAME_SIZE);
+        // ---- Header row: name | active | delete ----
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
+        ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
         ImGui::SameLine();
+        if (isActive)
+        {
+            bool active = (bool)isActive[inspectorEntityID];
+            if (ImGui::Checkbox("##Active", &active))
+                isActive[inspectorEntityID] = (b8)active;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active");
+            ImGui::SameLine();
+        }
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
         if (ImGui::Button("Delete"))
         {
-            u32 rem = inspectorEntityID;
+            u32 rem  = inspectorEntityID;
             u32 last = entityCount - 1;
             if (rem != last)
             {
@@ -3638,27 +3770,252 @@ static void drawInspectorWindow()
         }
         ImGui::PopStyleColor();
 
-        ImGui::DragFloat3("position", (f32 *)&positions[inspectorEntityID], 0.01f);
-
-        if (ImGui::DragFloat3("rotation", (f32 *)&EulerAnglesDegrees, 0.5f))
+        // ---- Transform ----
+        if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            Vec3 eulerRadians;
-            eulerRadians.x = radians(EulerAnglesDegrees.x);
-            eulerRadians.y = radians(EulerAnglesDegrees.y);
-            eulerRadians.z = radians(EulerAnglesDegrees.z);
-            rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
-        }
-        ImGui::DragFloat3("scale", (f32 *)&scales[inspectorEntityID], 0.01f);
-
-        // ---- Tag ----
-        if (entityTags)
-        {
-            ImGui::InputText("Tag", &entityTags[inspectorEntityID * 32], 32);
+            ImGui::DragFloat3("Position##tr", (f32 *)&positions[inspectorEntityID], 0.01f);
+            if (ImGui::DragFloat3("Rotation##tr", (f32 *)&EulerAnglesDegrees, 0.5f))
+            {
+                Vec3 eulerRadians = { radians(EulerAnglesDegrees.x),
+                                     radians(EulerAnglesDegrees.y),
+                                     radians(EulerAnglesDegrees.z) };
+                rotations[inspectorEntityID] = quatFromEuler(eulerRadians);
+            }
+            ImGui::DragFloat3("Scale##tr", (f32 *)&scales[inspectorEntityID], 0.01f);
+            if (entityTags)
+                ImGui::InputText("Tag##tr", &entityTags[inspectorEntityID * 32], 32);
         }
 
-        ImGui::Separator();
-        drawSoAEditorSection(inspectorEntityID);
-        ImGui::Separator();
+        // ---- Rendering ----
+        if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            u32 currentModelID = modelIDs[inspectorEntityID];
+
+            // Model combo
+            const c8 *modelPreview = (currentModelID == (u32)-1) ? "None"
+                : (currentModelID < resources->modelUsed ? resources->modelBuffer[currentModelID].name : "Invalid");
+            if (ImGui::BeginCombo("Model##rend", modelPreview))
+            {
+                if (ImGui::Selectable("None", currentModelID == (u32)-1))
+                    modelIDs[inspectorEntityID] = (u32)-1;
+                for (u32 mi = 0; mi < resources->modelUsed; mi++)
+                {
+                    ImGui::PushID((int)mi);
+                    bool sel = (currentModelID == mi);
+                    if (ImGui::Selectable(resources->modelBuffer[mi].name, sel))
+                        modelIDs[inspectorEntityID] = mi;
+                    if (sel) ImGui::SetItemDefaultFocus();
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+
+            // Shader combo
+            if (shaderHandles)
+            {
+                const c8 *currentShaderName = "None";
+                for (u32 si = 0; si < resources->shaderIDs.capacity; si++)
+                {
+                    if (!resources->shaderIDs.pairs[si].occupied) continue;
+                    u32 idx = *(u32 *)resources->shaderIDs.pairs[si].value;
+                    if (resources->shaderHandles[idx] == shaderHandles[inspectorEntityID])
+                    { currentShaderName = (const c8 *)resources->shaderIDs.pairs[si].key; break; }
+                }
+                if (ImGui::BeginCombo("Shader##rend", currentShaderName))
+                {
+                    for (u32 si = 0; si < resources->shaderIDs.capacity; si++)
+                    {
+                        if (!resources->shaderIDs.pairs[si].occupied) continue;
+                        const c8 *sname  = (const c8 *)resources->shaderIDs.pairs[si].key;
+                        u32 idx          = *(u32 *)resources->shaderIDs.pairs[si].value;
+                        u32 shandle      = resources->shaderHandles[idx];
+                        bool isSel       = (shaderHandles[inspectorEntityID] == shandle);
+                        if (ImGui::Selectable(sname, isSel))
+                            shaderHandles[inspectorEntityID] = shandle;
+                        if (isSel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            // Model stats (collapsed by default — useful but not primary)
+            currentModelID = modelIDs[inspectorEntityID];
+            if (currentModelID < resources->modelUsed && ImGui::TreeNode("Model Info"))
+            {
+                Model *infoModel = &resources->modelBuffer[currentModelID];
+                ImGui::Text("ID %u  |  Meshes %u  |  Materials %u",
+                            currentModelID, infoModel->meshCount, infoModel->materialCount);
+                u32 totalTris = 0;
+                for (u32 i = 0; i < infoModel->meshCount; i++)
+                {
+                    u32 mi = infoModel->meshIndices[i];
+                    if (mi < resources->meshUsed) totalTris += resources->meshBuffer[mi].drawCount / 3;
+                }
+                ImGui::Text("Triangles: %u", totalTris);
+                if (ImGui::TreeNode("Mesh Breakdown"))
+                {
+                    for (u32 i = 0; i < infoModel->meshCount; i++)
+                    {
+                        u32 mi  = infoModel->meshIndices[i];
+                        u32 mat = (i < infoModel->materialCount) ? infoModel->materialIndices[i] : (u32)-1;
+                        if (mi >= resources->meshUsed) { ImGui::TextDisabled("Mesh %u: invalid", i); continue; }
+                        u32 tris = resources->meshBuffer[mi].drawCount / 3;
+                        if (mat == (u32)-1) ImGui::Text("Mesh %u: %u tris, no mat", i, tris);
+                        else                ImGui::Text("Mesh %u: %u tris, mat %u", i, tris, mat);
+                    }
+                    ImGui::TreePop();
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // ---- Material ----
+        if (ImGui::CollapsingHeader("Material###MatSection", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            u32 modelID = modelIDs[inspectorEntityID];
+            u32 defaultMaterialIndex = (u32)-1;
+            if (modelID < resources->modelUsed)
+            {
+                Model *model = &resources->modelBuffer[modelID];
+                if (model->meshCount > 0)
+                    defaultMaterialIndex = model->materialIndices[0];
+            }
+
+            // Current effective material
+            u32 assignedID = entityMaterialIDs ? entityMaterialIDs[inspectorEntityID] : (u32)-1;
+            u32 effectiveIdx = (assignedID != (u32)-1) ? assignedID : defaultMaterialIndex;
+
+            // Find current material name for the combo preview
+            const c8 *comboPreview = (effectiveIdx == defaultMaterialIndex && assignedID == (u32)-1)
+                                   ? "Default" : "(none)";
+            if (effectiveIdx < resources->materialUsed)
+            {
+                for (u32 i = 0; i < resources->materialIDs.capacity; i++)
+                {
+                    if (!resources->materialIDs.pairs[i].occupied) continue;
+                    if (*(u32 *)resources->materialIDs.pairs[i].value == effectiveIdx)
+                    { comboPreview = (const c8 *)resources->materialIDs.pairs[i].key; break; }
+                }
+            }
+
+            // Material assignment dropdown
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            if (ImGui::BeginCombo("##matAssign", comboPreview))
+            {
+                // Default option (use model's own material)
+                bool defSel = (assignedID == (u32)-1);
+                if (ImGui::Selectable("Default (model)", defSel))
+                {
+                    if (entityMaterialIDs) entityMaterialIDs[inspectorEntityID] = (u32)-1;
+                }
+                if (defSel) ImGui::SetItemDefaultFocus();
+                ImGui::Separator();
+                // All named materials from registry
+                for (u32 i = 0; i < resources->materialIDs.capacity; i++)
+                {
+                    if (!resources->materialIDs.pairs[i].occupied) continue;
+                    u32 idx = *(u32 *)resources->materialIDs.pairs[i].value;
+                    if (idx >= resources->materialUsed) continue;
+                    const c8 *mname = (const c8 *)resources->materialIDs.pairs[i].key;
+                    bool sel = (assignedID == idx);
+                    ImGui::PushID((int)idx);
+                    if (ImGui::Selectable(mname, sel))
+                    {
+                        if (entityMaterialIDs) entityMaterialIDs[inspectorEntityID] = idx;
+                    }
+                    if (sel) ImGui::SetItemDefaultFocus();
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Edit##matEdit"))
+            {
+                if (effectiveIdx < resources->materialUsed)
+                {
+                    g_selectedMaterialIdx = (i32)effectiveIdx;
+                    showMaterialRegistry  = true;
+                }
+            }
+
+            // Read-only summary of the active material
+            if (effectiveIdx < resources->materialUsed)
+            {
+                Material *mat = &resources->materialBuffer[effectiveIdx];
+                ImGui::Spacing();
+                ImGui::BeginDisabled(true);
+                f32 col[3] = { mat->colour.x, mat->colour.y, mat->colour.z };
+                ImGui::ColorEdit3("Colour##matRO",        col);
+                ImGui::SliderFloat("Metallic##matRO",     &mat->metallic,      0.0f, 1.0f);
+                ImGui::SliderFloat("Roughness##matRO",    &mat->roughness,     0.0f, 1.0f);
+                ImGui::SliderFloat("Emissive##matRO",     &mat->emissive,      0.0f, 10.0f);
+                ImGui::SliderFloat("Transparency##matRO", &mat->transparency,  0.0f, 1.0f);
+                ImGui::EndDisabled();
+                ImGui::TextDisabled("Open registry to edit textures and values.");
+            }
+        }
+
+        // ---- Light ----
+        if (isLight)
+        {
+            u32 eid = inspectorEntityID;
+            bool lightEnabled = (bool)isLight[eid];
+            if (ImGui::Checkbox("Light Source##lgt", &lightEnabled))
+            {
+                isLight[eid] = (b8)lightEnabled;
+                if (lightEnabled)
+                {
+                    if (lightTypes)       lightTypes[eid]       = LIGHT_TYPE_POINT;
+                    if (lightColorRs)     lightColorRs[eid]     = 1.0f;
+                    if (lightColorGs)     lightColorGs[eid]     = 1.0f;
+                    if (lightColorBs)     lightColorBs[eid]     = 1.0f;
+                    if (lightIntensities) lightIntensities[eid] = 1.0f;
+                    if (lightRanges)      lightRanges[eid]      = 10.0f;
+                    if (lightDirXs)       lightDirXs[eid]       = 0.0f;
+                    if (lightDirYs)       lightDirYs[eid]       = -1.0f;
+                    if (lightDirZs)       lightDirZs[eid]       = 0.0f;
+                    if (lightInnerCones)  lightInnerCones[eid]  = 0.9063f;
+                    if (lightOuterCones)  lightOuterCones[eid]  = 0.8192f;
+                }
+            }
+
+            if (isLight[eid] && ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                static const c8 *lightTypeNames[] = { "Point", "Directional", "Spot" };
+                if (lightTypes)
+                {
+                    int lt = (int)lightTypes[eid];
+                    if (lt < 0 || lt > 2) lt = 0;
+                    if (ImGui::Combo("Type##lgt", &lt, lightTypeNames, 3))
+                        lightTypes[eid] = (u32)lt;
+                }
+                if (lightColorRs && lightColorGs && lightColorBs)
+                {
+                    f32 col[3] = { lightColorRs[eid], lightColorGs[eid], lightColorBs[eid] };
+                    if (ImGui::ColorEdit3("Color##lgt", col))
+                    { lightColorRs[eid] = col[0]; lightColorGs[eid] = col[1]; lightColorBs[eid] = col[2]; }
+                }
+                if (lightIntensities)
+                    ImGui::DragFloat("Intensity##lgt", &lightIntensities[eid], 0.05f, 0.0f, 100.0f, "%.2f");
+
+                u32 lt = lightTypes ? lightTypes[eid] : 0;
+                if (lt != LIGHT_TYPE_DIRECTIONAL && lightRanges)
+                    ImGui::DragFloat("Range##lgt", &lightRanges[eid], 0.1f, 0.1f, 1000.0f, "%.1f m");
+                if ((lt == LIGHT_TYPE_DIRECTIONAL || lt == LIGHT_TYPE_SPOT) && lightDirXs && lightDirYs && lightDirZs)
+                {
+                    f32 dir[3] = { lightDirXs[eid], lightDirYs[eid], lightDirZs[eid] };
+                    if (ImGui::DragFloat3("Direction##lgt", dir, 0.01f, -1.0f, 1.0f, "%.3f"))
+                    { lightDirXs[eid] = dir[0]; lightDirYs[eid] = dir[1]; lightDirZs[eid] = dir[2]; }
+                }
+                if (lt == LIGHT_TYPE_SPOT)
+                {
+                    if (lightInnerCones)
+                        ImGui::DragFloat("Inner Cone##lgt", &lightInnerCones[eid], 0.005f, 0.0f, 1.0f, "%.4f (cos)");
+                    if (lightOuterCones)
+                        ImGui::DragFloat("Outer Cone##lgt", &lightOuterCones[eid], 0.005f, 0.0f, 1.0f, "%.4f (cos)");
+                }
+            }
+        }
 
         // ---- Physics Body ----
         if (archetypeIDs)
@@ -3670,8 +4027,6 @@ static void drawInspectorWindow()
                 if (ImGui::CollapsingHeader("Physics Body", ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     u32 eid = inspectorEntityID;
-
-                    // ---- Body ----
                     ImGui::SeparatorText("Body");
                     static const c8 *bodyTypeNames[] = { "Static", "Dynamic", "Kinematic" };
                     if (physicsBodyTypes)
@@ -3680,8 +4035,8 @@ static void drawInspectorWindow()
                         if (bt < 0 || bt > 2) bt = 0;
                         if (ImGui::Combo("Body Type##phys", &bt, bodyTypeNames, 3))
                             physicsBodyTypes[eid] = (u32)bt;
-                        if (bt == 0) ImGui::TextDisabled("  Static — not affected by forces or gravity");
-                        else if (bt == 1) ImGui::TextDisabled("  Dynamic — simulated by physics (needs mass > 0)");
+                        if (bt == 0)      ImGui::TextDisabled("  Static — not affected by forces or gravity");
+                        else if (bt == 1) ImGui::TextDisabled("  Dynamic — simulated (needs mass > 0)");
                         else              ImGui::TextDisabled("  Kinematic — moved by code, collides with dynamic");
                     }
                     if (masses)
@@ -3691,7 +4046,6 @@ static void drawInspectorWindow()
                         if (masses[eid] == 0.0f) ImGui::TextDisabled("  Mass 0 = infinite (immovable)");
                     }
 
-                    // ---- Collider ----
                     ImGui::SeparatorText("Collider");
                     static const c8 *shapeNames[] = { "None", "Sphere", "Box" };
                     static bool colliderMatchTransform[4096] = {false};
@@ -3701,551 +4055,185 @@ static void drawInspectorWindow()
                         if (cs < 0 || cs > 2) cs = 0;
                         if (ImGui::Combo("Shape##phys", &cs, shapeNames, 3))
                             colliderShapes[eid] = (u32)cs;
-
                         if (cs > 0 && eid < 4096)
                         {
                             ImGui::Checkbox("Match Transform##phys", &colliderMatchTransform[eid]);
                             if (colliderMatchTransform[eid])
-                                ImGui::TextDisabled("  Collider auto-syncs to entity scale");
+                                ImGui::TextDisabled("  Auto-syncs to entity scale");
                         }
-
-                        // Auto-sync collider to entity transform when toggled on
                         if (cs > 0 && eid < 4096 && colliderMatchTransform[eid])
                         {
                             Vec3 s = scales[eid];
                             if (cs == 1 && sphereRadii)
                             {
-                                f32 maxAxis = s.x;
-                                if (s.y > maxAxis) maxAxis = s.y;
-                                if (s.z > maxAxis) maxAxis = s.z;
-                                sphereRadii[eid] = maxAxis;
+                                f32 r = s.x; if (s.y > r) r = s.y; if (s.z > r) r = s.z;
+                                sphereRadii[eid] = r;
                             }
                             else if (cs == 2 && colliderHalfXs && colliderHalfYs && colliderHalfZs)
-                            {
-                                colliderHalfXs[eid] = s.x;
-                                colliderHalfYs[eid] = s.y;
-                                colliderHalfZs[eid] = s.z;
-                            }
+                            { colliderHalfXs[eid] = s.x; colliderHalfYs[eid] = s.y; colliderHalfZs[eid] = s.z; }
                         }
-
-                        if (cs == 1 && sphereRadii)  // Sphere
+                        if (cs == 1 && sphereRadii)
                         {
                             if (eid < 4096 && colliderMatchTransform[eid]) ImGui::BeginDisabled();
                             ImGui::DragFloat("Radius##phys", &sphereRadii[eid], 0.05f, 0.01f, 500.0f, "%.2f m");
                             if (eid < 4096 && colliderMatchTransform[eid]) ImGui::EndDisabled();
                         }
-                        else if (cs == 2 && colliderHalfXs && colliderHalfYs && colliderHalfZs)  // Box
+                        else if (cs == 2 && colliderHalfXs && colliderHalfYs && colliderHalfZs)
                         {
                             if (eid < 4096 && colliderMatchTransform[eid]) ImGui::BeginDisabled();
                             f32 he[3] = { colliderHalfXs[eid], colliderHalfYs[eid], colliderHalfZs[eid] };
                             if (ImGui::DragFloat3("Half Extents##phys", he, 0.05f, 0.01f, 500.0f, "%.2f m"))
-                            {
-                                colliderHalfXs[eid] = he[0];
-                                colliderHalfYs[eid] = he[1];
-                                colliderHalfZs[eid] = he[2];
-                            }
-                            ImGui::TextDisabled("  Width x2=%.2f  Height x2=%.2f  Depth x2=%.2f",
-                                he[0]*2.f, he[1]*2.f, he[2]*2.f);
+                            { colliderHalfXs[eid] = he[0]; colliderHalfYs[eid] = he[1]; colliderHalfZs[eid] = he[2]; }
+                            ImGui::TextDisabled("  Full size  %.2f x %.2f x %.2f",
+                                                he[0]*2.f, he[1]*2.f, he[2]*2.f);
                             if (eid < 4096 && colliderMatchTransform[eid]) ImGui::EndDisabled();
                         }
-                        if (cs == 0) ImGui::TextDisabled("  No collision shape — passes through everything");
+                        if (cs == 0) ImGui::TextDisabled("  No collision shape");
                     }
 
-                    // ---- Runtime (play mode only) ----
                     bool inPlay = g_ecsSystemLoaded[archID] && g_ecsArchetypes[archID].arena;
                     if (inPlay)
                     {
                         u32 slot = ecsSlotIDs ? ecsSlotIDs[eid] : (u32)-1;
                         Archetype *physArch = &g_ecsArchetypes[archID];
                         void **physFields = getArchetypeFields(physArch, 0);
-
                         if (physFields && slot != (u32)-1 && slot < physArch->arena[0].count)
                         {
                             ImGui::SeparatorText("Runtime");
                             StructLayout *physLayout = physArch->layout;
-
-                            i32 dampIdx = -1, velXIdx = -1, velYIdx = -1, velZIdx = -1;
-                            i32 fxIdx = -1, fyIdx = -1, fzIdx = -1;
+                            i32 dampIdx=-1,velXIdx=-1,velYIdx=-1,velZIdx=-1,fxIdx=-1,fyIdx=-1,fzIdx=-1;
                             for (u32 f = 0; f < physLayout->count; f++)
                             {
                                 const c8 *n = physLayout->fields[f].name;
-                                if      (strcmp(n, "LinearDamping")   == 0) dampIdx = (i32)f;
-                                else if (strcmp(n, "LinearVelocityX") == 0) velXIdx = (i32)f;
-                                else if (strcmp(n, "LinearVelocityY") == 0) velYIdx = (i32)f;
-                                else if (strcmp(n, "LinearVelocityZ") == 0) velZIdx = (i32)f;
-                                else if (strcmp(n, "ForceX")          == 0) fxIdx   = (i32)f;
-                                else if (strcmp(n, "ForceY")          == 0) fyIdx   = (i32)f;
-                                else if (strcmp(n, "ForceZ")          == 0) fzIdx   = (i32)f;
+                                if      (!strcmp(n,"LinearDamping"))   dampIdx=(i32)f;
+                                else if (!strcmp(n,"LinearVelocityX")) velXIdx=(i32)f;
+                                else if (!strcmp(n,"LinearVelocityY")) velYIdx=(i32)f;
+                                else if (!strcmp(n,"LinearVelocityZ")) velZIdx=(i32)f;
+                                else if (!strcmp(n,"ForceX"))          fxIdx=(i32)f;
+                                else if (!strcmp(n,"ForceY"))          fyIdx=(i32)f;
+                                else if (!strcmp(n,"ForceZ"))          fzIdx=(i32)f;
                             }
-
                             if (dampIdx >= 0)
-                                ImGui::DragFloat("Linear Damping##rt", &((f32 *)physFields[dampIdx])[slot], 0.001f, 0.0f, 1.0f, "%.3f");
-
-                            if (velXIdx >= 0 && velYIdx >= 0 && velZIdx >= 0)
+                                ImGui::DragFloat("Damping##rt", &((f32*)physFields[dampIdx])[slot], 0.001f, 0.0f, 1.0f, "%.3f");
+                            if (velXIdx>=0 && velYIdx>=0 && velZIdx>=0)
                             {
-                                f32 vx = ((f32 *)physFields[velXIdx])[slot];
-                                f32 vy = ((f32 *)physFields[velYIdx])[slot];
-                                f32 vz = ((f32 *)physFields[velZIdx])[slot];
-                                f32 spd = sqrtf(vx*vx + vy*vy + vz*vz);
-                                ImGui::Text("Velocity   % .3f  % .3f  % .3f", vx, vy, vz);
-                                ImGui::Text("Speed      %.3f m/s", spd);
+                                f32 vx=((f32*)physFields[velXIdx])[slot], vy=((f32*)physFields[velYIdx])[slot], vz=((f32*)physFields[velZIdx])[slot];
+                                ImGui::Text("Velocity  %.2f  %.2f  %.2f  (%.2f m/s)", vx, vy, vz, sqrtf(vx*vx+vy*vy+vz*vz));
                             }
-                            if (fxIdx >= 0 && fyIdx >= 0 && fzIdx >= 0)
-                            {
-                                ImGui::Text("Force      % .3f  % .3f  % .3f",
-                                    ((f32 *)physFields[fxIdx])[slot],
-                                    ((f32 *)physFields[fyIdx])[slot],
-                                    ((f32 *)physFields[fzIdx])[slot]);
-                            }
+                            if (fxIdx>=0 && fyIdx>=0 && fzIdx>=0)
+                                ImGui::Text("Force     %.2f  %.2f  %.2f",
+                                    ((f32*)physFields[fxIdx])[slot], ((f32*)physFields[fyIdx])[slot], ((f32*)physFields[fzIdx])[slot]);
                         }
                     }
                     else
                     {
                         ImGui::Spacing();
-                        ImGui::TextDisabled("Velocity and damping visible in play mode");
+                        ImGui::TextDisabled("Velocity / damping visible in play mode");
                     }
                 }
             }
         }
 
-        // ---- Light ----
-        if (isLight)
-        {
-            u32 eid = inspectorEntityID;
-            bool lightEnabled = isLight[eid];
-            if (ImGui::Checkbox("Light Source", &lightEnabled))
-            {
-                isLight[eid] = lightEnabled;
-                if (lightEnabled)
-                {
-                    if (lightTypes)        lightTypes[eid] = LIGHT_TYPE_POINT;
-                    if (lightColorRs)      lightColorRs[eid] = 1.0f;
-                    if (lightColorGs)      lightColorGs[eid] = 1.0f;
-                    if (lightColorBs)      lightColorBs[eid] = 1.0f;
-                    if (lightIntensities)  lightIntensities[eid] = 1.0f;
-                    if (lightRanges)       lightRanges[eid] = 10.0f;
-                    if (lightDirXs)        lightDirXs[eid] = 0.0f;
-                    if (lightDirYs)        lightDirYs[eid] = -1.0f;
-                    if (lightDirZs)        lightDirZs[eid] = 0.0f;
-                    if (lightInnerCones)   lightInnerCones[eid] = 0.9063f;  // cos(25 deg)
-                    if (lightOuterCones)   lightOuterCones[eid] = 0.8192f;  // cos(35 deg)
-                }
-            }
-
-            if (isLight[eid])
-            {
-                if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
-                {
-                    static const c8 *lightTypeNames[] = { "Point", "Directional", "Spot" };
-                    if (lightTypes)
-                    {
-                        int lt = (int)lightTypes[eid];
-                        if (lt < 0 || lt > 2) lt = 0;
-                        if (ImGui::Combo("Type##light", &lt, lightTypeNames, 3))
-                            lightTypes[eid] = (u32)lt;
-                    }
-
-                    if (lightColorRs && lightColorGs && lightColorBs)
-                    {
-                        f32 col[3] = { lightColorRs[eid], lightColorGs[eid], lightColorBs[eid] };
-                        if (ImGui::ColorEdit3("Color##light", col))
-                        {
-                            lightColorRs[eid] = col[0];
-                            lightColorGs[eid] = col[1];
-                            lightColorBs[eid] = col[2];
-                        }
-                    }
-
-                    if (lightIntensities)
-                        ImGui::DragFloat("Intensity##light", &lightIntensities[eid], 0.05f, 0.0f, 100.0f, "%.2f");
-
-                    u32 lt = lightTypes ? lightTypes[eid] : 0;
-
-                    if (lt != LIGHT_TYPE_DIRECTIONAL && lightRanges)
-                        ImGui::DragFloat("Range##light", &lightRanges[eid], 0.1f, 0.1f, 1000.0f, "%.1f m");
-
-                    if (lt == LIGHT_TYPE_DIRECTIONAL || lt == LIGHT_TYPE_SPOT)
-                    {
-                        if (lightDirXs && lightDirYs && lightDirZs)
-                        {
-                            f32 dir[3] = { lightDirXs[eid], lightDirYs[eid], lightDirZs[eid] };
-                            if (ImGui::DragFloat3("Direction##light", dir, 0.01f, -1.0f, 1.0f, "%.3f"))
-                            {
-                                lightDirXs[eid] = dir[0];
-                                lightDirYs[eid] = dir[1];
-                                lightDirZs[eid] = dir[2];
-                            }
-                        }
-                    }
-
-                    if (lt == LIGHT_TYPE_SPOT)
-                    {
-                        if (lightInnerCones)
-                            ImGui::DragFloat("Inner Cone##light", &lightInnerCones[eid], 0.005f, 0.0f, 1.0f, "%.4f (cos)");
-                        if (lightOuterCones)
-                            ImGui::DragFloat("Outer Cone##light", &lightOuterCones[eid], 0.005f, 0.0f, 1.0f, "%.4f (cos)");
-                    }
-                }
-            }
-        }
-
+        // ---- Scene Camera ----
         if (sceneCameraFlags)
         {
-            b8 isSceneCamera = sceneCameraFlags[inspectorEntityID];
-            if (ImGui::Checkbox("Scene Camera", (bool *)&isSceneCamera))
+            if (ImGui::CollapsingHeader("Scene Camera"))
             {
-                if (isSceneCamera)
+                b8 isSceneCamera = sceneCameraFlags[inspectorEntityID];
+                if (ImGui::Checkbox("Use as Scene Camera##sc", (bool *)&isSceneCamera))
                 {
-                    setSceneCameraEntity(inspectorEntityID);
-                    applySceneCameraEntityToSceneCam();
+                    if (isSceneCamera) { setSceneCameraEntity(inspectorEntityID); applySceneCameraEntityToSceneCam(); }
+                    else sceneCameraFlags[inspectorEntityID] = false;
                 }
-                else
+                if (sceneCameraFlags[inspectorEntityID])
                 {
-                    sceneCameraFlags[inspectorEntityID] = false;
-                }
-            }
-
-            if (sceneCameraFlags[inspectorEntityID])
-            {
-                if (ImGui::Button("Move View To Camera"))
-                    applySceneCameraEntityToSceneCam();
-                ImGui::SameLine();
-                if (ImGui::Button("Match Camera To View"))
-                {
-                    positions[inspectorEntityID] = sceneCam.pos;
-                    rotations[inspectorEntityID] = sceneCam.orientation;
+                    if (ImGui::Button("Move View To Camera##sc")) applySceneCameraEntityToSceneCam();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Match Camera To View##sc"))
+                    { positions[inspectorEntityID] = sceneCam.pos; rotations[inspectorEntityID] = sceneCam.orientation; }
                 }
             }
         }
 
-        // ---- Archetype assignment ----
+        // ---- Archetype ----
         if (archetypeIDs)
         {
             u32 currentArchID = archetypeIDs[inspectorEntityID];
             const c8 *archPreview = (currentArchID < g_archRegistry.count)
                 ? g_archRegistry.entries[currentArchID].name : "None";
 
-            if (ImGui::BeginCombo("Archetype", archPreview))
+            if (ImGui::CollapsingHeader("Archetype", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                // "None" option
-                if (ImGui::Selectable("None", currentArchID == (u32)-1))
-                    archetypeIDs[inspectorEntityID] = (u32)-1;
-
-                for (u32 a = 0; a < g_archRegistry.count; a++)
+                if (ImGui::BeginCombo("##archCombo", archPreview))
                 {
-                    bool selected = (currentArchID == a);
-                    if (ImGui::Selectable(g_archRegistry.entries[a].name, selected))
-                        archetypeIDs[inspectorEntityID] = a;
-                    if (selected)
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndCombo();
-            }
-
-            // ---- Archetype field values ----
-            if (currentArchID < g_archRegistry.count)
-            {
-                ArchetypeFileEntry *archEntry = &g_archRegistry.entries[currentArchID];
-                ImGui::Separator();
-                ImGui::Text("Archetype: %s", archEntry->name);
-
-                // During play mode: show live values from the per-system archetype
-                if (g_gameRunning && g_ecsSystemLoaded[currentArchID]
-                    && g_ecsArchEntityCount[currentArchID] > 0
-                    && g_ecsArchetypes[currentArchID].arena)
-                {
-                    // Find this entity's index within the per-system archetype
-                    u32 perSysIdx = (u32)-1;
-                    for (u32 i = 0; i < g_ecsArchEntityCount[currentArchID]; i++)
+                    if (ImGui::Selectable("None", currentArchID == (u32)-1))
+                        archetypeIDs[inspectorEntityID] = (u32)-1;
+                    for (u32 a = 0; a < g_archRegistry.count; a++)
                     {
-                        if (g_ecsSceneMap[currentArchID][i] == inspectorEntityID)
-                        { perSysIdx = i; break; }
-                    }
-
-                    if (perSysIdx != (u32)-1)
-                    {
-                        void **fields = getArchetypeFields(&g_ecsArchetypes[currentArchID], 0);
-                        StructLayout *layout = g_ecsArchetypes[currentArchID].layout;
-                        if (fields && layout)
-                        {
-                            for (u32 f = 0; f < layout->count; f++)
-                            {
-                                u32 sz = layout->fields[f].size;
-                                void *ptr = (u8 *)fields[f] + sz * perSysIdx;
-
-                                ImGui::PushID((int)(5000 + f));
-                                if (sz == sizeof(f32))
-                                    ImGui::DragFloat(layout->fields[f].name, (f32 *)ptr, 0.01f);
-                                else if (sz == sizeof(Vec3))
-                                    ImGui::DragFloat3(layout->fields[f].name, (f32 *)ptr, 0.01f);
-                                else if (sz == sizeof(Vec4))
-                                    ImGui::DragFloat4(layout->fields[f].name, (f32 *)ptr, 0.01f);
-                                else if (sz == sizeof(Vec2))
-                                    ImGui::DragFloat2(layout->fields[f].name, (f32 *)ptr, 0.01f);
-                                else
-                                    ImGui::Text("%s (%u bytes)", layout->fields[f].name, sz);
-                                ImGui::PopID();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        ImGui::TextDisabled("Entity not in this archetype's runtime set");
-                    }
-                }
-                else
-                {
-                    // Edit mode or system not loaded: show field names from scanner
-                    StructLayout *layout = &archEntry->layout;
-                    if (layout->fields)
-                    {
-                        for (u32 f = 0; f < layout->count; f++)
-                        {
-                            const c8 *fname = layout->fields[f].name;
-                            u32 fsz = layout->fields[f].size;
-                            if (fsz > 0)
-                                ImGui::TextDisabled("  %s  (%u bytes)", fname, fsz);
-                            else
-                                ImGui::TextDisabled("  %s", fname);
-                        }
-                    }
-                    else
-                    {
-                        ImGui::TextDisabled("  %u fields (start play to inspect)", layout->count);
-                    }
-                }
-            }
-        }
-
-        u32 currentModelID = modelIDs[inspectorEntityID];
-        
-        // Show warning if entity has no model assigned
-        if (currentModelID == (u32)-1)
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No model assigned to this entity");
-        }
-        
-        if (ImGui::BeginListBox("Models"))
-        {
-            // Add "None" option for no model
-            b8 isNoneSelected = (currentModelID == (u32)-1);
-            if(ImGui::Selectable("None", isNoneSelected))
-            {
-                modelIDs[inspectorEntityID] = (u32)-1;
-            }
-            
-            for(u32 modelIdx = 0; modelIdx < resources->modelUsed; modelIdx++)
-            {
-                const b8 isSelected = (currentModelID == modelIdx);
-                Model *model = &resources->modelBuffer[modelIdx];
-                
-                // Create unique ID for each model selectable
-                ImGui::PushID(modelIdx);
-                if(ImGui::Selectable(model->name, isSelected))
-                {
-                    modelIDs[inspectorEntityID] = modelIdx;
-                }
-                ImGui::PopID();
-            }
-            ImGui::EndListBox();
-        }
-
-        // ---- Model Info ----
-        if (ImGui::CollapsingHeader("Model Info", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            u32 infoModelID = modelIDs[inspectorEntityID];
-            if (infoModelID == (u32)-1)
-            {
-                ImGui::TextDisabled("No model assigned");
-            }
-            else if (infoModelID >= resources->modelUsed)
-            {
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
-                                   "Invalid model id: %u", infoModelID);
-            }
-            else
-            {
-                Model *infoModel = &resources->modelBuffer[infoModelID];
-                ImGui::Text("Name: %s", infoModel->name ? infoModel->name : "(unnamed)");
-                ImGui::Text("Model ID: %u", infoModelID);
-                ImGui::Text("Meshes: %u", infoModel->meshCount);
-                ImGui::Text("Materials: %u", infoModel->materialCount);
-
-                u32 totalIndices = 0;
-                u32 totalTriangles = 0;
-                for (u32 i = 0; i < infoModel->meshCount; i++)
-                {
-                    u32 meshIndex = infoModel->meshIndices[i];
-                    if (meshIndex >= resources->meshUsed) continue;
-
-                    Mesh *mesh = &resources->meshBuffer[meshIndex];
-                    totalIndices += mesh->drawCount;
-                    totalTriangles += mesh->drawCount / 3;
-                }
-
-                ImGui::Text("Total Indices: %u", totalIndices);
-                ImGui::Text("Total Triangles: %u", totalTriangles);
-
-                if (ImGui::TreeNode("Mesh Breakdown"))
-                {
-                    for (u32 i = 0; i < infoModel->meshCount; i++)
-                    {
-                        u32 meshIndex = infoModel->meshIndices[i];
-                        u32 matIndex = (i < infoModel->materialCount)
-                            ? infoModel->materialIndices[i] : (u32)-1;
-
-                        if (meshIndex >= resources->meshUsed)
-                        {
-                            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
-                                               "Mesh %u: invalid mesh index %u", i, meshIndex);
-                            continue;
-                        }
-
-                        Mesh *mesh = &resources->meshBuffer[meshIndex];
-                        if (matIndex == (u32)-1)
-                            ImGui::Text("Mesh %u: idx=%u, tris=%u, mat=none",
-                                        i, mesh->drawCount, mesh->drawCount / 3);
-                        else
-                            ImGui::Text("Mesh %u: idx=%u, tris=%u, mat=%u",
-                                        i, mesh->drawCount, mesh->drawCount / 3, matIndex);
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-        
-        //list the material data 
-        u32 modelID = modelIDs[inspectorEntityID];
-        if (modelID < resources->modelUsed)
-        {
-            Model *model = &resources->modelBuffer[modelID];
-            if (model->meshCount > 0)
-            {
-                // Determine default and effective material indices
-                u32 defaultMaterialIndex = model->materialIndices[0];
-                u32 effectiveMaterialIndex = defaultMaterialIndex;
-                if (entityMaterialIDs && entityMaterialIDs[inspectorEntityID] != (u32)-1) {
-                    effectiveMaterialIndex = entityMaterialIDs[inspectorEntityID];
-                }
-                // guard
-                if (effectiveMaterialIndex >= resources->materialUsed) {
-                    ERROR("Invalid material index for inspector: %u (used=%u)", effectiveMaterialIndex, resources->materialUsed);
-                    break;
-                }
-
-                Material *mat = &resources->materialBuffer[effectiveMaterialIndex];
-
-                b8 isCustom = (effectiveMaterialIndex != defaultMaterialIndex);
-
-                ImGui::Text("Material");
-                ImGui::SameLine();
-                if (isCustom) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "(Custom)");
-                    ImGui::SameLine();
-                }
-
-                // Create a custom material clone for this entity
-                if (ImGui::Button("Make Custom Material"))
-                {
-                    if (!resources)
-                    {
-                        WARN("Resource manager not initialized");
-                    }
-                    else if (resources->materialUsed >= resources->materialCount)
-                    {
-                        WARN("Cannot create custom material: material buffer full");
-                    }
-                    else
-                    {
-                        u32 newIndex = resources->materialUsed;
-                        // copy the model's default material into resource manager (so custom starts from default)
-                        resources->materialBuffer[newIndex] = resources->materialBuffer[defaultMaterialIndex];
-
-                        // generate a name for the material
-                        c8 newName[256];
-                        const c8 *entityName = &names[inspectorEntityID * MAX_NAME_SIZE];
-                        if (entityName == NULL || entityName[0] == '\0')
-                            entityName = model->name;
-                        snprintf(newName, sizeof(newName), "%s-custom-%u", entityName, newIndex);
-
-                        insertMap(&resources->materialIDs, newName, &resources->materialUsed);
-                        resources->materialUsed++;
-                        // assign to entity
-                        if (entityMaterialIDs)
-                            entityMaterialIDs[inspectorEntityID] = newIndex;
-
-                        INFO("Created custom material '%s' at index %u for entity %u", newName, newIndex, inspectorEntityID);
-                    }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Clear Custom Material"))
-                {
-                    if (entityMaterialIDs)
-                    {
-                        entityMaterialIDs[inspectorEntityID] = (u32)-1;
-                        INFO("Cleared custom material for entity %u", inspectorEntityID);
-                        // recompute effective material to default
-                        effectiveMaterialIndex = defaultMaterialIndex;
-                        mat = &resources->materialBuffer[effectiveMaterialIndex];
-                    }
-                }
-                // If we just created a custom material above, refresh mat/effective index
-                if (entityMaterialIDs && entityMaterialIDs[inspectorEntityID] != (u32)-1) {
-                    effectiveMaterialIndex = entityMaterialIDs[inspectorEntityID];
-                    if (effectiveMaterialIndex < resources->materialUsed)
-                        mat = &resources->materialBuffer[effectiveMaterialIndex];
-                }
-
-                drawTextureSelector("Albedo", &mat->albedoTex, "##Select Albedo");
-                drawTextureSelector("Normal", &mat->normalTex, "##Select Normal");
-                drawTextureSelector("Metallic", &mat->metallicTex, "##Select Metallic");
-                drawTextureSelector("Roughness", &mat->roughnessTex, "##Select Roughness");
-
-                ImGui::ColorEdit3("Colour", (f32 *)&mat->colour);
-                ImGui::SliderFloat("Metallic", &mat->metallic, 0.0f, 1.0f); 
-                ImGui::SliderFloat("Roughness", &mat->roughness, 0.0f, 1.0f);
-                ImGui::SliderFloat("Transparency", &mat->transparency, 0.0f, 1.0f);
-
-                // Shader selection
-                const c8* currentShaderName = "None";
-                // Find the name of the current shader
-                for (u32 shaderNameIdx = 0; shaderNameIdx < resources->shaderIDs.capacity; shaderNameIdx++) {
-                    if (resources->shaderIDs.pairs[shaderNameIdx].occupied) {
-                        u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderNameIdx].value;
-                        if (resources->shaderHandles[shaderIndex] == shaderHandles[inspectorEntityID]) {
-                            currentShaderName = (const c8*)resources->shaderIDs.pairs[shaderNameIdx].key;
-                            break;
-                        }
-                    }
-                }
-
-                if (ImGui::BeginCombo("Shader", currentShaderName))
-                {
-                    for (u32 shaderIdx = 0; shaderIdx < resources->shaderIDs.capacity; shaderIdx++)
-                    {
-                        if (resources->shaderIDs.pairs[shaderIdx].occupied)
-                        {
-                            const c8* shaderName = (const c8*)resources->shaderIDs.pairs[shaderIdx].key;
-                            u32 shaderIndex = *(u32*)resources->shaderIDs.pairs[shaderIdx].value;
-                            u32 shaderHandle = resources->shaderHandles[shaderIndex];
-
-                            const b8 is_selected = (shaderHandles[inspectorEntityID] == shaderHandle);
-                            if (ImGui::Selectable(shaderName, is_selected))
-                            {
-                                shaderHandles[inspectorEntityID] = shaderHandle;
-                            }
-                            if (is_selected)
-                            {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
+                        bool sel = (currentArchID == a);
+                        if (ImGui::Selectable(g_archRegistry.entries[a].name, sel))
+                            archetypeIDs[inspectorEntityID] = a;
+                        if (sel) ImGui::SetItemDefaultFocus();
                     }
                     ImGui::EndCombo();
                 }
+
+                if (currentArchID < g_archRegistry.count)
+                {
+                    ArchetypeFileEntry *archEntry = &g_archRegistry.entries[currentArchID];
+                    if (g_gameRunning && g_ecsSystemLoaded[currentArchID]
+                        && g_ecsArchEntityCount[currentArchID] > 0
+                        && g_ecsArchetypes[currentArchID].arena)
+                    {
+                        u32 perSysIdx = (u32)-1;
+                        for (u32 i = 0; i < g_ecsArchEntityCount[currentArchID]; i++)
+                        {
+                            if (g_ecsSceneMap[currentArchID][i] == inspectorEntityID)
+                            { perSysIdx = i; break; }
+                        }
+                        if (perSysIdx != (u32)-1)
+                        {
+                            void **fields = getArchetypeFields(&g_ecsArchetypes[currentArchID], 0);
+                            StructLayout *layout = g_ecsArchetypes[currentArchID].layout;
+                            if (fields && layout)
+                            {
+                                for (u32 f = 0; f < layout->count; f++)
+                                {
+                                    u32 sz = layout->fields[f].size;
+                                    void *ptr = (u8 *)fields[f] + sz * perSysIdx;
+                                    ImGui::PushID((int)(5000 + f));
+                                    if      (sz == sizeof(f32))  ImGui::DragFloat(layout->fields[f].name,  (f32*)ptr, 0.01f);
+                                    else if (sz == sizeof(Vec3)) ImGui::DragFloat3(layout->fields[f].name, (f32*)ptr, 0.01f);
+                                    else if (sz == sizeof(Vec4)) ImGui::DragFloat4(layout->fields[f].name, (f32*)ptr, 0.01f);
+                                    else if (sz == sizeof(Vec2)) ImGui::DragFloat2(layout->fields[f].name, (f32*)ptr, 0.01f);
+                                    else ImGui::Text("%s (%u bytes)", layout->fields[f].name, sz);
+                                    ImGui::PopID();
+                                }
+                            }
+                        }
+                        else ImGui::TextDisabled("Entity not in this archetype's runtime set");
+                    }
+                    else
+                    {
+                        StructLayout *layout = &archEntry->layout;
+                        if (layout->fields)
+                        {
+                            for (u32 f = 0; f < layout->count; f++)
+                            {
+                                u32 fsz = layout->fields[f].size;
+                                if (fsz > 0) ImGui::TextDisabled("  %s  (%u bytes)", layout->fields[f].name, fsz);
+                                else         ImGui::TextDisabled("  %s", layout->fields[f].name);
+                            }
+                        }
+                        else ImGui::TextDisabled("  %u fields (start play to inspect)", layout->count);
+                    }
+                }
             }
         }
 
-        // material
+        // ---- Raw SoA Fields (debug) ----
+        drawSoAEditorSection(inspectorEntityID);
+
         break;
     }
 
@@ -4417,6 +4405,150 @@ static void drawSkyboxSettingsWindow()
 
     ImGui::Text("Cubemap Texture ID: %u", cubeMapTexture);
 
+    ImGui::End();
+}
+
+static void drawMaterialRegistryWindow()
+{
+    if (!showMaterialRegistry) return;
+    if (!resources)            return;
+
+    ImGui::SetNextWindowSize(ImVec2(780, 560), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Material Registry", &showMaterialRegistry))
+    { ImGui::End(); return; }
+
+    // Left panel — material list
+    ImGui::BeginChild("##matList", ImVec2(220, 0), true);
+
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##filter", g_matNameFilter, sizeof(g_matNameFilter));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Filter materials by name");
+    ImGui::Separator();
+
+    // Collect (name, index) pairs from the hashmap so we can display them
+    for (u32 i = 0; i < resources->materialIDs.capacity; i++)
+    {
+        if (!resources->materialIDs.pairs[i].occupied) continue;
+        const c8 *name = (const c8 *)resources->materialIDs.pairs[i].key;
+        u32 idx        = *(u32 *)resources->materialIDs.pairs[i].value;
+        if (idx >= resources->materialUsed) continue;
+
+        // Name filter
+        if (g_matNameFilter[0] != '\0' && !strstr(name, g_matNameFilter)) continue;
+
+        bool selected = (g_selectedMaterialIdx == (i32)idx);
+        ImGui::PushID((int)idx);
+        if (ImGui::Selectable(name, selected))
+            g_selectedMaterialIdx = (i32)idx;
+        ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    if (ImGui::Button("+ New Material", ImVec2(-1, 0)))
+    {
+        if (resources->materialUsed < resources->materialCount)
+        {
+            u32 newIdx = resources->materialUsed;
+            Material blank = {0};
+            blank.colour    = {1.0f, 1.0f, 1.0f};
+            blank.roughness = 0.5f;
+            resources->materialBuffer[newIdx] = blank;
+            c8 newName[64];
+            snprintf(newName, sizeof(newName), "Material_%u", newIdx);
+            insertMap(&resources->materialIDs, newName, &resources->materialUsed);
+            resources->materialUsed++;
+            g_selectedMaterialIdx = (i32)newIdx;
+            INFO("Material Registry: created '%s' at index %u", newName, newIdx);
+        }
+        else WARN("Material buffer full");
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // Right panel — editor + preview
+    ImGui::BeginChild("##matEdit", ImVec2(0, 0), false);
+
+    if (g_selectedMaterialIdx < 0 || (u32)g_selectedMaterialIdx >= resources->materialUsed)
+    {
+        ImGui::Spacing();
+        ImGui::TextDisabled("Select a material from the list to edit it.");
+        ImGui::EndChild();
+        ImGui::End();
+        return;
+    }
+
+    u32 matIdx = (u32)g_selectedMaterialIdx;
+    Material *mat = &resources->materialBuffer[matIdx];
+
+    // Find this material's name in the hashmap for display
+    const c8 *matName = "(unnamed)";
+    for (u32 i = 0; i < resources->materialIDs.capacity; i++)
+    {
+        if (!resources->materialIDs.pairs[i].occupied) continue;
+        if (*(u32 *)resources->materialIDs.pairs[i].value == matIdx)
+        { matName = (const c8 *)resources->materialIDs.pairs[i].key; break; }
+    }
+
+    // Sphere preview — left column
+    ImGui::BeginGroup();
+    if (deferredLightingShader && screenQuadMesh)
+    {
+        renderMaterialPreview(matIdx);
+        ImGui::Image(
+            (void *)(intptr_t)g_matPreviewOutputFBO.texture,
+            ImVec2((f32)MATPREVIEW_SIZE, (f32)MATPREVIEW_SIZE),
+            ImVec2(0, 1), ImVec2(1, 0));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Preview uses the full deferred pipeline with scene lights");
+    }
+    else
+    {
+        ImGui::TextDisabled("Preview unavailable\n(deferred shader not loaded)");
+    }
+    ImGui::EndGroup();
+
+    ImGui::SameLine();
+
+    // Properties column
+    ImGui::BeginGroup();
+    ImGui::Text("Material: %s  [%u]", matName, matIdx);
+    ImGui::Separator();
+
+    drawTextureSelector("Albedo",    &mat->albedoTex,    "##RegAlb");
+    drawTextureSelector("Normal",    &mat->normalTex,    "##RegNrm");
+    drawTextureSelector("Metallic",  &mat->metallicTex,  "##RegMet");
+    drawTextureSelector("Roughness", &mat->roughnessTex, "##RegRou");
+
+    ImGui::Spacing();
+    ImGui::ColorEdit3("Colour##reg",       (f32 *)&mat->colour);
+    ImGui::SliderFloat("Metallic##reg",    &mat->metallic,       0.0f, 1.0f);
+    ImGui::SliderFloat("Roughness##reg",   &mat->roughness,      0.0f, 1.0f);
+    ImGui::SliderFloat("Emissive##reg",    &mat->emissive,       0.0f, 10.0f);
+    ImGui::SliderFloat("Transparency##reg",&mat->transparency,   0.0f, 1.0f);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // Assign to selected entity
+    if (currentInspectorState == ENTITY_VIEW && inspectorEntityID < entityCount && entityMaterialIDs)
+    {
+        if (ImGui::Button("Assign to Selected Entity"))
+        {
+            entityMaterialIDs[inspectorEntityID] = matIdx;
+            INFO("Material Registry: assigned mat %u to entity %u", matIdx, inspectorEntityID);
+        }
+        ImGui::SameLine();
+        const c8 *ename = names ? &names[inspectorEntityID * MAX_NAME_SIZE] : "?";
+        ImGui::TextDisabled("-> %s", (ename && ename[0]) ? ename : "(unnamed)");
+    }
+    else
+    {
+        ImGui::TextDisabled("Select an entity in the scene to assign this material.");
+    }
+    ImGui::EndGroup();
+
+    ImGui::EndChild();
     ImGui::End();
 }
 
@@ -4926,9 +5058,9 @@ void drawDockspaceAndPanels()
                 showLightGizmos = !showLightGizmos;
             }
             if (ImGui::MenuItem("Loaded Entities", NULL, showLoadedEntities))
-            {
                 showLoadedEntities = !showLoadedEntities;
-            }
+            if (ImGui::MenuItem("Material Registry", NULL, showMaterialRegistry))
+                showMaterialRegistry = !showMaterialRegistry;
             ImGui::EndMenu();
         }
 
@@ -5071,6 +5203,7 @@ void drawDockspaceAndPanels()
     drawBuildLogWindow();
     drawConsoleWindow();
     drawLoadedEntitiesWindow();
+    drawMaterialRegistryWindow();
 
     // Calculate timestep for physics and game updates
     f32 dt = (f32)(1.0 / (editor->fps > 0.0 ? editor->fps : 60.0));
