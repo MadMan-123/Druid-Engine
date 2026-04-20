@@ -235,6 +235,13 @@ void migrateSceneArchetypeIfNeeded()
     if (loadedFields >= currentFields)
         return; // already up-to-date
 
+    // Validate arena exists before accessing
+    if (!sceneArchetype.arena || sceneArchetype.arenaCount == 0)
+    {
+        ERROR("migrateSceneArchetypeIfNeeded: archetype has no valid arena");
+        return;
+    }
+
     u32 liveCount = sceneArchetype.arena[0].count;
     u32 capacity  = sceneArchetype.capacity;
 
@@ -554,7 +561,18 @@ void init()
 
                 sceneArchetype  = sd.archetypes[0];
                 entitySizeCache = sceneArchetype.capacity;
-                entityCount     = sceneArchetype.arena[0].count;
+                
+                // Validate that arena was properly initialized before accessing it
+                if (sceneArchetype.arenaCount > 0 && sceneArchetype.arena)
+                {
+                    entityCount = sceneArchetype.arena[0].count;
+                }
+                else
+                {
+                    ERROR("Auto-load: loaded archetype has no valid arena (arenaCount=%u, arena=%p)",
+                          sceneArchetype.arenaCount, sceneArchetype.arena);
+                    entityCount = 0;
+                }
                 entitySize      = (i32)entitySizeCache;
 
                 // Migrate old scenes that lack newer fields (e.g. archetypeID)

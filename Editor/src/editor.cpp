@@ -3630,7 +3630,18 @@ static void editorLoadSceneFile(const c8 *filePath)
         dfree(sd.archetypes, sizeof(Archetype) * sd.archetypeCount, MEM_TAG_SCENE);
         sd.archetypes = nullptr;
         entitySizeCache = sceneArchetype.capacity;
-        entityCount     = sceneArchetype.arena[0].count;
+        
+        // Validate that arena was properly initialized before accessing it
+        if (sceneArchetype.arenaCount > 0 && sceneArchetype.arena)
+        {
+            entityCount = sceneArchetype.arena[0].count;
+        }
+        else
+        {
+            ERROR("editorLoadSceneFile: loaded archetype has no valid arena (arenaCount=%u, arena=%p)",
+                  sceneArchetype.arenaCount, sceneArchetype.arena);
+            entityCount = 0;
+        }
         entitySize      = (i32)entitySizeCache;
 
         migrateSceneArchetypeIfNeeded();
@@ -5317,7 +5328,18 @@ static void restoreSnapshot()
         dfree(sd.archetypes, sizeof(Archetype) * sd.archetypeCount, MEM_TAG_SCENE);
         sd.archetypes = nullptr;
         entitySizeCache = sceneArchetype.capacity;
-        entityCount     = sceneArchetype.arena[0].count;
+        
+        // Validate that arena was properly initialized before accessing it
+        if (sceneArchetype.arenaCount > 0 && sceneArchetype.arena)
+        {
+            entityCount = sceneArchetype.arena[0].count;
+        }
+        else
+        {
+            ERROR("restoreSnapshot: loaded archetype has no valid arena (arenaCount=%u, arena=%p)",
+                  sceneArchetype.arenaCount, sceneArchetype.arena);
+            entityCount = 0;
+        }
         entitySize      = (i32)entitySizeCache;
         migrateSceneArchetypeIfNeeded();
         rebindArchetypeFields();
