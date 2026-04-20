@@ -87,3 +87,11 @@ add_custom_command(TARGET druid POST_BUILD
     "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/libassimp-6.dll"
 )
 
+# Regenerate MSVC-compatible import library after every DLL build
+add_custom_command(TARGET druid POST_BUILD
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    COMMAND gendef $<TARGET_FILE:druid>
+    COMMAND dlltool -D $<TARGET_FILE_NAME:druid> -d libdruid.def -l druid.lib
+    COMMENT "Regenerating druid.lib from updated DLL exports"
+)
+

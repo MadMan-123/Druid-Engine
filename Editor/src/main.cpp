@@ -415,8 +415,8 @@ void init()
     ImGui::StyleColorsDark();
 
     // Initialize ImGui backends
-    ImGui_ImplSDL3_InitForOpenGL(editor->display->sdlWindow,
-                                 editor->display->glContext);
+    ImGui_ImplSDL3_InitForOpenGL(display->sdlWindow,
+                                 display->glContext);
     ImGui_ImplOpenGL3_Init("#version 410");
 
     // compile simple lighting shader that exists in the testbed resources
@@ -470,7 +470,7 @@ void init()
     // ---- Create the global Renderer so ECS systems can acquire GBuffers/InstanceBuffers ----
     if (!renderer)
     {
-        Renderer *r = createRenderer(editor->display,
+        Renderer *r = createRenderer(display,
                                      70.0f,  // fov
                                      0.1f,   // near clip
                                      100.0f, // far clip

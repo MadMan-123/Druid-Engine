@@ -784,6 +784,12 @@ extern "C"
     DAPI u32  archetypePoolSpawn(Archetype *arch);
     DAPI void archetypePoolDespawn(Archetype *arch, u32 index);
     DAPI b8   archetypePoolIsAlive(Archetype *arch, u32 index);
+    // Spawn a pooled entity and immediately return its local index and field pointers.
+    // Combines archetypePoolSpawn + getArchetypeFields into one call.
+    // outPoolIdx  — stable pool index (pass to archetypePoolDespawn to kill)
+    // outLocalIdx — index within the chunk's SoA arrays (use as i in fields[F][i])
+    // outFields   — field pointer array for the entity's chunk
+    DAPI b8   archetypePoolSpawnFields(Archetype *arch, u32 *outPoolIdx, u32 *outLocalIdx, void ***outFields);
     DAPI ArchetypeSpawnData archetypeSpawnIn(Archetype *arch);
     DAPI ArchetypeSpawnData archetypeSpawnInWithCallback(Archetype *arch,
                                                          ArchetypeInitCallback callback,
@@ -1123,6 +1129,10 @@ extern "C"
         Mat4 projection;
         Vec3 pos;
         Vec4 orientation;
+        f32  fovDeg;
+        f32  aspect;
+        f32  nearClip;
+        f32  farClip;
     } Camera;
 
     DAPI Mat4 getViewProjection(const Camera *camera);
@@ -1141,6 +1151,7 @@ extern "C"
     DAPI Mat4 getView(const Camera *camera, b8 removeTranslation);
 
     DAPI void cameraSetPerspective(Camera *cam, f32 fovDeg, f32 aspect, f32 nearClip, f32 farClip);
+    DAPI void cameraSetFov(Camera *cam, f32 fovDeg);
     DAPI void cameraSetOrthographic(Camera *cam, f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip);
 
     //=====================================================================================================================
@@ -1205,8 +1216,12 @@ extern "C"
         f32 screenHeight;
     } Display;
 
+    // Global display singleton — set by initDisplay, consumed by createRenderer.
+    DAPI extern Display *display;
+
     // Display functions
-    DAPI void initDisplay(const c8* title, Display *display, f32 width, f32 height);
+    // initDisplay allocates and populates the global display singleton.
+    DAPI void initDisplay(const c8 *title, f32 width, f32 height);
     DAPI void swapBuffer(const Display *display);
     DAPI void clearDisplay(f32 r, f32 g, f32 b, f32 a);
     DAPI void returnError(const c8 *errorString);
@@ -2096,22 +2111,16 @@ extern "C"
     extern double FPS;
     typedef struct
     {
-        // function pointers
         void (*init)();
         void (*update)(f32);
         void (*render)(f32);
         void (*destroy)();
         void (*inputProcess)(void *);
-        c8 title[MAX_PATH_LENGTH];
-        // open gl context with sdl within the display
-        Display *display;
+        c8   title[MAX_PATH_LENGTH];
         enum ApplicationState state;
-
-        f32 width;
-        f32 height;
-
-        f64 fps;
-
+        f32  width;
+        f32  height;
+        f64  fps;
     } Application;
 
     // function pointer typedef
@@ -2128,6 +2137,88 @@ extern "C"
     DAPI void startApplication(Application *app);
 
     DAPI void applicationRenderStep(Application *app, f32 dt);
+
+    //=====================================================================================================================
+    // Game Runtime — owns scene/physics/shaders lifecycle for both standalone and editor-play.
+    //
+    // Standalone flow (main.cpp creates renderer, then plugin.init calls runtimeCreate):
+    //   runtimeCreate(".", cfg)  → inits physics, loads scene, loads pipeline shaders, loads skybox
+    //   runtimeUpdate(rt, dt)    → physWorldStep + rendererBeginFrame (call at END of gameUpdate)
+    //   runtimeBeginScenePass    → binds G-buffer, draws sceneRuntime entities
+    //   runtimeEndScenePass      → lighting pass + skybox
+    //   runtimeDestroy(rt)       → physShutdown + scene cleanup + shader/mesh frees
+    //
+    // Editor-play flow (editor owns renderer/physics/scene):
+    //   runtimeCreate(projectDir, cfg)  → no-op for physics/scene/renderer (editor owns them)
+    //   runtimeUpdate                   → defers archetype physics registration until physicsWorld ready
+    //   runtimeBeginScenePass / EndScenePass → no-ops (editor handles scene render)
+    //
+    // Archetype registration (both modes):
+    //   runtimeRegisterArchetype(rt, &myArch) in gameInit — runtime auto-wires to physicsWorld when ready
+
+#define RUNTIME_MAX_PENDING_ARCHETYPES 32
+
+    typedef struct
+    {
+        Vec3 gravity;
+        f32  physicsTimestep;
+        f32  camFov;
+        f32  camNear;
+        f32  camFar;
+        Vec3 camStartPos;
+        f32  camAspect;
+    } RuntimeConfig;
+
+    typedef struct
+    {
+        c8    projectDir[MAX_PATH_LENGTH];
+        RuntimeConfig config;
+        b8    standaloneMode;
+
+        // Core engine system references (all read-only for game code)
+        Renderer     *renderer;    // global renderer (owned in standalone, borrowed in editor)
+        PhysicsWorld *world;       // global physicsWorld (owned in standalone)
+        SceneRuntime *scene;       // active scene — positions, rotations, modelIDs, etc.
+        Camera       *camera;      // active camera — move this to control the view
+
+        // Skybox (auto-loaded from res/Textures/Skybox/ in standalone)
+        Mesh *skyboxMesh;
+        u32   skyboxTex;
+        u32   skyboxShader;
+
+        // Deferred pipeline shaders (standalone)
+        u32   gbufferShader;
+        u32   lightingShader;
+
+        // Deferred archetype registration (editor: physicsWorld NULL at plugin.init time)
+        Archetype *pendingArchetypes[RUNTIME_MAX_PENDING_ARCHETYPES];
+        u32        pendingCount;
+        b8         physRegistered;
+    } GameRuntime;
+
+    DAPI extern GameRuntime *runtime;
+
+    DAPI RuntimeConfig  runtimeDefaultConfig(void);
+    // Create the runtime. In standalone mode ("." projectDir): inits physics, loads scene,
+    // loads deferred shaders, auto-loads skybox. In editor mode: only sets up deferred archetype queue.
+    DAPI GameRuntime   *runtimeCreate(const c8 *projectDir, RuntimeConfig cfg);
+    // Queue a gameplay archetype for physics registration (fires on first frame physicsWorld is ready).
+    DAPI void           runtimeRegisterArchetype(GameRuntime *rt, Archetype *arch);
+    // Per-frame: deferred physics registration + physWorldStep + rendererBeginFrame (standalone only).
+    // Call at the END of your gameUpdate so the camera is already moved before the UBO upload.
+    DAPI void           runtimeUpdate(GameRuntime *rt, f32 dt);
+    // Begin the scene geometry pass: standalone binds G-buffer and draws sceneRuntime entities.
+    // Call your archetype renders between BeginScenePass and EndScenePass.
+    DAPI void           runtimeBeginScenePass(GameRuntime *rt, f32 dt);
+    // End the scene geometry pass: standalone runs lighting pass + skybox.
+    DAPI void           runtimeEndScenePass(GameRuntime *rt);
+    // Free all owned resources (physics, scene data, shaders, skybox mesh/tex).
+    DAPI void           runtimeDestroy(GameRuntime *rt);
+    // Load a scene by name (e.g. "level2.drsc") — resolves to projectDir/scenes/<name>.
+    // Re-registers scene archetypes with physics. Safe to call mid-game.
+    DAPI b8             changeScene(GameRuntime *rt, const c8 *sceneName);
+    // Refresh rt->camera after the renderer's active camera slot changes.
+    DAPI Camera        *getActiveCamera(GameRuntime *rt);
 
     // Input
 

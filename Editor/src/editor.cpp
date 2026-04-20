@@ -1214,12 +1214,6 @@ static void setupScenePhysicsArchetype()
     g_scenePhysArch.arena[0].count = idx;
     if (idx > 0) g_scenePhysArch.activeChunkCount = 1;
 
-    for (u32 e = 0; e < idx; e++)
-    {
-        INFO("  ScenePhys[%u]: pos=(%.1f,%.1f,%.1f) bt=%u invM=%.4f shape=%u half=(%.2f,%.2f,%.2f) rad=%.2f",
-             e, spPosX[e], spPosY[e], spPosZ[e], spBT[e], spInvM[e], spShape[e],
-             spHX[e], spHY[e], spHZ[e], spRad[e]);
-    }
     INFO("Scene physics: %u static colliders registered", idx);
 }
 
@@ -1249,19 +1243,16 @@ static void syncEcsToScene()
 
         StructLayout *sysLayout = g_ecsArchetypes[a].layout;
 
-        // Cache PositionX/Y/Z field indices for physics archetypes.
-        // These are f32 SoA fields that don't match the scene Vec3 position by
-        // name+size, so the generic field-copy loop below skips them.
+        // Cache PositionX/Y/Z field indices. These are f32 SoA fields that
+        // don't match the scene Vec3 position by name+size, so the generic
+        // field-copy loop below skips them — handle them explicitly here.
         i32 pxI = -1, pyI = -1, pzI = -1;
-        if (FLAG_CHECK(g_archRegistry.entries[a].flags, ARCH_PHYSICS_BODY))
+        for (u32 f = 0; f < sysLayout->count; f++)
         {
-            for (u32 f = 0; f < sysLayout->count; f++)
-            {
-                const c8 *n = sysLayout->fields[f].name;
-                if      (strcmp(n, "PositionX") == 0) pxI = (i32)f;
-                else if (strcmp(n, "PositionY") == 0) pyI = (i32)f;
-                else if (strcmp(n, "PositionZ") == 0) pzI = (i32)f;
-            }
+            const c8 *n = sysLayout->fields[f].name;
+            if      (strcmp(n, "PositionX") == 0) pxI = (i32)f;
+            else if (strcmp(n, "PositionY") == 0) pyI = (i32)f;
+            else if (strcmp(n, "PositionZ") == 0) pzI = (i32)f;
         }
 
         for (u32 idx = 0; idx < g_ecsArchEntityCount[a]; idx++)
@@ -1941,6 +1932,10 @@ static void drawViewportWindow()
     g_viewportSize = ImVec2(targetW, targetH);
 
     // update camera projection — values driven by Camera Settings panel
+    sceneCam.fovDeg   = g_editorFov;
+    sceneCam.aspect   = targetAspect;
+    sceneCam.nearClip = g_editorNear;
+    sceneCam.farClip  = g_editorFar;
     sceneCam.projection =
         mat4Perspective(radians(g_editorFov), targetAspect, g_editorNear, g_editorFar);
 

@@ -30,13 +30,13 @@ Mat4 getView(const Camera* camera, b8 removeTranslation)
 
 void initCamera(Camera* camera, const Vec3 pos, f32 fov, f32 aspect, f32 nearClip, f32 farClip)
 {
-    //set the camera position
-    camera->pos = pos;
-    //set the camera orientation
+    camera->pos         = pos;
     camera->orientation = quatIdentity();
-    //set the cameras projection 
-    //todo: 3D and 2D options
-    camera->projection = mat4Perspective(fov, aspect, nearClip, farClip);
+    camera->fovDeg      = fov;
+    camera->aspect      = aspect;
+    camera->nearClip    = nearClip;
+    camera->farClip     = farClip;
+    camera->projection  = mat4Perspective(fov, aspect, nearClip, farClip);
 }
 
 void moveForward(Camera* camera, f32 amt)
@@ -86,7 +86,18 @@ void rotateY(Camera* camera, f32 angle) {
 void cameraSetPerspective(Camera *cam, f32 fovDeg, f32 aspect, f32 nearClip, f32 farClip)
 {
     if (!cam) return;
+    cam->fovDeg   = fovDeg;
+    cam->aspect   = aspect;
+    cam->nearClip = nearClip;
+    cam->farClip  = farClip;
     cam->projection = mat4Perspective(radians(fovDeg), aspect, nearClip, farClip);
+}
+
+void cameraSetFov(Camera *cam, f32 fovDeg)
+{
+    if (!cam) return;
+    cam->fovDeg     = fovDeg;
+    cam->projection = mat4Perspective(radians(fovDeg), cam->aspect, cam->nearClip, cam->farClip);
 }
 
 void cameraSetOrthographic(Camera *cam, f32 left, f32 right, f32 bottom, f32 top, f32 nearClip, f32 farClip)

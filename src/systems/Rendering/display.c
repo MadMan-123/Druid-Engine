@@ -1,5 +1,8 @@
 #include "../../../include/druid.h"
 
+static Display s_display = {0};
+Display *display = NULL;
+
 void returnError(const c8* errorString)
 {
 	printf("[DISPLAY ERROR]%s/n",errorString);
@@ -16,68 +19,57 @@ void swapBuffer(const Display* display)
 void clearDisplay(f32 r, f32 g, f32 b, f32 a)
 {
 	glClearColor(r, g, b, a);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear colour and depth buffer - set colour to colour defined in glClearColor
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void initDisplay(const c8* title, Display* display, f32 width, f32 height)
+void initDisplay(const c8* title, f32 width, f32 height)
 {
-    //create all necessary data for the display	
-	display->sdlWindow = NULL;
-	display->screenWidth = width;
-	display->screenHeight = height;
-	SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMEPAD); //initalise everything
+    display = &s_display;
+    display->sdlWindow   = NULL;
+    display->screenWidth  = width;
+    display->screenHeight = height;
 
-    //setup window attributes
-	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8); //Min no of bits used to diplay colour
-	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);// set up z-buffer
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1); // set up double buffer   
+    SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMEPAD);
 
-    //create the window
-	//TODO: change to upload custom title 
-	display->sdlWindow = SDL_CreateWindow(title, (i32)display->screenWidth, (i32)display->screenHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE); // create window
-	
-	if (display->sdlWindow == NULL)
-	{
-		returnError("window failed to create");
-	}
-    //create the context
-	display->glContext = SDL_GL_CreateContext(display->sdlWindow);
-	if (display->glContext == NULL)
-	{
-		returnError("SDL_GL context failed to create");
-	}
-    
-	GLenum error = glewInit();
-	if (error != GLEW_OK)
-	{
-		returnError("GLEW failed to initialise");
-	}
-    
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_CULL_FACE);
-    
-    //clear the screen to a colour
-	glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE,    8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,  8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,   8);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,  16);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    display->sdlWindow = SDL_CreateWindow(title,
+        (i32)display->screenWidth, (i32)display->screenHeight,
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+
+    if (!display->sdlWindow)
+        returnError("window failed to create");
+
+    display->glContext = SDL_GL_CreateContext(display->sdlWindow);
+    if (!display->glContext)
+        returnError("SDL_GL context failed to create");
+
+    GLenum error = glewInit();
+    if (error != GLEW_OK)
+        returnError("GLEW failed to initialise");
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
 }
-
 
 void setVSync(i32 interval)
 {
     if (!SDL_GL_SetSwapInterval(interval))
     {
         WARN("setVSync: SDL_GL_SetSwapInterval(%d) failed: %s", interval, SDL_GetError());
-        // If adaptive vsync (-1) failed, fall back to regular vsync
         if (interval == -1)
             SDL_GL_SetSwapInterval(1);
     }
 }
 
-void onDestroy(Display* display)
+void onDestroy(Display* d)
 {
-        //destroy the display context and window
-		SDL_GL_DestroyContext(display->glContext); // delete context
-    	SDL_DestroyWindow(display->sdlWindow); 
-		free(display);
+    SDL_GL_DestroyContext(d->glContext);
+    SDL_DestroyWindow(d->sdlWindow);
+    // display is &s_display (static) — no free
 }

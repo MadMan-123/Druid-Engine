@@ -194,16 +194,21 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
     snprintf(defVertPath, sizeof(defVertPath), "%sshader.vert", resDir);
     snprintf(defFragPath, sizeof(defFragPath), "%sshader.frag", resDir);
 
-    //add default shader to resource manager (overwrite if already present from a prior call)
-    u32 defaultShaderHandle = createGraphicsProgram(defVertPath, defFragPath);
-    if (defaultShaderHandle != 0)
+    // Load default shader only if not already present
+    u32 existingDefault = 0;
+    if (!findInMap(&manager->shaderIDs, defaultShaderName, &existingDefault))
     {
-        insertMap(&manager->shaderIDs, defaultShaderName, &manager->shaderUsed);
-        manager->shaderHandles[manager->shaderUsed] = defaultShaderHandle;
-        manager->shaderUsed++;
-    } else
-     {
-        WARN("Failed to load default shader from %s", resDir);
+        u32 defaultShaderHandle = createGraphicsProgram(defVertPath, defFragPath);
+        if (defaultShaderHandle != 0)
+        {
+            insertMap(&manager->shaderIDs, defaultShaderName, &manager->shaderUsed);
+            manager->shaderHandles[manager->shaderUsed] = defaultShaderHandle;
+            manager->shaderUsed++;
+        }
+        else
+        {
+            WARN("Failed to load default shader from %s", resDir);
+        }
     }
     
     if (outCount > 0)
@@ -348,6 +353,13 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                     }
                     else
                     {
+                        c8 texName[MAX_NAME_SIZE];
+                        snprintf(texName, MAX_NAME_SIZE, "%s", fileName);
+
+                        u32 existingTex = 0;
+                        if (findInMap(&manager->textureIDs, texName, &existingTex))
+                            break;
+
                         if (manager->textureUsed >= manager->textureCount)
                         {
                             FATAL("Resource manager is full and cant add texture");
@@ -361,14 +373,11 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                         }
                         manager->textureHandles[manager->textureUsed] = texture;
 
-                        c8 texName[MAX_NAME_SIZE];
-                        snprintf(texName, MAX_NAME_SIZE, "%s", fileName);
-
                         insertMap(&manager->textureIDs, texName, &manager->textureUsed);
                         if(DEBUG_RESOURCES)
                             INFO("Loaded texture: %s", texName);
                         manager->textureUsed++;
-                        break; 
+                        break;
                     }
                 }
             }

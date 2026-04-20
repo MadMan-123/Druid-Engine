@@ -178,8 +178,8 @@ void hubStart()
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
 
-    ImGui_ImplSDL3_InitForOpenGL(hubApplication->display->sdlWindow,
-                                 hubApplication->display->glContext);
+    ImGui_ImplSDL3_InitForOpenGL(display->sdlWindow,
+                                 display->glContext);
     ImGui_ImplOpenGL3_Init("#version 410");
 }
 

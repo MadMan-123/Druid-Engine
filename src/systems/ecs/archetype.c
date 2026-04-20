@@ -627,6 +627,25 @@ u32 archetypePoolSpawn(Archetype *arch)
     return (u32)-1;
 }
 
+b8 archetypePoolSpawnFields(Archetype *arch, u32 *outPoolIdx, u32 *outLocalIdx, void ***outFields)
+{
+    u32 poolIdx = archetypePoolSpawn(arch);
+    if (poolIdx == (u32)-1) return false;
+
+    u32 chunkIdx = poolIdx / arch->chunkCapacity;
+    void **fields = getArchetypeFields(arch, chunkIdx);
+    if (!fields)
+    {
+        archetypePoolDespawn(arch, poolIdx);
+        return false;
+    }
+
+    if (outPoolIdx)  *outPoolIdx  = poolIdx;
+    if (outLocalIdx) *outLocalIdx = poolIdx % arch->chunkCapacity;
+    if (outFields)   *outFields   = fields;
+    return true;
+}
+
 void archetypePoolDespawn(Archetype *arch, u32 poolIndex)
 {
     if (!arch || !FLAG_CHECK(arch->flags, ARCH_BUFFERED))

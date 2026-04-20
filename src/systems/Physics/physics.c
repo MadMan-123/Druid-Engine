@@ -842,8 +842,11 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
 
                     f32 *vxA = (f32 *)fA[bA->velX]; f32 *vyA = (f32 *)fA[bA->velY]; f32 *vzA = (f32 *)fA[bA->velZ];
                     f32 *vxB = (f32 *)fB[bB->velX]; f32 *vyB = (f32 *)fB[bB->velY]; f32 *vzB = (f32 *)fB[bB->velZ];
-                    f32 imA  = ((f32 *)fA[bA->invMass])[iA];
-                    f32 imB  = ((f32 *)fB[bB->invMass])[iB];
+                    if (bA->invMass < 0 || bB->invMass < 0) continue;
+                    void *imAPtr = fA[bA->invMass]; void *imBPtr = fB[bB->invMass];
+                    if (!imAPtr || !imBPtr) continue;
+                    f32 imA  = ((f32 *)imAPtr)[iA];
+                    f32 imB  = ((f32 *)imBPtr)[iB];
                     f32 eA   = (bA->restitution >= 0) ? ((f32 *)fA[bA->restitution])[iA] : 0.4f;
                     f32 eB   = (bB->restitution >= 0) ? ((f32 *)fB[bB->restitution])[iB] : 0.4f;
                     f32 e    = eA < eB ? eA : eB;
@@ -887,8 +890,11 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                 if (!fA || !fB) continue;
 
                 u32 iA = pair->indexA, iB = pair->indexB;
-                f32 imA = ((f32 *)fA[bA->invMass])[iA];
-                f32 imB = ((f32 *)fB[bB->invMass])[iB];
+                if (bA->invMass < 0 || bB->invMass < 0) continue;
+                void *imAPtr2 = fA[bA->invMass]; void *imBPtr2 = fB[bB->invMass];
+                if (!imAPtr2 || !imBPtr2) continue;
+                f32 imA = ((f32 *)imAPtr2)[iA];
+                f32 imB = ((f32 *)imBPtr2)[iB];
 
                 u32 *btA = (bA->bodyType >= 0) ? (u32 *)fA[bA->bodyType] : NULL;
                 u32 *btB = (bB->bodyType >= 0) ? (u32 *)fB[bB->bodyType] : NULL;
@@ -1185,6 +1191,7 @@ PhysicsWorld *physInit(Vec3 gravity, f32 timestep)
 void physShutdown(void)
 {
     if (physicsWorld) { physWorldDestroy(physicsWorld); physicsWorld = NULL; }
+    memArenaReset(MEM_ARENA_PHYSICS);
 }
 
 void physTick(f32 dt)

@@ -22,10 +22,15 @@ void loadModelFromAssimp(ResourceManager *manager, const c8 *filename)
     memset(fileName, 0, MAX_NAME_SIZE);
     strncpy(fileName, baseName, MAX_NAME_SIZE - 1);
 
+    // skip if already loaded
+    u32 existing = 0;
+    if (findInMap(&manager->modelIDs, fileName, &existing)) return;
+
     const struct aiScene *scene = aiImportFile(filename,
          aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
         aiProcess_ImproveCacheLocality | aiProcess_SortByPType |
-        aiProcess_CalcTangentSpace | aiProcess_GenSmoothNormals);
+        aiProcess_CalcTangentSpace | aiProcess_GenSmoothNormals |
+        aiProcess_PreTransformVertices);
 
     if (!scene)
     {
