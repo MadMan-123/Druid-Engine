@@ -267,7 +267,7 @@ static ColliderFieldCache g_colliderCache[MAX_ARCHETYPE_SYSTEMS] = {0};
 
 // Scanned field storage — populated by scanProjectArchetypes so the registry
 // has valid layout.fields pointers even before the DLL is loaded.
-static FieldInfo g_scannedFields[MAX_ARCHETYPE_SYSTEMS][32];
+static FieldInfo g_scannedFields[MAX_ARCHETYPE_SYSTEMS][64];
 static c8        g_scannedFieldNames[MAX_ARCHETYPE_SYSTEMS][32][128];
 
 // Physics archetype for scene entities that aren't part of any ECS archetype
@@ -2587,7 +2587,7 @@ static void drawPrefabsWindow()
     static i32 archBufferSize          = 100;  // pool size for buffered archetypes
 
     // field editing table
-    #define ARCH_MAX_FIELDS 32
+    #define ARCH_MAX_FIELDS 64
     static c8  fieldNames[ARCH_MAX_FIELDS][128];
     static i32 fieldTypeIndex[ARCH_MAX_FIELDS]; // combo selection
     static u32 fieldCount                       = 0;
