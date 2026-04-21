@@ -235,6 +235,8 @@ b8 createArchetype(StructLayout *layout, u32 capacity, Archetype *outArchetype)
         if (outArchetype->poolCapacity > 0)
             poolCap = outArchetype->poolCapacity;
 
+        outArchetype->poolCapacity = poolCap;
+
         outArchetype->deadIndices = (u32 *)dalloc(
             sizeof(u32) * poolCap, MEM_TAG_ARCHETYPE);
 
