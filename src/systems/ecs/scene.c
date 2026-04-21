@@ -711,6 +711,8 @@ SceneData loadScene(const c8 *filePath)
             ERROR("loadScene: failed to create archetype '%s'",
                   out.archetypeNames[a]);
             fclose(f);
+            // Reset archetypeCount to only successfully loaded archetypes
+            out.archetypeCount = a;
             return out;
         }
         out.archetypes[a].flags = archFlags;

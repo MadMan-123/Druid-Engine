@@ -309,6 +309,20 @@ b8 isButtonUp(u32 controllerID, ControllerCode button)
 	return !SDL_GetGamepadButton(pad, button);
 }
 
+b8 isButtonUp(u32 controllerID, ControllerCode button)
+{
+	if (imguiCapturingInput)
+		return false;
+
+	SDL_Gamepad* pad = gamepads[controllerID];
+	if(pad == NULL) 
+	{
+		DEBUG("No gamepad found at index %d\n", controllerID);
+		return false; //no gamepad found
+	}
+	return !SDL_GetGamepadButton(pad, button);
+}
+
 b8 isMouseDown(u32 button)
 {
 	if (imguiCapturingInput)
