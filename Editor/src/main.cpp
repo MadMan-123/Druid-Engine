@@ -15,7 +15,7 @@ u32 shader = 0;
 
 f32 yaw = 0;
 f32 currentPitch = 0;
-static const f32 camMoveSpeed = 1.0f;
+f32 camMoveSpeed = 1.0f;
 static const f32 camRotateSpeed = 5.0f;
 static const u32 entityDefaultCount = 128;
 MaterialUniforms materialUniforms = {0};
@@ -50,9 +50,9 @@ static void moveCamera(f32 dt)
     if (yInputAxis < -deadZone)
         moveForward(&sceneCam, -camMoveSpeed * dt);
     if (xInputAxis > deadZone)
-        moveRight(&sceneCam, -camMoveSpeed * dt);
-    if (xInputAxis < -deadZone)
         moveRight(&sceneCam, camMoveSpeed * dt);
+    if (xInputAxis < -deadZone)
+        moveRight(&sceneCam, -camMoveSpeed * dt);
 }
 
 void rotateCamera(f32 dt)
@@ -123,6 +123,14 @@ void moveViewPortCamera(f32 dt)
     // apply user input to the camera
     moveCamera(dt);
     rotateCamera(dt);
+    
+    // Handle camera move speed with scroll wheel
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.MouseWheel != 0.0f)
+    {
+        camMoveSpeed += io.MouseWheel * 0.1f;
+        camMoveSpeed = clamp(camMoveSpeed, 1.0f, 10.0f);
+    }
 }
 void processInput(void *appData)
 {
@@ -628,6 +636,7 @@ void init()
         snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
         if (fileExists(projRes) || true)  // readResources handles missing dir gracefully
             readResources(resources, projRes);
+        applyMaterialPresets(resources, hubProjectDir);
         buildShaderSourceTable(projRes);
 
         if (g_startupModelRefs && g_startupModelRefCount > 0)

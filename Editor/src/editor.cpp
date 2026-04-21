@@ -308,6 +308,17 @@ static i32         g_resourceManagerTab  = 3;   // 0=Textures 1=Shaders 2=Models
 static i32         g_selectedMaterialIdx = -1;
 static c8          g_matNameFilter[128]  = "";
 
+// ---- Material preset browser state ----
+#define MAX_MATERIAL_PRESETS 128
+static c8  g_matPresetPaths[MAX_MATERIAL_PRESETS][MAX_PATH_LENGTH];
+static c8  g_matPresetNames[MAX_MATERIAL_PRESETS][MAX_NAME_SIZE];
+static u32 g_matPresetCount = 0;
+static b8  g_matPresetBrowserOpen = false;
+
+// ---- Material dirty-tracking (clean snapshot for unsaved-changes detection) ----
+static Material g_matCleanState = {0};
+static i32      g_matCleanIdx   = -1;
+
 // Preview resources (lazily initialised on first use, destroyed in destroy())
 static GBuffer     g_matPreviewGBuffer   = {0};
 static Framebuffer g_matPreviewOutputFBO = {0};
@@ -703,6 +714,7 @@ void reloadProjectResources()
     c8 projRes[MAX_PATH_LENGTH];
     snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
     readResources(resources, projRes);
+    applyMaterialPresets(resources, hubProjectDir);
     mergeShaderSourceTable(projRes);
     // Force all tracked shaders to recompile by zeroing mtimes
     for (u32 i = 0; i < g_editorShaderCount; i++)
@@ -4958,6 +4970,46 @@ static void drawResourceTab_Models()
     ImGui::EndChild();
 }
 
+static void scanMaterialPresets(const c8 *projectDir)
+{
+    g_matPresetCount = 0;
+    if (!projectDir || projectDir[0] == '\0') return;
+
+    c8 presetsDir[MAX_PATH_LENGTH];
+    snprintf(presetsDir, sizeof(presetsDir), "%s/materials", projectDir);
+
+    u32 totalFiles = 0;
+    c8 **files = listFilesInDirectory(presetsDir, &totalFiles);
+    if (!files) return;
+
+    for (u32 i = 0; i < totalFiles && g_matPresetCount < MAX_MATERIAL_PRESETS; i++)
+    {
+        u32 len = (u32)strlen(files[i]);
+        if (len > 5 && strcmp(files[i] + len - 5, ".drmt") == 0)
+        {
+            strncpy(g_matPresetPaths[g_matPresetCount], files[i], MAX_PATH_LENGTH - 1);
+            g_matPresetPaths[g_matPresetCount][MAX_PATH_LENGTH - 1] = '\0';
+
+            // Read just the name field from the file header without a full load
+            c8 presetName[MAX_NAME_SIZE] = "";
+            loadMaterial(files[i], presetName, MAX_NAME_SIZE);
+            if (presetName[0] != '\0')
+                strncpy(g_matPresetNames[g_matPresetCount], presetName, MAX_NAME_SIZE - 1);
+            else
+            {
+                // Fall back to filename stem
+                const c8 *stem = strrchr(files[i], '/');
+                stem = stem ? stem + 1 : files[i];
+                strncpy(g_matPresetNames[g_matPresetCount], stem, MAX_NAME_SIZE - 1);
+            }
+            g_matPresetNames[g_matPresetCount][MAX_NAME_SIZE - 1] = '\0';
+            g_matPresetCount++;
+        }
+        free(files[i]);
+    }
+    free(files);
+}
+
 static void drawResourceTab_Materials()
 {
     if (!resources) return;
@@ -4997,10 +5049,65 @@ static void drawResourceTab_Materials()
             insertMap(&resources->materialIDs, newName, &resources->materialUsed);
             resources->materialUsed++;
             g_selectedMaterialIdx = (i32)newIdx;
+            g_matCleanState = blank;
+            g_matCleanIdx   = (i32)newIdx;
             INFO("Created material '%s' at index %u", newName, newIdx);
         }
         else WARN("Material buffer full");
     }
+
+    // Load preset into the material buffer
+    if (ImGui::Button("Load Preset...", ImVec2(-1, 0)))
+    {
+        scanMaterialPresets(hubProjectDir);
+        g_matPresetBrowserOpen = true;
+        ImGui::OpenPopup("##matPresetBrowser");
+    }
+
+    if (ImGui::BeginPopup("##matPresetBrowser"))
+    {
+        ImGui::Text("Material Presets");
+        ImGui::Separator();
+        if (g_matPresetCount == 0)
+            ImGui::TextDisabled("No .drmt files found in <project>/materials/");
+
+        for (u32 p = 0; p < g_matPresetCount; p++)
+        {
+            if (ImGui::Selectable(g_matPresetNames[p]))
+            {
+                if (resources->materialUsed < resources->materialCount)
+                {
+                    u32 newIdx = resources->materialUsed;
+                    c8 loadedName[MAX_NAME_SIZE] = "";
+                    Material loaded = loadMaterial(g_matPresetPaths[p], loadedName, MAX_NAME_SIZE);
+                    resources->materialBuffer[newIdx] = loaded;
+
+                    // Use loaded name; if already taken append index suffix
+                    c8 finalName[MAX_NAME_SIZE];
+                    if (loadedName[0] != '\0')
+                        snprintf(finalName, sizeof(finalName), "%s", loadedName);
+                    else
+                        snprintf(finalName, sizeof(finalName), "Material_%u", newIdx);
+
+                    // Avoid duplicate name in map
+                    u32 dummy = 0;
+                    if (findInMap(&resources->materialIDs, finalName, &dummy))
+                        snprintf(finalName, sizeof(finalName), "%s_%u", loadedName, newIdx);
+
+                    insertMap(&resources->materialIDs, finalName, &newIdx);
+                    resources->materialUsed++;
+                    g_selectedMaterialIdx = (i32)newIdx;
+                    g_matCleanState = loaded;
+                    g_matCleanIdx   = (i32)newIdx;
+                    INFO("Loaded material preset '%s' into slot %u", finalName, newIdx);
+                }
+                else WARN("Material buffer full — cannot load preset");
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::EndPopup();
+    }
+
     ImGui::EndChild();
 
     ImGui::SameLine();
@@ -5016,6 +5123,13 @@ static void drawResourceTab_Materials()
 
     u32 matIdx = (u32)g_selectedMaterialIdx;
     Material *mat = &resources->materialBuffer[matIdx];
+
+    // Snapshot the clean state whenever the selection changes
+    if (g_matCleanIdx != (i32)matIdx)
+    {
+        g_matCleanState = *mat;
+        g_matCleanIdx   = (i32)matIdx;
+    }
 
     const c8 *matName = "(unnamed)";
     for (u32 i = 0; i < resources->materialIDs.capacity; i++)
@@ -5057,6 +5171,34 @@ static void drawResourceTab_Materials()
     ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Transparency##reg", &mat->transparency,   0.0f, 1.0f);
     ImGui::Spacing();
     ImGui::Separator();
+
+    // Show Save Preset only when the material has unsaved changes
+    if (memcmp(mat, &g_matCleanState, sizeof(Material)) != 0)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.18f, 0.45f, 0.18f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.58f, 0.24f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.14f, 0.35f, 0.14f, 1.0f));
+        if (ImGui::Button("Save Preset", ImVec2(-1, 0)))
+        {
+            if (hubProjectDir[0] != '\0')
+            {
+                c8 presetsDir[MAX_PATH_LENGTH];
+                snprintf(presetsDir, sizeof(presetsDir), "%s/materials", hubProjectDir);
+                createDir(presetsDir);
+
+                c8 filePath[MAX_PATH_LENGTH];
+                snprintf(filePath, sizeof(filePath), "%s/%s.drmt", presetsDir, matName);
+                if (saveMaterial(filePath, matName, mat))
+                {
+                    g_matCleanState = *mat;  // mark clean
+                }
+            }
+            else WARN("No project loaded — cannot save preset");
+        }
+        ImGui::PopStyleColor(3);
+        ImGui::Separator();
+    }
+
     if (currentInspectorState == ENTITY_VIEW && inspectorEntityID < entityCount && entityMaterialIDs)
     {
         if (ImGui::Button("Assign to Selected Entity"))
@@ -5527,12 +5669,20 @@ static void drawCameraSettingsWindow()
 {
     if (!showCameraSettings) return;
 
-    ImGui::SetNextWindowSize(ImVec2(320, 180), ImGuiCond_FirstUseEver);
+    extern f32 camMoveSpeed; // from main.cpp
+
+    ImGui::SetNextWindowSize(ImVec2(320, 220), ImGuiCond_FirstUseEver);
     ImGui::Begin("Camera Settings", &showCameraSettings);
 
     ImGui::SliderFloat("FOV",      &g_editorFov,  10.0f,  170.0f, "%.1f deg");
     ImGui::SliderFloat("Near Clip",&g_editorNear,  0.001f, 10.0f,  "%.3f",  ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Far Clip", &g_editorFar,   10.0f,  100000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("Movement");
+    ImGui::SliderFloat("Move Speed", &camMoveSpeed, 1.0f, 10.0f, "%.2f");
+    ImGui::TextDisabled("(Scroll wheel to adjust)");
 
     ImGui::Spacing();
     ImGui::TextDisabled("Current: FOV %.1f  Near %.4f  Far %.0f", g_editorFov, g_editorNear, g_editorFar);
@@ -5542,6 +5692,7 @@ static void drawCameraSettingsWindow()
         g_editorFov  = 70.0f;
         g_editorNear = 0.1f;
         g_editorFar  = 1000.0f;
+        camMoveSpeed = 1.0f;
     }
 
     ImGui::End();

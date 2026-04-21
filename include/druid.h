@@ -959,6 +959,15 @@ extern "C"
         u32 size;
     } FieldFileHeader;
 
+#define MATERIAL_MAGIC   0x544D5244  // "DRMT"
+#define MATERIAL_VERSION 1
+
+    typedef struct
+    {
+        u32 magic;
+        u32 version;
+    } MaterialFileHeader;
+
     typedef struct
     {
         Arena *data;
@@ -1541,6 +1550,16 @@ extern "C"
 
     DAPI void updateMaterial(Material *material,
                              const MaterialUniforms *uniforms);
+
+    // Save a material to a .drmt preset file.  Texture handles are converted
+    // to names so the file is portable across sessions.
+    DAPI b8 saveMaterial(const c8 *filePath, const c8 *name, const Material *mat);
+
+    // Load a material from a .drmt preset file.  Texture names are resolved
+    // back to GL handles via the current ResourceManager.
+    // outName receives the stored preset name (may be NULL).  nameSize is the
+    // buffer capacity for outName.  Returns a zeroed Material on failure.
+    DAPI Material loadMaterial(const c8 *filePath, c8 *outName, u32 nameSize);
     // draws a given mesh
     DAPI void drawMesh(Mesh *mesh);
     // creates a mesh from vertices and indices
@@ -1726,6 +1745,10 @@ extern "C"
                                                 u32 shaderCount);
     void cleanUpResourceManager(ResourceManager *manager);
     DAPI void readResources(ResourceManager *manager, const c8 *filename);
+    // After readResources(), overlay any saved .drmt presets on top of the
+    // Assimp-generated materials.  For each entry in materialIDs, checks
+    // <projectDir>/materials/<matName>.drmt and overwrites if found.
+    DAPI void applyMaterialPresets(ResourceManager *manager, const c8 *projectDir);
 
     // typed resource getters
     // Bounds-checked access into the resource manager buffers.

@@ -230,7 +230,7 @@ void updateInputAxes(void)
 
 	getMouseDelta(&mouseX, &mouseY);
 
-	xInputAxis = clamp(keyboardAxis.x + moveStickAxis.x, -1.0f, 1.0f);
+	xInputAxis = clamp(-keyboardAxis.x + -moveStickAxis.x, -1.0f, 1.0f);
 	yInputAxis = clamp(keyboardAxis.y + moveStickAxis.y, -1.0f, 1.0f);
 
 	xLookAxis = mouseX + (lookStickAxis.x * LOOK_AXIS_GAMEPAD_SCALE);
