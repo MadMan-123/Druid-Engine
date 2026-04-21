@@ -233,7 +233,7 @@ void updateInputAxes(void)
 	xInputAxis = clamp(-keyboardAxis.x + -moveStickAxis.x, -1.0f, 1.0f);
 	yInputAxis = clamp(keyboardAxis.y + moveStickAxis.y, -1.0f, 1.0f);
 
-	xLookAxis = mouseX + (lookStickAxis.x * LOOK_AXIS_GAMEPAD_SCALE);
+	xLookAxis = -mouseX + (lookStickAxis.x * LOOK_AXIS_GAMEPAD_SCALE);
 	yLookAxis = mouseY + (lookStickAxis.y * LOOK_AXIS_GAMEPAD_SCALE);
 }
 
