@@ -234,7 +234,7 @@ void updateInputAxes(void)
 	yInputAxis = clamp(keyboardAxis.y + moveStickAxis.y, -1.0f, 1.0f);
 
 	xLookAxis = -mouseX + (lookStickAxis.x * LOOK_AXIS_GAMEPAD_SCALE);
-	yLookAxis = mouseY + (lookStickAxis.y * LOOK_AXIS_GAMEPAD_SCALE);
+	yLookAxis = -mouseY + (lookStickAxis.y * LOOK_AXIS_GAMEPAD_SCALE);
 }
 
 Vec2 getInputAxis(void)
