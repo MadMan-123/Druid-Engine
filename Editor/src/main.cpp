@@ -10,6 +10,7 @@
 #include <iostream>
 
 static SDL_Event evnt;
+static b8 g_quitRequested = false;
 Mesh *cubeMesh = nullptr;
 u32 shader = 0;
 
@@ -147,7 +148,7 @@ void processInput(void *appData)
         {
         // if the quit event is triggered then change the state to exit
         case SDL_EVENT_QUIT:
-            app->state = EXIT;
+            g_quitRequested = true;
             break;
         case SDL_EVENT_GAMEPAD_ADDED:
             checkForGamepadConnection(&evnt);
@@ -842,6 +843,21 @@ void update(f32 dt)
 
 }
 
+static void saveCurrentScene()
+{
+    if (scenePathBuffer[0] == '\0') return;
+    SceneData sd = {0};
+    sd.archetypeCount = 1;
+    sd.archetypes     = &sceneArchetype;
+    sd.materialCount  = resources->materialUsed;
+    sd.materials      = resources->materialBuffer;
+    strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
+    if (saveScene(scenePathBuffer, &sd))
+        INFO("Scene saved to %s", scenePathBuffer);
+    else
+        ERROR("Failed to save scene to %s", scenePathBuffer);
+}
+
 void render(f32 dt)
 {
     // begin new imgui frame
@@ -850,6 +866,41 @@ void render(f32 dt)
     ImGui::NewFrame();
 
     drawDockspaceAndPanels();
+
+    // Quit confirmation modal — opened when the window close button is pressed
+    if (g_quitRequested)
+        ImGui::OpenPopup("Save before exiting?");
+
+    ImVec2 centre = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(centre, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Save before exiting?", NULL,
+                               ImGuiWindowFlags_AlwaysAutoResize |
+                               ImGuiWindowFlags_NoMove))
+    {
+        ImGui::Text("You have unsaved changes.");
+        ImGui::Text("Do you want to save the scene before exiting?");
+        ImGui::Spacing();
+
+        if (ImGui::Button("Save & Exit", ImVec2(120, 0)))
+        {
+            saveCurrentScene();
+            editor->state = EXIT;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Exit without Saving", ImVec2(160, 0)))
+        {
+            editor->state = EXIT;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0)))
+        {
+            g_quitRequested = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
