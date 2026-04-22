@@ -208,8 +208,11 @@ b8 sceneRuntimeInit(const c8 *projectDir)
     sceneRuntime->archetypeIDs     = (u32  *)findField(&sceneRuntime->data, "archetypeID");
     sceneRuntime->ecsSlotIDs       = (u32  *)findField(&sceneRuntime->data, "ecsSlotID");
 
-    // Apply scene materials to the global ResourceManager
-    if (sceneRuntime->data.materialCount > 0 && sceneRuntime->data.materials && resources)
+    // Apply scene materials only if ResourceManager has none yet.
+    // Editor pre-populates materials (including .drmt presets) before calling runtimeCreate,
+    // so skip the overwrite when materials are already present.
+    if (sceneRuntime->data.materialCount > 0 && sceneRuntime->data.materials && resources
+        && resources->materialUsed == 0)
     {
         u32 count = sceneRuntime->data.materialCount;
         if (count > resources->materialCount) count = resources->materialCount;

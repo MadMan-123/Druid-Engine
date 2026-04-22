@@ -81,6 +81,10 @@ DAPI GameRuntime *runtimeCreate(const c8 *projectDir, RuntimeConfig cfg)
     runtime->config       = cfg;
     runtime->standaloneMode = (strcmp(projectDir, ".") == 0);
 
+    // Scene — always load if not already available (editor play mode never pre-loads sceneRuntime)
+    if (!sceneRuntime || !sceneRuntime->loaded)
+        sceneRuntimeInit(projectDir);
+
     if (runtime->standaloneMode)
     {
         // Renderer — created by standalone launcher via the global display singleton
@@ -104,14 +108,8 @@ DAPI GameRuntime *runtimeCreate(const c8 *projectDir, RuntimeConfig cfg)
         physInit(cfg.gravity, cfg.physicsTimestep);
         runtime->world = physicsWorld;
 
-        // Scene — loads startup scene only if not already loaded (editor may have pre-loaded)
-        if (!sceneRuntime || !sceneRuntime->loaded)
-        {
-            sceneRuntimeInit(projectDir);
-        }
         if (physicsWorld && sceneRuntime)
             physAutoRegisterScene(&sceneRuntime->data);
-        runtime->scene = sceneRuntime;
 
         // Deferred pipeline shaders
         runtime->gbufferShader  = createGraphicsProgram("./res/gbuffer.vert",
@@ -150,6 +148,7 @@ DAPI void runtimeRegisterArchetype(GameRuntime *rt, Archetype *arch)
 DAPI void runtimeUpdate(GameRuntime *rt, f32 dt)
 {
     if (!rt) return;
+    rt->scene = sceneRuntime;
 
     // Flush pending physics registrations once physicsWorld is available (editor creates it after plugin.init)
     if (!rt->physRegistered && physicsWorld && rt->pendingCount > 0)

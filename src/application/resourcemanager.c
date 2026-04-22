@@ -628,14 +628,11 @@ DAPI void loadTextureMetadata(const c8 *filePath)
         if (fread(&wrapMode, sizeof(u32), 1, f) != 1) break;
         if (fread(&filterMode, sizeof(u32), 1, f) != 1) break;
         
-        DEBUG("Read texture from file: name='%s' flags=%u threshold=%.2f wrap=%u filter=%u", texName, flags, threshold, wrapMode, filterMode);
-        
         // Find texture index by name
         u32 texIdx = 0;
         if (findInMap(&resources->textureIDs, texName, &texIdx) && texIdx < resources->textureUsed)
         {
             appliedCount++;
-            DEBUG("Found texture in map at index %u, applying settings", texIdx);
             if (resources->textureFlags)
                 resources->textureFlags[texIdx] = flags;
             if (resources->textureAlphaThresholds)
