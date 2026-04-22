@@ -38,9 +38,20 @@ Application* createApplication(const c8* title, FncPtr init, FncPtrFloat update,
 
 void destroyApplication(Application* app)
 {
+    INFO("destroyApplication called - saving texture metadata before cleanup");
+    
+    // Save texture metadata BEFORE app destroy (resources still valid)
+    const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
+    c8 texMetaPath[256];
+    snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
+    INFO("destroyApplication: saving to '%s' (resPath=%s)", texMetaPath, resPath);
+    saveTextureMetadata(texMetaPath);
+    INFO("destroyApplication: texture metadata saved, calling app->destroy()");
+    
     app->destroy();
     onDestroy(display);
     SDL_Quit();
+    
     shutdownLogging();
     cleanUpResourceManager(resources);
     memorySystemShutdown();
@@ -86,6 +97,11 @@ void initSystems(const Application* app)
 
 	const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
 	readResources(resources, resPath);
+	
+	// Load texture metadata (alpha cutoff settings)
+	c8 texMetaPath[256];
+	snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
+	loadTextureMetadata(texMetaPath);
 
 	app->init();
 

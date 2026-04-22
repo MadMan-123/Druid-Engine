@@ -17,6 +17,15 @@
 #include "../deps/imgui/imgui_internal.h"
 #include "entitypicker.h"
 
+// OpenGL constants (from GL/gl.h)
+#define GL_REPEAT 0x2901
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_MIRRORED_REPEAT 0x8370
+#define GL_LINEAR 0x2601
+#define GL_NEAREST 0x2600
+#define GL_MIN_FILTER 0x2801
+#define GL_MAG_FILTER 0x2800
+
 #ifdef _WIN32
 #pragma push_macro("ERROR")
 #undef ERROR
@@ -4866,6 +4875,93 @@ static void drawResourceTab_Textures()
         ImGui::BeginGroup();
         ImGui::Text("%s", name);
         ImGui::TextDisabled("slot %u  GL %u", idx, glHandle);
+        
+        // Alpha cutoff toggle
+        if (resources->textureFlags)
+        {
+            b8 isTransparent = (resources->textureFlags[idx] & 0x01) != 0;
+            if (ImGui::Checkbox("Alpha Cutoff##tex", &isTransparent))
+            {
+                if (isTransparent)
+                    resources->textureFlags[idx] |= 0x01;
+                else
+                    resources->textureFlags[idx] &= ~0x01;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Enable alpha cutoff for this texture");
+            
+            // Alpha threshold slider (only when enabled)
+            if (isTransparent && resources->textureAlphaThresholds)
+            {
+                ImGui::SetNextItemWidth(100.0f);
+                ImGui::SliderFloat("Threshold##tex", &resources->textureAlphaThresholds[idx], 0.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Alpha threshold: pixels below this value will be discarded");
+            }
+        }
+        
+        // Wrap mode selector
+        if (resources->textureWrapModes)
+        {
+            i32 wrapIndex = 0;
+            u32 wrapMode = resources->textureWrapModes[idx];
+            if (wrapMode == GL_CLAMP_TO_EDGE) wrapIndex = 1;
+            else if (wrapMode == GL_MIRRORED_REPEAT) wrapIndex = 2;
+            
+            ImGui::SetNextItemWidth(100.0f);
+            if (ImGui::Combo("Wrap##tex", &wrapIndex, "Repeat\0Clamp\0Mirror\0"))
+            {
+                u32 newWrap = GL_REPEAT;
+                if (wrapIndex == 1) newWrap = GL_CLAMP_TO_EDGE;
+                else if (wrapIndex == 2) newWrap = GL_MIRRORED_REPEAT;
+                
+                INFO("COMBO CHANGE: texture '%s' (idx %u) wrap mode changed to %u", name, idx, newWrap);
+                resources->textureWrapModes[idx] = newWrap;
+                
+                // Apply to GL texture immediately
+                u32 glHandle = resources->textureHandles[idx];
+                if (glHandle != 0)
+                {
+                    glBindTexture(GL_TEXTURE_2D, glHandle);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, newWrap);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, newWrap);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Texture wrapping mode: Repeat, Clamp, or Mirror");
+        }
+        
+        // Filter mode selector
+        if (resources->textureFilterModes)
+        {
+            i32 filterIndex = 0;
+            u32 filterMode = resources->textureFilterModes[idx];
+            if (filterMode == GL_NEAREST) filterIndex = 1;
+            
+            ImGui::SetNextItemWidth(100.0f);
+            if (ImGui::Combo("Filter##tex", &filterIndex, "Linear\0Nearest\0"))
+            {
+                u32 newFilter = GL_LINEAR;
+                if (filterIndex == 1) newFilter = GL_NEAREST;
+                
+                INFO("COMBO CHANGE: texture '%s' (idx %u) filter mode changed to %u", name, idx, newFilter);
+                resources->textureFilterModes[idx] = newFilter;
+                
+                // Apply to GL texture immediately
+                u32 glHandle = resources->textureHandles[idx];
+                if (glHandle != 0)
+                {
+                    glBindTexture(GL_TEXTURE_2D, glHandle);
+                    glTexParameteri(GL_TEXTURE_2D, GL_MIN_FILTER, newFilter);
+                    glTexParameteri(GL_TEXTURE_2D, GL_MAG_FILTER, newFilter);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Texture filtering mode: Linear (smooth) or Nearest (pixelated)");
+        }
+        
         ImGui::EndGroup();
         ImGui::Separator();
         ImGui::PopID();
@@ -5258,7 +5354,9 @@ static void drawResourceTab_Materials()
     ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Metallic##reg",     &mat->metallic,       0.0f, 1.0f);
     ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Roughness##reg",    &mat->roughness,      0.0f, 1.0f);
     ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Emissive##reg",     &mat->emissive,       0.0f, 10.0f);
-    ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Transparency##reg", &mat->transparency,   0.0f, 1.0f);
+    ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("Opacity##reg", &mat->transparency,   0.0f, 1.0f);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Model opacity/transparency (0 = invisible, 1 = opaque).\nAlpha cutoff is controlled per-texture in the Textures tab.");
     ImGui::Spacing();
     ImGui::Separator();
 

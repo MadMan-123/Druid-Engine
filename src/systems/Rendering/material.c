@@ -139,6 +139,7 @@ MaterialUniforms getMaterialUniforms(u32 shader)
     uniforms.colour = glGetUniformLocation(shader, "colour");
     uniforms.transparency = glGetUniformLocation(shader, "transparency");
     uniforms.emissive = glGetUniformLocation(shader, "emissive");
+    uniforms.alphaThreshold = glGetUniformLocation(shader, "alphaThreshold");
 
     s_cachedShader = shader;
     s_cached = uniforms;
@@ -187,6 +188,29 @@ void updateMaterial(Material *material, const MaterialUniforms *uniforms)
     Vec3 col = material->colour;
     glUniform3f(uniforms->colour, col.x, col.y, col.z);
     glUniform1f(uniforms->emissive, material->emissive);
+    
+    // Set alpha threshold based on albedo texture transparency flag and threshold
+    f32 alphaThreshold = 0.0f;  // default: disabled
+    if (resources && material->albedoTex > 0)
+    {
+        // Find texture index for this GL handle
+        for (u32 i = 0; i < resources->textureUsed; i++)
+        {
+            if (resources->textureHandles[i] == material->albedoTex)
+            {
+                // Check if this texture is marked as transparent, then use its threshold
+                if (resources->textureFlags && (resources->textureFlags[i] & 0x01))
+                {
+                    if (resources->textureAlphaThresholds)
+                        alphaThreshold = resources->textureAlphaThresholds[i];
+                    else
+                        alphaThreshold = 0.5f;  // default fallback
+                }
+                break;
+            }
+        }
+    }
+    glUniform1f(uniforms->alphaThreshold, alphaThreshold);
 }
 
 // Reverse-lookup: find the name registered for a given GL texture handle.
@@ -287,6 +311,10 @@ b8 saveMaterial(const c8 *filePath, const c8 *name, const Material *mat)
     fwrite(&mat->transparency, sizeof(f32),  1, f);
     fwrite(&mat->emissive,     sizeof(f32),  1, f);
     fwrite(&mat->colour,       sizeof(Vec3), 1, f);
+    
+    // Version 2: write dummy isTransparent field (always 0, alpha cutoff is per-texture now)
+    u8 dummy = 0;
+    fwrite(&dummy, sizeof(u8), 1, f);
 
     fclose(f);
     INFO("saveMaterial: saved '%s' to '%s'", name, filePath);
@@ -363,6 +391,16 @@ Material loadMaterial(const c8 *filePath, c8 *outName, u32 nameSize)
     if (fread(&result.transparency, sizeof(f32),  1, f) != 1) { fclose(f); return result; }
     if (fread(&result.emissive,     sizeof(f32),  1, f) != 1) { fclose(f); return result; }
     if (fread(&result.colour,       sizeof(Vec3), 1, f) != 1) { fclose(f); return result; }
+
+    // Version 2: skip isTransparent field (we don't use it, but old files have it)
+    if (hdr.version >= 2)
+    {
+        u8 dummy = 0;
+        if (fread(&dummy, sizeof(u8), 1, f) != 1)
+        {
+            // File is too short, but that's okay - just return with what we have
+        }
+    }
 
     fclose(f);
     INFO("loadMaterial: loaded '%s' from '%s'", nameBuf, filePath);

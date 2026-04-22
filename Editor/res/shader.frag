@@ -1,5 +1,4 @@
 #version 420
-layout(early_fragment_tests) in;
 
 in vec2 tc;
 in vec3 Normal;
@@ -18,6 +17,7 @@ uniform float metallic;
 uniform float transparency;
 uniform vec3  colour;
 uniform float emissive;
+uniform float alphaThreshold;
 
 // GBuffer MRT outputs
 layout (location = 0) out vec4 gPosition;   // xyz = world pos, w = metallic
@@ -29,6 +29,11 @@ void main()
     // Albedo: texture * colour tint
     vec4 albedoSample = texture(albedoTexture, tc);
     vec3 albedo = albedoSample.rgb;
+    
+    // Alpha cutoff: discard transparent pixels if texture is marked as transparent
+    if (alphaThreshold > 0.0 && albedoSample.a < alphaThreshold)
+        discard;
+    
     if (!(colour.r == 1.0 && colour.g == 1.0 && colour.b == 1.0))
         albedo *= colour;
 

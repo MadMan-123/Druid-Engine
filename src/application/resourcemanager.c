@@ -2,6 +2,15 @@
 #include <string.h>
 
 #include <stdio.h>
+
+// OpenGL constants (from GL/gl.h)
+#define GL_REPEAT 0x2901
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_MIRRORED_REPEAT 0x8370
+#define GL_LINEAR 0x2601
+#define GL_NEAREST 0x2600
+#define GL_MIN_FILTER 0x2801
+#define GL_MAG_FILTER 0x2800
 #define MAX_NAME_SIZE 256
 #define MAX_FILE_SIZE 1024
 
@@ -88,6 +97,10 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     manager->modelBuffer = (Model *)dalloc(sizeof(Model) * modelCount, MEM_TAG_MODEL);
     manager->textureHandles = (u32 *)dalloc(sizeof(u32) * textureCount, MEM_TAG_TEXTURE);
     manager->shaderHandles = (u32 *)dalloc(sizeof(u32) * shaderCount, MEM_TAG_SHADER);
+    manager->textureFlags = (u8 *)dalloc(sizeof(u8) * textureCount, MEM_TAG_TEXTURE);
+    manager->textureAlphaThresholds = (f32 *)dalloc(sizeof(f32) * textureCount, MEM_TAG_TEXTURE);
+    manager->textureWrapModes = (u32 *)dalloc(sizeof(u32) * textureCount, MEM_TAG_TEXTURE);
+    manager->textureFilterModes = (u32 *)dalloc(sizeof(u32) * textureCount, MEM_TAG_TEXTURE);
 
     // null check
     assert(manager->materialBuffer != NULL && "material buffers not created");
@@ -95,6 +108,10 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     assert(manager->modelBuffer != NULL && "model buffers not created");
     assert(manager->textureHandles != NULL && "texture handles not created");
     assert(manager->shaderHandles != NULL && "shader handles not created");
+    assert(manager->textureFlags != NULL && "texture flags not created");
+    assert(manager->textureAlphaThresholds != NULL && "texture alpha thresholds not created");
+    assert(manager->textureWrapModes != NULL && "texture wrap modes not created");
+    assert(manager->textureFilterModes != NULL && "texture filter modes not created");
 
     //    DEBUG("mangeger pointers: %p, %p, %p, 
     //    %p",manager->materialBuffer,manager->meshBuffer);
@@ -142,6 +159,10 @@ void cleanUpResourceManager(ResourceManager *manager)
     dfree(manager->modelBuffer, sizeof(Model) * manager->modelCount, MEM_TAG_MODEL);
     dfree(manager->textureHandles, sizeof(u32) * manager->textureCount, MEM_TAG_TEXTURE);
     dfree(manager->shaderHandles, sizeof(u32) * manager->shaderCount, MEM_TAG_SHADER);
+    dfree(manager->textureFlags, sizeof(u8) * manager->textureCount, MEM_TAG_TEXTURE);
+    dfree(manager->textureAlphaThresholds, sizeof(f32) * manager->textureCount, MEM_TAG_TEXTURE);
+    dfree(manager->textureWrapModes, sizeof(u32) * manager->textureCount, MEM_TAG_TEXTURE);
+    dfree(manager->textureFilterModes, sizeof(u32) * manager->textureCount, MEM_TAG_TEXTURE);
     dfree(manager, sizeof(ResourceManager), MEM_TAG_RENDERER);
 }
 
@@ -376,6 +397,15 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                         insertMap(&manager->textureIDs, texName, &manager->textureUsed);
                         if(DEBUG_RESOURCES)
                             INFO("Loaded texture: %s", texName);
+                        
+                        // Initialize default alpha threshold and GL settings
+                        if (manager->textureAlphaThresholds)
+                            manager->textureAlphaThresholds[manager->textureUsed] = 0.5f;
+                        if (manager->textureWrapModes)
+                            manager->textureWrapModes[manager->textureUsed] = GL_REPEAT;
+                        if (manager->textureFilterModes)
+                            manager->textureFilterModes[manager->textureUsed] = GL_LINEAR;
+                        
                         manager->textureUsed++;
                         break;
                     }
@@ -470,4 +500,170 @@ u32 resGetShaderByName(const c8 *name)
     u32 idx = 0;
     if (!findInMap(&resources->shaderIDs, name, &idx)) return 0;
     return resGetShader(idx);
+}
+
+//=====================================================================================================================
+// Texture metadata persistence (alpha cutoff settings)
+//=====================================================================================================================
+
+DAPI void saveTextureMetadata(const c8 *filePath)
+{
+    if (!resources || !filePath) {
+        WARN("saveTextureMetadata: early return - resources=%p, filePath=%p", resources, filePath);
+        return;
+    }
+    
+    INFO("=== SAVE TEXTURE METADATA START ===");
+    INFO("saveTextureMetadata: filePath='%s', textureUsed=%u, textures in memory:", filePath, resources->textureUsed);
+    
+    // Log current state of first 3 textures
+    for (u32 i = 0; i < 3 && i < resources->textureUsed; i++) {
+        u32 wrap = resources->textureWrapModes ? resources->textureWrapModes[i] : 0;
+        u32 filter = resources->textureFilterModes ? resources->textureFilterModes[i] : 0;
+        INFO("  [%u] wrap=%u filter=%u", i, wrap, filter);
+    }
+    
+    FILE *f = fopen(filePath, "wb");
+    if (!f)
+    {
+        WARN("Failed to save texture metadata to '%s'", filePath);
+        INFO("=== SAVE TEXTURE METADATA FAILED ===");
+        return;
+    }
+    
+    INFO("Successfully opened file for writing: '%s'", filePath);
+    
+    // Write texture count
+    u32 count = resources->textureUsed;
+    fwrite(&count, sizeof(u32), 1, f);
+    INFO("Saved texture count: %u", count);
+    
+    // Write each texture's metadata
+    for (u32 i = 0; i < resources->textureUsed; i++)
+    {
+        // Write texture name
+        c8 texName[MAX_NAME_SIZE] = "";
+        for (u32 j = 0; j < resources->textureIDs.capacity; j++)
+        {
+            if (resources->textureIDs.pairs[j].occupied)
+            {
+                u32 idx = *(u32 *)resources->textureIDs.pairs[j].value;
+                if (idx == i)
+                {
+                    strncpy(texName, (const c8 *)resources->textureIDs.pairs[j].key, MAX_NAME_SIZE - 1);
+                    break;
+                }
+            }
+        }
+        fwrite(texName, MAX_NAME_SIZE, 1, f);
+        
+        // Write flags, threshold, wrap mode, and filter mode
+        u8 flags = resources->textureFlags ? resources->textureFlags[i] : 0;
+        f32 threshold = resources->textureAlphaThresholds ? resources->textureAlphaThresholds[i] : 0.5f;
+        u32 wrapMode = resources->textureWrapModes ? resources->textureWrapModes[i] : GL_REPEAT;
+        u32 filterMode = resources->textureFilterModes ? resources->textureFilterModes[i] : GL_LINEAR;
+        
+        if (i < 3) // Log first 3 textures to avoid spam
+            DEBUG("Saving texture %u: name='%s' flags=%u threshold=%.2f wrap=%u filter=%u", i, texName, flags, threshold, wrapMode, filterMode);
+        
+        size_t written = 0;
+        written += fwrite(&flags, sizeof(u8), 1, f);
+        written += fwrite(&threshold, sizeof(f32), 1, f);
+        written += fwrite(&wrapMode, sizeof(u32), 1, f);
+        written += fwrite(&filterMode, sizeof(u32), 1, f);
+        
+        if (written != 4) {
+            WARN("Save: texture %u - only %zu of 4 items written!", i, written);
+        }
+    }
+    
+    INFO("saveTextureMetadata: wrote %u textures", resources->textureUsed);
+    
+    fflush(f);
+    fclose(f);
+    INFO("Saved texture metadata to '%s' (%u textures)", filePath, count);
+    INFO("=== SAVE TEXTURE METADATA END ===");
+}
+
+DAPI void loadTextureMetadata(const c8 *filePath)
+{
+    if (!resources || !filePath) return;
+    
+    INFO("loadTextureMetadata: filePath='%s'", filePath);
+    
+    FILE *f = fopen(filePath, "rb");
+    if (!f)
+    {
+        INFO("Texture metadata file not found: '%s' (first run?)", filePath);
+        return;
+    }
+    
+    INFO("Opened texture metadata file: '%s'", filePath);
+    
+    // Read texture count
+    u32 count = 0;
+    if (fread(&count, sizeof(u32), 1, f) != 1)
+    {
+        WARN("Failed to read texture metadata from '%s'", filePath);
+        fclose(f);
+        return;
+    }
+    
+    INFO("Read texture count: %u", count);
+    u32 appliedCount = 0;
+    u32 missingCount = 0;
+    
+    // Read each texture's metadata
+    for (u32 i = 0; i < count && i < resources->textureUsed; i++)
+    {
+        c8 texName[MAX_NAME_SIZE] = "";
+        u8 flags = 0;
+        f32 threshold = 0.5f;
+        u32 wrapMode = GL_REPEAT;
+        u32 filterMode = GL_LINEAR;
+        
+        if (fread(texName, MAX_NAME_SIZE, 1, f) != 1) break;
+        if (fread(&flags, sizeof(u8), 1, f) != 1) break;
+        if (fread(&threshold, sizeof(f32), 1, f) != 1) break;
+        if (fread(&wrapMode, sizeof(u32), 1, f) != 1) break;
+        if (fread(&filterMode, sizeof(u32), 1, f) != 1) break;
+        
+        DEBUG("Read texture from file: name='%s' flags=%u threshold=%.2f wrap=%u filter=%u", texName, flags, threshold, wrapMode, filterMode);
+        
+        // Find texture index by name
+        u32 texIdx = 0;
+        if (findInMap(&resources->textureIDs, texName, &texIdx) && texIdx < resources->textureUsed)
+        {
+            appliedCount++;
+            DEBUG("Found texture in map at index %u, applying settings", texIdx);
+            if (resources->textureFlags)
+                resources->textureFlags[texIdx] = flags;
+            if (resources->textureAlphaThresholds)
+                resources->textureAlphaThresholds[texIdx] = threshold;
+            if (resources->textureWrapModes)
+                resources->textureWrapModes[texIdx] = wrapMode;
+            if (resources->textureFilterModes)
+                resources->textureFilterModes[texIdx] = filterMode;
+            
+            // Apply GL texture settings
+            u32 glHandle = resources->textureHandles[texIdx];
+            if (glHandle != 0)
+            {
+                glBindTexture(GL_TEXTURE_2D, glHandle);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapMode);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapMode);
+                glTexParameteri(GL_TEXTURE_2D, GL_MIN_FILTER, filterMode);
+                glTexParameteri(GL_TEXTURE_2D, GL_MAG_FILTER, filterMode);
+                glBindTexture(GL_TEXTURE_2D, 0);
+            }
+        }
+        else
+        {
+            missingCount++;
+            WARN("Texture not found in map: '%s'", texName);
+        }
+    }
+    
+    fclose(f);
+    INFO("Loaded texture metadata from '%s' (%u textures)", filePath, count);
 }

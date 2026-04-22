@@ -637,6 +637,9 @@ void init()
         snprintf(projRes, sizeof(projRes), "%s/res/", hubProjectDir);
         if (fileExists(projRes) || true)  // readResources handles missing dir gracefully
             readResources(resources, projRes);
+        c8 projTexMetaPath[MAX_PATH_LENGTH];
+        snprintf(projTexMetaPath, sizeof(projTexMetaPath), "%stextures.meta", projRes);
+        loadTextureMetadata(projTexMetaPath);
         applyMaterialPresets(resources, hubProjectDir);
         buildShaderSourceTable(projRes);
 
@@ -1010,6 +1013,13 @@ void render(f32 dt)
 
 void destroy()
 {
+    if (hubProjectDir[0] != '\0')
+    {
+        c8 projTexMetaPath[MAX_PATH_LENGTH];
+        snprintf(projTexMetaPath, sizeof(projTexMetaPath), "%s/res/textures.meta", hubProjectDir);
+        saveTextureMetadata(projTexMetaPath);
+    }
+
     if (g_gameRunning && g_gameDLL.loaded)
     {
         g_gameDLL.plugin.destroy();

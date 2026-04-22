@@ -960,7 +960,7 @@ extern "C"
     } FieldFileHeader;
 
 #define MATERIAL_MAGIC   0x544D5244  // "DRMT"
-#define MATERIAL_VERSION 1
+#define MATERIAL_VERSION 2
 
     typedef struct
     {
@@ -1482,6 +1482,7 @@ extern "C"
         u32 transparency;
         u32 colour;
         u32 emissive;
+        u32 alphaThreshold;
     } MaterialUniforms;
 
     typedef struct Material
@@ -1714,6 +1715,10 @@ extern "C"
         Model *modelBuffer;
         u32 *textureHandles;
         u32 *shaderHandles;
+        u8 *textureFlags;  // texture metadata: bit 0 = isTransparent
+        f32 *textureAlphaThresholds;  // per-texture alpha cutoff threshold (0-1)
+        u32 *textureWrapModes;  // GL wrap mode: GL_REPEAT, GL_CLAMP_TO_EDGE, GL_MIRRORED_REPEAT
+        u32 *textureFilterModes;  // GL filter mode: GL_LINEAR, GL_NEAREST
 
         // Global geometry pool — owned by the resource manager
         GeometryBuffer *geoBuffer;
@@ -1749,6 +1754,10 @@ extern "C"
     // Assimp-generated materials.  For each entry in materialIDs, checks
     // <projectDir>/materials/<matName>.drmt and overwrites if found.
     DAPI void applyMaterialPresets(ResourceManager *manager, const c8 *projectDir);
+    
+    // Texture metadata persistence (alpha cutoff flags and thresholds)
+    DAPI void saveTextureMetadata(const c8 *filePath);
+    DAPI void loadTextureMetadata(const c8 *filePath);
 
     // typed resource getters
     // Bounds-checked access into the resource manager buffers.
