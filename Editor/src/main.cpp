@@ -210,28 +210,29 @@ void rebindArchetypeFields()
     shaderHandles     = (u32 *)fields[6];
     entityMaterialIDs = (u32 *)fields[7];
     archetypeIDs      = (fieldCount > 8)  ? (u32 *)fields[8]  : nullptr;
-    sceneCameraFlags  = (fieldCount > 9)  ? (b8 *)fields[9]   : nullptr;
-    ecsSlotIDs        = (fieldCount > 10) ? (u32 *)fields[10] : nullptr;
-    entityTags        = (fieldCount > 11) ? (c8 *)fields[11]  : nullptr;
-    physicsBodyTypes  = (fieldCount > 12) ? (u32 *)fields[12] : nullptr;
-    masses            = (fieldCount > 13) ? (f32 *)fields[13] : nullptr;
-    colliderShapes    = (fieldCount > 14) ? (u32 *)fields[14] : nullptr;
-    sphereRadii       = (fieldCount > 15) ? (f32 *)fields[15] : nullptr;
-    colliderHalfXs    = (fieldCount > 16) ? (f32 *)fields[16] : nullptr;
-    colliderHalfYs    = (fieldCount > 17) ? (f32 *)fields[17] : nullptr;
-    colliderHalfZs    = (fieldCount > 18) ? (f32 *)fields[18] : nullptr;
-    isLight           = (fieldCount > 19) ? (b8 *)fields[19]  : nullptr;
-    lightTypes        = (fieldCount > 20) ? (u32 *)fields[20] : nullptr;
-    lightRanges       = (fieldCount > 21) ? (f32 *)fields[21] : nullptr;
-    lightColorRs      = (fieldCount > 22) ? (f32 *)fields[22] : nullptr;
-    lightColorGs      = (fieldCount > 23) ? (f32 *)fields[23] : nullptr;
-    lightColorBs      = (fieldCount > 24) ? (f32 *)fields[24] : nullptr;
-    lightIntensities  = (fieldCount > 25) ? (f32 *)fields[25] : nullptr;
-    lightDirXs        = (fieldCount > 26) ? (f32 *)fields[26] : nullptr;
-    lightDirYs        = (fieldCount > 27) ? (f32 *)fields[27] : nullptr;
-    lightDirZs        = (fieldCount > 28) ? (f32 *)fields[28] : nullptr;
-    lightInnerCones   = (fieldCount > 29) ? (f32 *)fields[29] : nullptr;
-    lightOuterCones   = (fieldCount > 30) ? (f32 *)fields[30] : nullptr;
+    archetypeHashes   = (fieldCount > 9)  ? (u64 *)fields[9]  : nullptr;
+    sceneCameraFlags  = (fieldCount > 10) ? (b8 *)fields[10]  : nullptr;
+    ecsSlotIDs        = (fieldCount > 11) ? (u32 *)fields[11] : nullptr;
+    entityTags        = (fieldCount > 12) ? (c8 *)fields[12]  : nullptr;
+    physicsBodyTypes  = (fieldCount > 13) ? (u32 *)fields[13] : nullptr;
+    masses            = (fieldCount > 14) ? (f32 *)fields[14] : nullptr;
+    colliderShapes    = (fieldCount > 15) ? (u32 *)fields[15] : nullptr;
+    sphereRadii       = (fieldCount > 16) ? (f32 *)fields[16] : nullptr;
+    colliderHalfXs    = (fieldCount > 17) ? (f32 *)fields[17] : nullptr;
+    colliderHalfYs    = (fieldCount > 18) ? (f32 *)fields[18] : nullptr;
+    colliderHalfZs    = (fieldCount > 19) ? (f32 *)fields[19] : nullptr;
+    isLight           = (fieldCount > 20) ? (b8 *)fields[20]  : nullptr;
+    lightTypes        = (fieldCount > 21) ? (u32 *)fields[21] : nullptr;
+    lightRanges       = (fieldCount > 22) ? (f32 *)fields[22] : nullptr;
+    lightColorRs      = (fieldCount > 23) ? (f32 *)fields[23] : nullptr;
+    lightColorGs      = (fieldCount > 24) ? (f32 *)fields[24] : nullptr;
+    lightColorBs      = (fieldCount > 25) ? (f32 *)fields[25] : nullptr;
+    lightIntensities  = (fieldCount > 26) ? (f32 *)fields[26] : nullptr;
+    lightDirXs        = (fieldCount > 27) ? (f32 *)fields[27] : nullptr;
+    lightDirYs        = (fieldCount > 28) ? (f32 *)fields[28] : nullptr;
+    lightDirZs        = (fieldCount > 29) ? (f32 *)fields[29] : nullptr;
+    lightInnerCones   = (fieldCount > 30) ? (f32 *)fields[30] : nullptr;
+    lightOuterCones   = (fieldCount > 31) ? (f32 *)fields[31] : nullptr;
 }
 
 // After loading an old scene whose layout has fewer fields than the current
@@ -254,17 +255,19 @@ void migrateSceneArchetypeIfNeeded()
     u32 liveCount = sceneArchetype.arena[0].count;
     u32 capacity  = sceneArchetype.capacity;
 
-    // Save old field pointers and their sizes
+    // Save old field pointers, sizes, and names (names are freed with the layout below)
     void **oldFields = getArchetypeFields(&sceneArchetype, 0);
     StructLayout *oldLayout = sceneArchetype.layout;
 
-    // Allocate temp copies of old field data
     void  *fieldCopies[32] = {0};
     u32    fieldSizes[32]  = {0};
+    c8     fieldNames[32][64] = {0};
     for (u32 i = 0; i < loadedFields && i < 32; i++)
     {
         u32 bytes = oldLayout->fields[i].size * liveCount;
         fieldSizes[i] = oldLayout->fields[i].size;
+        if (oldLayout->fields[i].name)
+            strncpy(fieldNames[i], oldLayout->fields[i].name, 63);
         if (bytes > 0)
         {
             fieldCopies[i] = malloc(bytes);
@@ -307,36 +310,31 @@ void migrateSceneArchetypeIfNeeded()
         return;
     }
 
-    // Copy old data into new archetype fields
+    // Copy old data into new archetype fields by name so inserting fields in the
+    // middle of the layout doesn't silently corrupt data (index-based copy breaks
+    // whenever a field is inserted before the end).
     void **newFields = getArchetypeFields(&sceneArchetype, 0);
-    for (u32 i = 0; i < loadedFields && i < currentFields; i++)
+    for (u32 oldI = 0; oldI < loadedFields; oldI++)
     {
-        if (fieldCopies[i] && liveCount > 0)
+        if (!fieldCopies[oldI] || liveCount == 0) continue;
+        for (u32 newI = 0; newI < currentFields; newI++)
         {
-            // If old and new field sizes match, copy directly
-            if (fieldSizes[i] == SceneEntity.fields[i].size)
+            if (strcmp(fieldNames[oldI], SceneEntity.fields[newI].name) == 0 &&
+                fieldSizes[oldI] == SceneEntity.fields[newI].size)
             {
-                memcpy(newFields[i], fieldCopies[i],
-                       fieldSizes[i] * liveCount);
+                memcpy(newFields[newI], fieldCopies[oldI], fieldSizes[oldI] * liveCount);
+                break;
             }
         }
     }
 
-    // Zero-fill new fields that didn't exist in the old layout
-    for (u32 i = loadedFields; i < currentFields; i++)
+    // For archetypeID: if it's genuinely new (old schema didn't have it), default to -1.
+    // All other new fields are left at zero (createArchetype zero-initialises arenas).
+    if (loadedFields <= 8)
     {
-        memset(newFields[i], 0, SceneEntity.fields[i].size * capacity);
-        // For archetypeID specifically, set all to (u32)-1 ("None")
-        if (i == 8 && SceneEntity.fields[i].size == sizeof(u32))
-        {
-            u32 *ids = (u32 *)newFields[i];
-            for (u32 e = 0; e < liveCount; e++)
-                ids[e] = (u32)-1;
-        }
-        else if (i == 9 && SceneEntity.fields[i].size == sizeof(b8))
-        {
-            memset(newFields[i], 0, SceneEntity.fields[i].size * capacity);
-        }
+        u32 *ids = (u32 *)newFields[8];
+        for (u32 e = 0; e < liveCount; e++)
+            ids[e] = (u32)-1;
     }
 
     // Restore live count
@@ -362,6 +360,7 @@ u32 *modelIDs = nullptr;
 u32 *shaderHandles = nullptr;
 u32 *entityMaterialIDs = nullptr;
 u32 *archetypeIDs = nullptr;
+u64 *archetypeHashes = nullptr;
 u32 *ecsSlotIDs = nullptr;
 c8  *entityTags = nullptr;
 u32 *physicsBodyTypes = nullptr;
@@ -824,6 +823,7 @@ void update(f32 dt)
         sd.archetypes = &sceneArchetype;
         sd.materialCount = resources->materialUsed;
         sd.materials = resources->materialBuffer;
+        syncSceneArchetypeHashesFromIDs();
 
         //copy the archetype name into the scene data
         strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
@@ -952,6 +952,7 @@ static void saveCurrentScene()
     sd.archetypes     = &sceneArchetype;
     sd.materialCount  = resources->materialUsed;
     sd.materials      = resources->materialBuffer;
+    syncSceneArchetypeHashesFromIDs();
     strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
     if (saveScene(scenePathBuffer, &sd))
         INFO("Scene saved to %s", scenePathBuffer);

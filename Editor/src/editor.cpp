@@ -53,6 +53,7 @@
     FIELD(SE_SHADER,        "shaderHandle",      u32,  COLD)                        \
     FIELD(SE_MATERIAL,      "materialID",        u32,  COLD)                        \
     FIELD(SE_ARCH_ID,       "archetypeID",       u32,  COLD)                        \
+    FIELD(SE_ARCH_HASH,     "archetypeHash",     u64,  COLD)                        \
     FIELD(SE_SCENE_CAM,     "isSceneCamera",     b8,   COLD)                        \
     FIELD(SE_ECS_SLOT,      "ecsSlotID",         u32,  COLD)                        \
     FIELD(SE_TAG,           "tag",               c8[32], COLD)                      \
@@ -86,6 +87,72 @@ StructLayout SceneEntity = { "SceneEntity", SceneEntity_fields,
 
 // Editor-side registry of user-created archetypes
 static ArchetypeRegistry g_archRegistry = {0};
+
+static u64 archetypeHashFromName(const c8 *name)
+{
+    // 64-bit FNV-1a over lowercase ASCII for stable, case-insensitive IDs.
+    if (!name || name[0] == '\0') return 0ull;
+    u64 hash = 1469598103934665603ull;
+    while (*name)
+    {
+        c8 c = *name++;
+        if (c >= 'A' && c <= 'Z') c = (c8)(c + 32);
+        hash ^= (u8)c;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+void syncSceneArchetypeHashesFromIDs()
+{
+    if (!archetypeIDs || !archetypeHashes) return;
+    for (u32 e = 0; e < entityCount; e++)
+    {
+        u32 id = archetypeIDs[e];
+        if (id == (u32)-1 || id >= g_archRegistry.count)
+            archetypeHashes[e] = 0ull;
+        else
+            archetypeHashes[e] = archetypeHashFromName(g_archRegistry.entries[id].name);
+    }
+}
+
+void remapSceneArchetypeIDsFromHashes()
+{
+    if (!archetypeIDs || !archetypeHashes) return;
+    for (u32 e = 0; e < entityCount; e++)
+    {
+        u64 h = archetypeHashes[e];
+
+        // Back-compat: old scenes have only numeric IDs. Promote once to hash.
+        if (h == 0ull)
+        {
+            u32 oldId = archetypeIDs[e];
+            if (oldId != (u32)-1 && oldId < g_archRegistry.count)
+            {
+                h = archetypeHashFromName(g_archRegistry.entries[oldId].name);
+                archetypeHashes[e] = h;
+            }
+            else
+            {
+                archetypeIDs[e] = (u32)-1;
+                continue;
+            }
+        }
+
+        u32 mapped = (u32)-1;
+        for (u32 a = 0; a < g_archRegistry.count; a++)
+        {
+            if (archetypeHashFromName(g_archRegistry.entries[a].name) == h)
+            {
+                mapped = a;
+                break;
+            }
+        }
+        archetypeIDs[e] = mapped;
+        if (mapped == (u32)-1)
+            archetypeHashes[e] = 0ull;
+    }
+}
 
 const c8 **consoleLines = NULL;
 static u32 g_consoleCount = 0;
@@ -1104,13 +1171,13 @@ static void setupScenePhysicsArchetype()
     Vec3 *scales         = (Vec3 *)scnFields[2];
     b8   *isActive       = (b8   *)scnFields[3];
     u32  *archetypeIDs   = (u32  *)scnFields[8];
-    u32  *physBodyTypes  = (u32  *)scnFields[12];
-    f32  *masses         = (f32  *)scnFields[13];
-    u32  *colliderShapes = (u32  *)scnFields[14];
-    f32  *sphereRadii    = (f32  *)scnFields[15];
-    f32  *halfXs         = (f32  *)scnFields[16];
-    f32  *halfYs         = (f32  *)scnFields[17];
-    f32  *halfZs         = (f32  *)scnFields[18];
+    u32  *physBodyTypes  = (u32  *)scnFields[13];
+    f32  *masses         = (f32  *)scnFields[14];
+    u32  *colliderShapes = (u32  *)scnFields[15];
+    f32  *sphereRadii    = (f32  *)scnFields[16];
+    f32  *halfXs         = (f32  *)scnFields[17];
+    f32  *halfYs         = (f32  *)scnFields[18];
+    f32  *halfZs         = (f32  *)scnFields[19];
 
     // Count eligible scene entities: active, has a collider or physics body type,
     // and either not assigned to an ECS archetype or assigned to one that has no
@@ -2595,6 +2662,10 @@ void scanProjectArchetypes(const c8 *projectDir)
             INFO("Auto-registered built-in archetype: StaticObject");
         }
     }
+
+    // Archetype registry order can change after scanning; rebuild numeric IDs
+    // from persisted stable hashes so entities don't drift between archetypes.
+    remapSceneArchetypeIDsFromHashes();
 }
 
 static void drawPrefabsWindow()
@@ -2914,6 +2985,8 @@ static void drawPrefabsWindow()
                 memset(g_scannedFields[last],     0, sizeof(g_scannedFields[0]));
                 memset(g_scannedFieldNames[last], 0, sizeof(g_scannedFieldNames[0]));
                 g_archRegistry.count--;
+
+                remapSceneArchetypeIDsFromHashes();
 
                 ImGui::PopID();
                 break;  // iterator invalidated — exit the loop
@@ -3758,6 +3831,7 @@ static void editorLoadSceneFile(const c8 *filePath)
 
         migrateSceneArchetypeIfNeeded();
         rebindArchetypeFields();
+        remapSceneArchetypeIDsFromHashes();
         applySceneCameraEntityToSceneCam();
 
         if (sd.materialCount > 0 && sd.materials)
@@ -3952,6 +4026,7 @@ static void drawSceneListWindow()
             entityMaterialIDs[entityCount] = (u32)-1;
             shaderHandles[entityCount] = 0;
             archetypeIDs[entityCount] = (u32)-1;
+            if (archetypeHashes) archetypeHashes[entityCount] = 0ull;
             if (ecsSlotIDs)       ecsSlotIDs[entityCount]       = (u32)-1;
             if (sceneCameraFlags) sceneCameraFlags[entityCount]  = false;
             if (entityTags)       entityTags[entityCount * 32]   = '\0';
@@ -4598,12 +4673,19 @@ static void drawInspectorWindow()
                 if (ImGui::BeginCombo("##archCombo", archPreview))
                 {
                     if (ImGui::Selectable("None", currentArchID == (u32)-1))
+                    {
                         archetypeIDs[inspectorEntityID] = (u32)-1;
+                        if (archetypeHashes) archetypeHashes[inspectorEntityID] = 0ull;
+                    }
                     for (u32 a = 0; a < g_archRegistry.count; a++)
                     {
                         bool sel = (currentArchID == a);
                         if (ImGui::Selectable(g_archRegistry.entries[a].name, sel))
+                        {
                             archetypeIDs[inspectorEntityID] = a;
+                            if (archetypeHashes)
+                                archetypeHashes[inspectorEntityID] = archetypeHashFromName(g_archRegistry.entries[a].name);
+                        }
                         if (sel) ImGui::SetItemDefaultFocus();
                     }
                     ImGui::EndCombo();
@@ -5622,6 +5704,7 @@ static void snapshotScene()
         sceneArchetype.activeChunkCount = 1;
     sd.materialCount = resources->materialUsed;
     sd.materials     = resources->materialBuffer;
+    syncSceneArchetypeHashesFromIDs();
 
     c8 fullPath[MAX_PATH_LENGTH];
     snprintf(fullPath, sizeof(fullPath), "%s/%s", hubProjectDir, PLAY_SNAPSHOT_PATH);
@@ -5673,6 +5756,7 @@ static void restoreSnapshot()
         entitySize      = (i32)entitySizeCache;
         migrateSceneArchetypeIfNeeded();
         rebindArchetypeFields();
+        remapSceneArchetypeIDsFromHashes();
         applySceneCameraEntityToSceneCam();
 
         if (sd.materialCount > 0 && sd.materials)

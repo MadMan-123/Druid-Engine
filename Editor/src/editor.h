@@ -53,6 +53,7 @@ extern u32 *modelIDs;
 extern u32 *shaderHandles;
 extern u32 *entityMaterialIDs;
 extern u32 *archetypeIDs;
+extern u64 *archetypeHashes;
 extern u32 *ecsSlotIDs;
 extern c8  *entityTags;
 extern u32 *physicsBodyTypes;
@@ -151,6 +152,12 @@ void migrateSceneArchetypeIfNeeded();
 // Scan the project src/ for archetype system files and populate the editor
 // registry. Should be called once after a project is opened.
 void scanProjectArchetypes(const c8 *projectDir);
+
+// Stable-archetype mapping helpers:
+// - hashes are persisted with the scene
+// - IDs are rebuilt from hashes after registry changes/load
+void syncSceneArchetypeHashesFromIDs();
+void remapSceneArchetypeIDsFromHashes();
 
 // Sync the editor camera from the designated scene-camera entity, if present.
 void applySceneCameraEntityToSceneCam();

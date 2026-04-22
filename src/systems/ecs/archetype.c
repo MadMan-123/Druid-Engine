@@ -98,6 +98,16 @@ u32 archetypeGetColdEntitySize(Archetype *arch)
     return arch ? arch->coldEntitySize : 0;
 }
 
+void archetypeSetTrigger(Archetype *arch, b8 isTrigger)
+{
+    if (arch) arch->isTrigger = isTrigger;
+}
+
+void archetypeSetCollisionCallbacks(Archetype *arch, CollisionCallbacks cbs)
+{
+    if (arch) arch->cbs = cbs;
+}
+
 //=====================================================================================================================
 // createArchetype
 

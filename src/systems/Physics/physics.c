@@ -61,6 +61,58 @@ static u32 g_bpEntityIdx[MAX_PHYS_BODIES];
 static u32 g_bodyCount;
 
 //=====================================================================================================================
+// Contact-state tracking — enter/exit pair event detection
+//
+// Entity key packing: archIdx(4b)|chunkIdx(12b)|localIdx(16b) = 32 bits
+// Pair key: u64 = (min_entity_key << 32) | max_entity_key (canonical order)
+//
+// Open-addressing hash set, two generations (prev/curr) swapped each substep.
+
+#define CS_TABLE_SIZE 131072u   // must be power of 2; >= 2*MAX_PHYS_MANIFOLDS
+#define CS_SENTINEL   0xFFFFFFFFFFFFFFFFULL
+
+static u64 g_csPrev[CS_TABLE_SIZE];
+static u64 g_csCurr[CS_TABLE_SIZE];
+static u32 g_csCurrCount;
+static b8  g_csInitialised;
+
+static inline u32 csEntityKey(u32 archIdx, u32 chunkIdx, u32 localIdx)
+{
+    return ((archIdx & 0xFu) << 28) | ((chunkIdx & 0xFFFu) << 16) | (localIdx & 0xFFFFu);
+}
+
+static inline b8 csInsert(u64 *table, u64 key)
+{
+    u32 slot = (u32)(key ^ (key >> 17)) & (CS_TABLE_SIZE - 1u);
+    for (u32 p = 0; p < 32; p++)
+    {
+        u32 s = (slot + p) & (CS_TABLE_SIZE - 1u);
+        if (table[s] == CS_SENTINEL) { table[s] = key; return true; }
+        if (table[s] == key)          return true;
+    }
+    return false;
+}
+
+static inline b8 csContains(const u64 *table, u64 key)
+{
+    u32 slot = (u32)(key ^ (key >> 17)) & (CS_TABLE_SIZE - 1u);
+    for (u32 p = 0; p < 32; p++)
+    {
+        u32 s = (slot + p) & (CS_TABLE_SIZE - 1u);
+        if (table[s] == key)         return true;
+        if (table[s] == CS_SENTINEL) return false;
+    }
+    return false;
+}
+
+static void csSwapAndClear(void)
+{
+    memcpy(g_csPrev, g_csCurr, sizeof(g_csCurr));
+    memset(g_csCurr, 0xFF, sizeof(g_csCurr));
+    g_csCurrCount = 0;
+}
+
+//=====================================================================================================================
 // Spatial hash grid — single-cell insertion + 27-neighbor query
 
 #define SH_TABLE_SIZE 262144u  // power of 2, sized for up to 1M bodies
@@ -623,6 +675,14 @@ PhysicsWorld *physWorldCreate(Vec3 gravity, f32 timestep)
     g_shDirtyCount = 0;
     g_shGhostCount = 0;
 
+    if (!g_csInitialised)
+    {
+        memset(g_csPrev, 0xFF, sizeof(g_csPrev));
+        memset(g_csCurr, 0xFF, sizeof(g_csCurr));
+        g_csCurrCount  = 0;
+        g_csInitialised = true;
+    }
+
     return world;
 }
 
@@ -636,6 +696,10 @@ void physWorldDestroy(PhysicsWorld *world)
     g_shInvCell    = 0.0f;
     g_shDirtyCount = 0;
     g_shGhostCount = 0;
+    memset(g_csPrev, 0xFF, sizeof(g_csPrev));
+    memset(g_csCurr, 0xFF, sizeof(g_csCurr));
+    g_csCurrCount  = 0;
+    g_csInitialised = false;
 
     dfree(world, sizeof(PhysicsWorld), MEM_TAG_PHYSICS);
 }
@@ -823,6 +887,7 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
             }
 
             // ── 4. Sequential impulse solver (velocity) ────────────────────
+            // Trigger pairs skip impulse resolution entirely.
             #define SLOP      0.005f
 
             for (u32 iter = 0; iter < world->solverIterations; iter++)
@@ -831,6 +896,11 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                 {
                     ContactManifold *manifold = &world->manifolds[mi];
                     CollisionPair   *pair     = &world->pairs[manifold->bodyA];
+
+                    Archetype *archA = world->bodyArchetypes[pair->archA];
+                    Archetype *archB = world->bodyArchetypes[pair->archB];
+                    if (archA->isTrigger || archB->isTrigger) continue;
+
                     PhysFieldBinding *bA = &world->bindings[pair->archA];
                     PhysFieldBinding *bB = &world->bindings[pair->archB];
 
@@ -882,6 +952,10 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
             {
                 ContactManifold *manifold = &world->manifolds[mi];
                 CollisionPair   *pair     = &world->pairs[manifold->bodyA];
+
+                if (world->bodyArchetypes[pair->archA]->isTrigger ||
+                    world->bodyArchetypes[pair->archB]->isTrigger) continue;
+
                 PhysFieldBinding *bA = &world->bindings[pair->archA];
                 PhysFieldBinding *bB = &world->bindings[pair->archB];
 
@@ -965,7 +1039,122 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                 }
             }
 
-            // ── 6. Collision callbacks ───────────────────────────────────────
+            // ── 6. Per-archetype collision/trigger callbacks (enter/exit) ──
+            // Build current frame contact key set from all manifolds.
+            for (u32 mi = 0; mi < world->manifoldCount; mi++)
+            {
+                CollisionPair *pair = &world->pairs[world->manifolds[mi].bodyA];
+                u32 keyA = csEntityKey(pair->archA, pair->chunkA, pair->indexA);
+                u32 keyB = csEntityKey(pair->archB, pair->chunkB, pair->indexB);
+                u64 pairKey = (keyA < keyB)
+                    ? ((u64)keyA << 32) | keyB
+                    : ((u64)keyB << 32) | keyA;
+                if (csInsert(g_csCurr, pairKey)) g_csCurrCount++;
+            }
+
+            // Fire Enter for new pairs, build ContactInfo per manifold.
+            for (u32 mi = 0; mi < world->manifoldCount; mi++)
+            {
+                ContactManifold *manifold = &world->manifolds[mi];
+                CollisionPair   *pair     = &world->pairs[manifold->bodyA];
+
+                Archetype *archA = world->bodyArchetypes[pair->archA];
+                Archetype *archB = world->bodyArchetypes[pair->archB];
+                b8 isTrig = archA->isTrigger || archB->isTrigger;
+
+                u32 keyA = csEntityKey(pair->archA, pair->chunkA, pair->indexA);
+                u32 keyB = csEntityKey(pair->archB, pair->chunkB, pair->indexB);
+                u64 pairKey = (keyA < keyB)
+                    ? ((u64)keyA << 32) | keyB
+                    : ((u64)keyB << 32) | keyA;
+
+                b8 isEnter = !csContains(g_csPrev, pairKey);
+                if (!isEnter) continue;  // Stay — no per-frame event
+
+                ContactInfo info;
+                info.self.arch    = archA;
+                info.self.poolIdx = pair->chunkA * archA->chunkCapacity + pair->indexA;
+                info.other.arch    = archB;
+                info.other.poolIdx = pair->chunkB * archB->chunkCapacity + pair->indexB;
+                if (manifold->pointCount > 0)
+                {
+                    info.normal = manifold->points[0].normal;
+                    info.point  = manifold->points[0].point;
+                    info.depth  = manifold->points[0].depth;
+                }
+                else
+                {
+                    info.normal = (Vec3){0,1,0};
+                    info.point  = (Vec3){0,0,0};
+                    info.depth  = 0.0f;
+                }
+
+                // Fire on archA
+                if (isTrig) { if (archA->cbs.onTriggerEnter) archA->cbs.onTriggerEnter(&info); }
+                else         { if (archA->cbs.onCollideEnter) archA->cbs.onCollideEnter(&info); }
+
+                // Fire on archB with self/other swapped and normal flipped
+                ContactInfo infoB = info;
+                infoB.self  = info.other;
+                infoB.other = info.self;
+                infoB.normal.x = -info.normal.x;
+                infoB.normal.y = -info.normal.y;
+                infoB.normal.z = -info.normal.z;
+                if (isTrig) { if (archB->cbs.onTriggerEnter) archB->cbs.onTriggerEnter(&infoB); }
+                else         { if (archB->cbs.onCollideEnter) archB->cbs.onCollideEnter(&infoB); }
+            }
+
+            // Fire Exit for pairs that were active last step but not this step.
+            for (u32 slot = 0; slot < CS_TABLE_SIZE; slot++)
+            {
+                u64 pairKey = g_csPrev[slot];
+                if (pairKey == CS_SENTINEL) continue;
+                if (csContains(g_csCurr, pairKey)) continue;  // still active
+
+                // Unpack both entity keys
+                u32 ekA = (u32)(pairKey >> 32);
+                u32 ekB = (u32)(pairKey & 0xFFFFFFFFu);
+                u32 aIdxA = (ekA >> 28) & 0xFu;
+                u32 cIdxA = (ekA >> 16) & 0xFFFu;
+                u32 lIdxA = ekA & 0xFFFFu;
+                u32 aIdxB = (ekB >> 28) & 0xFu;
+                u32 cIdxB = (ekB >> 16) & 0xFFFu;
+                u32 lIdxB = ekB & 0xFFFFu;
+
+                if (aIdxA >= world->bodyArchetypeCount || aIdxB >= world->bodyArchetypeCount)
+                    continue;
+
+                Archetype *archA = world->bodyArchetypes[aIdxA];
+                Archetype *archB = world->bodyArchetypes[aIdxB];
+                b8 isTrig = archA->isTrigger || archB->isTrigger;
+
+                // Skip exit if either entity is no longer alive (pool despawned)
+                b8 aAlive = !((archA->flags >> ARCH_BUFFERED) & 1u) ||
+                            archetypePoolIsAlive(archA, cIdxA * archA->chunkCapacity + lIdxA);
+                b8 bAlive = !((archB->flags >> ARCH_BUFFERED) & 1u) ||
+                            archetypePoolIsAlive(archB, cIdxB * archB->chunkCapacity + lIdxB);
+                if (!aAlive || !bAlive) continue;
+
+                ContactInfo info;
+                info.self.arch     = archA;
+                info.self.poolIdx  = cIdxA * archA->chunkCapacity + lIdxA;
+                info.other.arch    = archB;
+                info.other.poolIdx = cIdxB * archB->chunkCapacity + lIdxB;
+                info.normal = (Vec3){0,1,0};
+                info.point  = (Vec3){0,0,0};
+                info.depth  = 0.0f;
+
+                if (isTrig) { if (archA->cbs.onTriggerExit) archA->cbs.onTriggerExit(&info); }
+                else         { if (archA->cbs.onCollideExit) archA->cbs.onCollideExit(&info); }
+
+                ContactInfo infoB = info;
+                infoB.self  = info.other;
+                infoB.other = info.self;
+                if (isTrig) { if (archB->cbs.onTriggerExit) archB->cbs.onTriggerExit(&infoB); }
+                else         { if (archB->cbs.onCollideExit) archB->cbs.onCollideExit(&infoB); }
+            }
+
+            // Legacy global callbacks — kept for backwards compat
             if (world->onCollision)
             {
                 for (u32 mi = 0; mi < world->manifoldCount; mi++)
@@ -974,6 +1163,8 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                     world->onCollision(pair->indexA, pair->indexB, &world->manifolds[mi]);
                 }
             }
+
+            csSwapAndClear();
         }
         world->accumulator -= world->fixedTimestep;
         world->physFrameCounter++;

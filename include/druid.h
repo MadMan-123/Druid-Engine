@@ -725,6 +725,18 @@ extern "C"
 
     typedef struct PhysicsWorld PhysicsWorld;
 
+    // Forward declaration for ContactInfo — needed by ContactCallback before Archetype is defined
+    struct ContactInfo_s;
+    typedef void (*ContactCallback)(struct ContactInfo_s *info);
+
+    typedef struct
+    {
+        ContactCallback onCollideEnter;
+        ContactCallback onCollideExit;
+        ContactCallback onTriggerEnter;
+        ContactCallback onTriggerExit;
+    } CollisionCallbacks;
+
     // Archetype flags (stored in Archetype.flags as a b8 bitfield)
     #define ARCH_SINGLE       0  // holds exactly one entity (e.g. Player)
     #define ARCH_PERSISTENT   1  // survives scene switches
@@ -734,10 +746,10 @@ extern "C"
 
     typedef struct
     {
-        StructLayout *layout;
-        EntityArena  *arena;
-        void         *hotData;      // contiguous block for all hot field data
-        void         *coldData;     // contiguous block for all cold field data
+        StructLayout     *layout;
+        EntityArena      *arena;
+        void             *hotData;      // contiguous block for all hot field data
+        void             *coldData;     // contiguous block for all cold field data
         u32 id;
         u32 arenaCount;
         u32 hotEntitySize;          // bytes per entity for hot fields
@@ -751,7 +763,28 @@ extern "C"
         u32 deadCount;
         u32 cachedEntityCount;
         u8  flags;
+        b8  isTrigger;             // skips impulse resolution; fires onTrigger* callbacks
+        CollisionCallbacks cbs;    // per-archetype collision event callbacks
     } Archetype;
+
+    // EntityRef — stable identity for one entity: archetype pointer + pool index
+    // poolIdx = chunkIdx * arch->chunkCapacity + localIdx
+    typedef struct
+    {
+        Archetype *arch;
+        u32        poolIdx;
+    } EntityRef;
+
+    // ContactInfo — passed to every collision/trigger callback
+    // 'self' is the archetype that owns this callback; 'other' is the counterpart
+    typedef struct ContactInfo_s
+    {
+        EntityRef self;
+        EntityRef other;
+        Vec3      normal;   // points from other toward self
+        Vec3      point;    // world-space contact point
+        f32       depth;
+    } ContactInfo;
 
     typedef struct
     {
@@ -805,6 +838,10 @@ extern "C"
     DAPI void *archetypeGetColdData(Archetype *arch);
     DAPI u32   archetypeGetHotEntitySize(Archetype *arch);
     DAPI u32   archetypeGetColdEntitySize(Archetype *arch);
+
+    // Collision callbacks
+    DAPI void archetypeSetTrigger(Archetype *arch, b8 isTrigger);
+    DAPI void archetypeSetCollisionCallbacks(Archetype *arch, CollisionCallbacks cbs);
 
     //=====================================================================================================================
 
