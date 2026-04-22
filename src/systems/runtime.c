@@ -104,8 +104,11 @@ DAPI GameRuntime *runtimeCreate(const c8 *projectDir, RuntimeConfig cfg)
         physInit(cfg.gravity, cfg.physicsTimestep);
         runtime->world = physicsWorld;
 
-        // Scene — loads startup scene, remaps model IDs, syncs camera entity
-        sceneRuntimeInit(projectDir);
+        // Scene — loads startup scene only if not already loaded (editor may have pre-loaded)
+        if (!sceneRuntime || !sceneRuntime->loaded)
+        {
+            sceneRuntimeInit(projectDir);
+        }
         if (physicsWorld && sceneRuntime)
             physAutoRegisterScene(&sceneRuntime->data);
         runtime->scene = sceneRuntime;
@@ -122,7 +125,7 @@ DAPI GameRuntime *runtimeCreate(const c8 *projectDir, RuntimeConfig cfg)
 
     // Always track renderer and scene references (editor or standalone)
     runtime->renderer = renderer;
-    if (!runtime->scene) runtime->scene = sceneRuntime;
+    runtime->scene = sceneRuntime;
     if (renderer)
         runtime->camera = (Camera *)bufferGet(&renderer->cameras, renderer->activeCamera);
 

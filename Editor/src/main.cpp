@@ -822,7 +822,7 @@ void update(f32 dt)
         sd.materialCount = resources->materialUsed;
         sd.materials = resources->materialBuffer;
 
-        //copy the archetype name into the scene data 
+        //copy the archetype name into the scene data
         strncpy(sd.archetypeNames[0], "SceneEntity", MAX_SCENE_NAME - 1);
         DEBUG("Saving to path: %s", scenePathBuffer);
         if (saveScene(scenePathBuffer, &sd))
@@ -833,14 +833,112 @@ void update(f32 dt)
         {
             ERROR("Failed to save scene to %s", scenePathBuffer);
         }
-         
+
     }
     else if (!canSave && !ctrlSaveDown)
     {
         canSave = true; // reset flag when keys are released
     }
 
+    // Ctrl+C / Ctrl+V entity copy-paste (edit mode only, not while typing in ImGui)
+    {
+        static u8  clipboardBuf[4096];
+        static u32 clipboardSize  = 0;
+        static b8  clipboardValid = false;
+        static b8  canCopy        = true;
+        static b8  canPaste       = true;
 
+        const ImGuiIO &io        = ImGui::GetIO();
+        // Only block when the user is actively typing into a text field —
+        // WantCaptureKeyboard is true for any focused ImGui window, which would
+        // swallow the shortcut after clicking an entity in the Scene List.
+        const b8 typingInImGui   = io.WantTextInput;
+        const b8 ctrlDown        = isKeyDown(KEY_LCTRL) || isKeyDown(KEY_RCTRL);
+        const b8 copyDown        = ctrlDown && isKeyDown(KEY_C);
+        const b8 pasteDown       = ctrlDown && isKeyDown(KEY_V);
+        const b8 inspectingEntity = (currentInspectorState == ENTITY_VIEW)
+                                     && (inspectorEntityID < entityCount);
+
+        if (canCopy && copyDown && !typingInImGui && !g_gameRunning && inspectingEntity)
+        {
+            canCopy = false;
+            void **fields = getArchetypeFields(&sceneArchetype, 0);
+            StructLayout *layout = sceneArchetype.layout;
+            if (fields && layout)
+            {
+                u32 off = 0;
+                for (u32 f = 0; f < layout->count; f++)
+                {
+                    u32 sz = layout->fields[f].size;
+                    if (off + sz > sizeof(clipboardBuf)) { off = 0; break; }
+                    memcpy(clipboardBuf + off,
+                           (u8 *)fields[f] + (u64)sz * inspectorEntityID, sz);
+                    off += sz;
+                }
+                clipboardSize  = off;
+                clipboardValid = (off > 0);
+                if (clipboardValid)
+                    INFO("Copied entity %u", inspectorEntityID);
+            }
+        }
+        else if (!canCopy && !copyDown)
+        {
+            canCopy = true;
+        }
+
+        if (canPaste && pasteDown && !typingInImGui && !g_gameRunning && clipboardValid)
+        {
+            canPaste = false;
+            if (entityCount >= entitySizeCache)
+            {
+                WARN("Paste failed: entity cap reached (%u)", entitySizeCache);
+            }
+            else
+            {
+                void **fields = getArchetypeFields(&sceneArchetype, 0);
+                StructLayout *layout = sceneArchetype.layout;
+                if (fields && layout)
+                {
+                    u32 dst = entityCount;
+                    u32 off = 0;
+                    for (u32 f = 0; f < layout->count; f++)
+                    {
+                        u32 sz = layout->fields[f].size;
+                        if (off + sz > clipboardSize) break;
+                        memcpy((u8 *)fields[f] + (u64)sz * dst,
+                               clipboardBuf + off, sz);
+                        off += sz;
+                    }
+
+                    // Nudge position so the clone is visible, and rename it.
+                    if (positions) positions[dst].x += 1.0f;
+                    if (names)
+                    {
+                        c8 *n = &names[dst * MAX_NAME_SIZE];
+                        u32 nl = (u32)strlen(n);
+                        const c8 *suffix = " (copy)";
+                        u32 sl = (u32)strlen(suffix);
+                        if (nl + sl < MAX_NAME_SIZE) memcpy(n + nl, suffix, sl + 1);
+                    }
+                    // A pasted entity is a *new* ECS slot — clear the runtime id
+                    // so it gets a fresh mapping on next play.
+                    if (ecsSlotIDs) ecsSlotIDs[dst] = (u32)-1;
+
+                    entityCount++;
+                    sceneArchetype.arena[0].count = entityCount;
+                    if (sceneArchetype.activeChunkCount == 0)
+                        sceneArchetype.activeChunkCount = 1;
+                    inspectorEntityID = dst;
+                    currentInspectorState = ENTITY_VIEW;
+                    INFO("Pasted entity -> slot %u", dst);
+                }
+            }
+        }
+        else if (!canPaste && !pasteDown)
+        {
+            canPaste = true;
+        }
+    }
 }
 
 static void saveCurrentScene()

@@ -2937,58 +2937,149 @@ static void drawPrefabsWindow()
                         fread(ebuf, 1, (u32)esz, ef);
                         ebuf[esz] = '\0';
 
-                        // Parse { "name", sizeof(Type) } entries
+                        // Parse field entries. Two formats supported:
+                        //   Old: { "name", sizeof(Type) } entries in the .c file
+                        //   New: FIELD(ENUM, "name", type, HOT|COLD) in the .h
+                        //        file's NAME_FIELDS(FIELD) macro
                         u32 allFieldCount = 0;
                         c8  allFieldNames[ARCH_MAX_FIELDS + 3][128];
                         i32 allFieldTypeIdx[ARCH_MAX_FIELDS + 3];
                         memset(allFieldNames, 0, sizeof(allFieldNames));
                         memset(allFieldTypeIdx, 0, sizeof(allFieldTypeIdx));
 
-                        const c8 *scan = strstr(ebuf, "_fields[] = {");
-                        if (scan)
+                        // New format first — look for DEFINE_ARCHETYPE in the .c
+                        // then parse FIELD(...) from the sibling .h file.
+                        b8 parsedNewFormat = false;
+                        if (strstr(ebuf, "DEFINE_ARCHETYPE(") != NULL)
                         {
-                            scan = strchr(scan, '{');
-                            if (scan) scan++;
+                            c8 hPath[MAX_PATH_LENGTH] = {0};
+                            strncpy(hPath, srcPath, MAX_PATH_LENGTH - 1);
+                            u32 hLen = (u32)strlen(hPath);
+                            if (hLen >= 4 && strcmp(hPath + hLen - 4, ".cpp") == 0)
+                                strcpy(hPath + hLen - 4, ".h");
+                            else if (hLen >= 2 && strcmp(hPath + hLen - 2, ".c") == 0)
+                                strcpy(hPath + hLen - 2, ".h");
 
-                            while (scan && allFieldCount < ARCH_MAX_FIELDS + 3)
+                            FILE *hf = fopen(hPath, "r");
+                            if (hf)
                             {
-                                const c8 *e1b = strstr(scan, "{ \"");
-                                const c8 *e2b = strstr(scan, "{\"");
-                                const c8 *es  = NULL; u32 nsOff = 0;
-                                if (e1b && e2b) { es = (e1b < e2b) ? e1b : e2b; nsOff = (es == e1b) ? 3 : 2; }
-                                else if (e1b)   { es = e1b; nsOff = 3; }
-                                else if (e2b)   { es = e2b; nsOff = 2; }
-                                if (!es) break;
-                                const c8 *closeBr = strstr(scan, "};");
-                                if (closeBr && es > closeBr) break;
-
-                                const c8 *ns = es + nsOff;
-                                const c8 *ne = strchr(ns, '"');
-                                if (ne && (ne - ns) < 128)
-                                    memcpy(allFieldNames[allFieldCount], ns, (u32)(ne - ns));
-
-                                const c8 *szOf = strstr(es, "sizeof(");
-                                if (szOf)
+                                fseek(hf, 0, SEEK_END);
+                                long hsz = ftell(hf);
+                                fseek(hf, 0, SEEK_SET);
+                                if (hsz > 0 && hsz <= 65536)
                                 {
-                                    szOf += 7;
-                                    const c8 *szEnd = strchr(szOf, ')');
-                                    if (szEnd)
+                                    c8 *hbuf = (c8 *)malloc((u32)hsz + 1);
+                                    fread(hbuf, 1, (u32)hsz, hf);
+                                    hbuf[hsz] = '\0';
+
+                                    // Build "<UPPER>_FIELDS(" token (matches generator)
+                                    c8 upperName[MAX_SCENE_NAME * 2] = {0};
+                                    for (u32 ci = 0; entry->name[ci]; ci++)
+                                        upperName[ci] = (entry->name[ci] >= 'a' && entry->name[ci] <= 'z')
+                                                         ? (c8)(entry->name[ci] - 32) : entry->name[ci];
+                                    c8 macroToken[MAX_SCENE_NAME * 2 + 16] = {0};
+                                    snprintf(macroToken, sizeof(macroToken), "%s_FIELDS(", upperName);
+
+                                    const c8 *hScan = strstr(hbuf, macroToken);
+                                    while (hScan && allFieldCount < ARCH_MAX_FIELDS + 3)
                                     {
-                                        c8 typeBuf[64] = {0};
-                                        u32 tlen = (u32)(szEnd - szOf);
-                                        if (tlen < 64) memcpy(typeBuf, szOf, tlen);
+                                        const c8 *fe = strstr(hScan, "FIELD(");
+                                        if (!fe) break;
+                                        fe += 6;
+                                        const c8 *comma1 = strchr(fe, ',');
+                                        if (!comma1) break;
+                                        comma1++;
+                                        while (*comma1 == ' ' || *comma1 == '\t') comma1++;
+                                        if (*comma1 != '"') { hScan = comma1; continue; }
+                                        const c8 *ns = comma1 + 1;
+                                        const c8 *ne = strchr(ns, '"');
+                                        if (!ne || (ne - ns) >= 128) { hScan = comma1 + 1; continue; }
+                                        memcpy(allFieldNames[allFieldCount], ns, (u32)(ne - ns));
+
+                                        // Type argument follows the next comma
+                                        const c8 *comma2 = strchr(ne + 1, ',');
                                         allFieldTypeIdx[allFieldCount] = 0;
-                                        for (u32 t = 0; t < typeCount; t++)
+                                        if (comma2)
                                         {
-                                            if (strcmp(typeBuf, typeNames[t]) == 0)
-                                            { allFieldTypeIdx[allFieldCount] = (i32)t; break; }
+                                            comma2++;
+                                            while (*comma2 == ' ' || *comma2 == '\t') comma2++;
+                                            const c8 *typeEnd = comma2;
+                                            while (*typeEnd && *typeEnd != ',' && *typeEnd != ')'
+                                                && *typeEnd != ' ' && *typeEnd != '\t'
+                                                && *typeEnd != '\r' && *typeEnd != '\n' && *typeEnd != '\\')
+                                                typeEnd++;
+                                            c8 typeBuf[64] = {0};
+                                            u32 tlen = (u32)(typeEnd - comma2);
+                                            if (tlen > 0 && tlen < 64)
+                                            {
+                                                memcpy(typeBuf, comma2, tlen);
+                                                for (u32 t = 0; t < typeCount; t++)
+                                                {
+                                                    if (strcmp(typeBuf, typeNames[t]) == 0)
+                                                    { allFieldTypeIdx[allFieldCount] = (i32)t; break; }
+                                                }
+                                            }
+                                        }
+
+                                        allFieldCount++;
+                                        hScan = ne + 1;
+                                    }
+
+                                    parsedNewFormat = (allFieldCount > 0);
+                                    free(hbuf);
+                                }
+                                fclose(hf);
+                            }
+                        }
+
+                        if (!parsedNewFormat)
+                        {
+                            const c8 *scan = strstr(ebuf, "_fields[] = {");
+                            if (scan)
+                            {
+                                scan = strchr(scan, '{');
+                                if (scan) scan++;
+
+                                while (scan && allFieldCount < ARCH_MAX_FIELDS + 3)
+                                {
+                                    const c8 *e1b = strstr(scan, "{ \"");
+                                    const c8 *e2b = strstr(scan, "{\"");
+                                    const c8 *es  = NULL; u32 nsOff = 0;
+                                    if (e1b && e2b) { es = (e1b < e2b) ? e1b : e2b; nsOff = (es == e1b) ? 3 : 2; }
+                                    else if (e1b)   { es = e1b; nsOff = 3; }
+                                    else if (e2b)   { es = e2b; nsOff = 2; }
+                                    if (!es) break;
+                                    const c8 *closeBr = strstr(scan, "};");
+                                    if (closeBr && es > closeBr) break;
+
+                                    const c8 *ns = es + nsOff;
+                                    const c8 *ne = strchr(ns, '"');
+                                    if (ne && (ne - ns) < 128)
+                                        memcpy(allFieldNames[allFieldCount], ns, (u32)(ne - ns));
+
+                                    const c8 *szOf = strstr(es, "sizeof(");
+                                    if (szOf)
+                                    {
+                                        szOf += 7;
+                                        const c8 *szEnd = strchr(szOf, ')');
+                                        if (szEnd)
+                                        {
+                                            c8 typeBuf[64] = {0};
+                                            u32 tlen = (u32)(szEnd - szOf);
+                                            if (tlen < 64) memcpy(typeBuf, szOf, tlen);
+                                            allFieldTypeIdx[allFieldCount] = 0;
+                                            for (u32 t = 0; t < typeCount; t++)
+                                            {
+                                                if (strcmp(typeBuf, typeNames[t]) == 0)
+                                                { allFieldTypeIdx[allFieldCount] = (i32)t; break; }
+                                            }
                                         }
                                     }
-                                }
 
-                                allFieldCount++;
-                                const c8 *entryEnd = strchr(es + 1, '}');
-                                scan = entryEnd ? entryEnd + 1 : nullptr;
+                                    allFieldCount++;
+                                    const c8 *entryEnd = strchr(es + 1, '}');
+                                    scan = entryEnd ? entryEnd + 1 : nullptr;
+                                }
                             }
                         }
 
@@ -4533,11 +4624,10 @@ static void drawInspectorWindow()
                                     u32 sz = layout->fields[f].size;
                                     void *ptr = (u8 *)fields[f] + sz * perSysIdx;
                                     ImGui::PushID((int)(5000 + f));
-                                    if      (sz == sizeof(f32))  ImGui::DragFloat(layout->fields[f].name,  (f32*)ptr, 0.01f);
-                                    else if (sz == sizeof(Vec3)) ImGui::DragFloat3(layout->fields[f].name, (f32*)ptr, 0.01f);
-                                    else if (sz == sizeof(Vec4)) ImGui::DragFloat4(layout->fields[f].name, (f32*)ptr, 0.01f);
-                                    else if (sz == sizeof(Vec2)) ImGui::DragFloat2(layout->fields[f].name, (f32*)ptr, 0.01f);
-                                    else ImGui::Text("%s (%u bytes)", layout->fields[f].name, sz);
+                                    // Route through drawSoAField so u32, b8, string
+                                    // and vector fields all render with the right
+                                    // widget (size-only matching confuses u32/f32).
+                                    drawSoAField(layout->fields[f].name, sz, ptr);
                                     ImGui::PopID();
                                 }
                             }
