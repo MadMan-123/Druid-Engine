@@ -170,6 +170,7 @@ b8 showSkyboxSettings = false;
 static b8 showCameraSettings = false;
 b8 showColliders = true;
 static b8 showLightGizmos = true;
+static b8 showGizmosInPlayMode = false;
 static b8 showLoadedEntities = false;
 
 // Editor camera clip/fov settings — adjusted via Camera Settings panel
@@ -338,7 +339,7 @@ static i32       g_ecsUniformScaleIdx[MAX_ARCHETYPE_SYSTEMS];            // syst
 static b8        g_archPhysRegistered[MAX_ARCHETYPE_SYSTEMS] = {0};      // cached physics registration state
 
 // Cached collider field indices per archetype (avoid strcmp every frame)
-struct ColliderFieldCache { i32 posX, posY, posZ, radius, halfX, halfY, halfZ; b8 resolved; };
+struct ColliderFieldCache { i32 posX, posY, posZ, radius, halfX, halfY, halfZ, offsetX, offsetY, offsetZ; b8 resolved; };
 static ColliderFieldCache g_colliderCache[MAX_ARCHETYPE_SYSTEMS] = {0};
 
 // Scanned field storage — populated by scanProjectArchetypes so the registry
@@ -1657,8 +1658,18 @@ static void renderGameScene()
             glDepthFunc(GL_LESS);
         }
 
-        // Draw collider gizmos for all live physics archetypes (play mode, debug only)
-        if (showColliders && !g_gameRunning)
+        // Draw collider gizmos — edit mode uses archetype scan, play mode uses physics body list
+        if (showColliders && g_gameRunning && showGizmosInPlayMode && physicsWorld)
+        {
+            physWorldDebugDraw(physicsWorld, [](Vec3 center, Vec3 half, f32 radius, u32 shape, void *)
+            {
+                if (shape == PSHAPE_BOX)
+                    gizmoDrawBox(center, half, makeGizmoColor(0.0f, 1.0f, 0.0f, 1.0f));
+                else
+                    gizmoDrawSphere(center, radius, makeGizmoColor(0.0f, 1.0f, 0.0f, 1.0f));
+            }, nullptr);
+        }
+        else if (showColliders && !g_gameRunning)
         {
             for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
             {
@@ -1672,17 +1683,21 @@ static void renderGameScene()
                 {
                     fc.posX = fc.posY = fc.posZ = -1;
                     fc.radius = fc.halfX = fc.halfY = fc.halfZ = -1;
+                    fc.offsetX = fc.offsetY = fc.offsetZ = -1;
                     StructLayout *layout = physArch->layout;
                     for (u32 f = 0; f < layout->count; f++)
                     {
                         const c8 *n = layout->fields[f].name;
-                        if      (strcmp(n, "PositionX")     == 0) fc.posX   = (i32)f;
-                        else if (strcmp(n, "PositionY")     == 0) fc.posY   = (i32)f;
-                        else if (strcmp(n, "PositionZ")     == 0) fc.posZ   = (i32)f;
-                        else if (strcmp(n, "SphereRadius")  == 0) fc.radius = (i32)f;
-                        else if (strcmp(n, "ColliderHalfX") == 0) fc.halfX  = (i32)f;
-                        else if (strcmp(n, "ColliderHalfY") == 0) fc.halfY  = (i32)f;
-                        else if (strcmp(n, "ColliderHalfZ") == 0) fc.halfZ  = (i32)f;
+                        if      (strcmp(n, "PositionX")       == 0) fc.posX    = (i32)f;
+                        else if (strcmp(n, "PositionY")       == 0) fc.posY    = (i32)f;
+                        else if (strcmp(n, "PositionZ")       == 0) fc.posZ    = (i32)f;
+                        else if (strcmp(n, "SphereRadius")    == 0) fc.radius  = (i32)f;
+                        else if (strcmp(n, "ColliderHalfX")   == 0) fc.halfX   = (i32)f;
+                        else if (strcmp(n, "ColliderHalfY")   == 0) fc.halfY   = (i32)f;
+                        else if (strcmp(n, "ColliderHalfZ")   == 0) fc.halfZ   = (i32)f;
+                        else if (strcmp(n, "ColliderOffsetX") == 0) fc.offsetX = (i32)f;
+                        else if (strcmp(n, "ColliderOffsetY") == 0) fc.offsetY = (i32)f;
+                        else if (strcmp(n, "ColliderOffsetZ") == 0) fc.offsetZ = (i32)f;
                     }
                     fc.resolved = true;
                 }
@@ -1693,17 +1708,22 @@ static void renderGameScene()
                     void **fields = getArchetypeFields(physArch, c);
                     if (!fields) continue;
                     u32 count = physArch->arena[c].count;
-                    f32 *posX  = (f32 *)fields[fc.posX];
-                    f32 *posY  = (f32 *)fields[fc.posY];
-                    f32 *posZ  = (f32 *)fields[fc.posZ];
-                    f32 *radii = (fc.radius >= 0) ? (f32 *)fields[fc.radius] : NULL;
-                    f32 *halfX = (fc.halfX  >= 0) ? (f32 *)fields[fc.halfX]  : NULL;
-                    f32 *halfY = (fc.halfY  >= 0) ? (f32 *)fields[fc.halfY]  : NULL;
-                    f32 *halfZ = (fc.halfZ  >= 0) ? (f32 *)fields[fc.halfZ]  : NULL;
+                    f32 *posX   = (f32 *)fields[fc.posX];
+                    f32 *posY   = (f32 *)fields[fc.posY];
+                    f32 *posZ   = (f32 *)fields[fc.posZ];
+                    f32 *radii  = (fc.radius  >= 0) ? (f32 *)fields[fc.radius]  : NULL;
+                    f32 *halfX  = (fc.halfX   >= 0) ? (f32 *)fields[fc.halfX]   : NULL;
+                    f32 *halfY  = (fc.halfY   >= 0) ? (f32 *)fields[fc.halfY]   : NULL;
+                    f32 *halfZ  = (fc.halfZ   >= 0) ? (f32 *)fields[fc.halfZ]   : NULL;
+                    f32 *offX   = (fc.offsetX >= 0) ? (f32 *)fields[fc.offsetX] : NULL;
+                    f32 *offY   = (fc.offsetY >= 0) ? (f32 *)fields[fc.offsetY] : NULL;
+                    f32 *offZ   = (fc.offsetZ >= 0) ? (f32 *)fields[fc.offsetZ] : NULL;
 
                     for (u32 e = 0; e < count; e++)
                     {
-                        Vec3 pos = {posX[e], posY[e], posZ[e]};
+                        Vec3 pos = {posX[e] + (offX ? offX[e] : 0.0f),
+                                    posY[e] + (offY ? offY[e] : 0.0f),
+                                    posZ[e] + (offZ ? offZ[e] : 0.0f)};
                         if (radii && radii[e] > 0.0f)
                             gizmoDrawSphere(pos, radii[e], makeGizmoColor(0.0f, 1.0f, 0.0f, 1.0f));
                         if (halfX && halfX[e] > 0.0f)
@@ -6045,6 +6065,10 @@ void drawDockspaceAndPanels()
             if (ImGui::MenuItem("Draw Colliders", NULL, showColliders))
             {
                 showColliders = !showColliders;
+            }
+            if (ImGui::MenuItem("Colliders In Play Mode", NULL, showGizmosInPlayMode))
+            {
+                showGizmosInPlayMode = !showGizmosInPlayMode;
             }
             if (ImGui::MenuItem("Draw Lights", NULL, showLightGizmos))
             {

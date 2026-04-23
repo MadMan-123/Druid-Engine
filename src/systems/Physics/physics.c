@@ -30,6 +30,7 @@ typedef struct
     // Collider shape fields
     i32 radius;               // SphereRadius
     i32 halfX, halfY, halfZ;  // ColliderHalfX/Y/Z
+    i32 offsetX, offsetY, offsetZ; // ColliderOffsetX/Y/Z — shifts AABB center from entity origin
     i32 shape;                // ColliderShape field (optional, used if present)
     // Scale — for fallback when radius/half are 0
     i32 scaleField;
@@ -291,6 +292,9 @@ static PhysFieldBinding buildBinding(StructLayout *layout)
     b.halfX      = findField(layout, "ColliderHalfX");
     b.halfY      = findField(layout, "ColliderHalfY");
     b.halfZ      = findField(layout, "ColliderHalfZ");
+    b.offsetX    = findField(layout, "ColliderOffsetX");
+    b.offsetY    = findField(layout, "ColliderOffsetY");
+    b.offsetZ    = findField(layout, "ColliderOffsetZ");
     b.shape      = findField(layout, "ColliderShape");
 
     // Scale — prefer Vec3, fall back to f32 uniform
@@ -393,6 +397,9 @@ static void buildBodyList(PhysicsWorld *world)
             f32 *posX = (f32 *)fields[b->posX];
             f32 *posY = (f32 *)fields[b->posY];
             f32 *posZ = (f32 *)fields[b->posZ];
+            f32 *offX = (b->offsetX >= 0) ? (f32 *)fields[b->offsetX] : NULL;
+            f32 *offY = (b->offsetY >= 0) ? (f32 *)fields[b->offsetY] : NULL;
+            f32 *offZ = (b->offsetZ >= 0) ? (f32 *)fields[b->offsetZ] : NULL;
             u32 *bt   = (b->bodyType >= 0) ? (u32 *)fields[b->bodyType] : NULL;
 
             for (u32 i = 0; i < count && g_bodyCount < MAX_PHYS_BODIES; i++)
@@ -404,9 +411,9 @@ static void buildBodyList(PhysicsWorld *world)
                 g_bpArchIdx[idx]   = a;
                 g_bpChunkIdx[idx]  = c;
                 g_bpEntityIdx[idx] = i;
-                g_bpPosX[idx]      = posX[i];
-                g_bpPosY[idx]      = posY[i];
-                g_bpPosZ[idx]      = posZ[i];
+                g_bpPosX[idx]      = posX[i] + (offX ? offX[i] : 0.0f);
+                g_bpPosY[idx]      = posY[i] + (offY ? offY[i] : 0.0f);
+                g_bpPosZ[idx]      = posZ[i] + (offZ ? offZ[i] : 0.0f);
                 // If an archetype omits PhysicsBodyType, treat it as static by
                 // default so world geometry does not become dynamic implicitly.
                 g_bpBodyType[idx]  = bt ? bt[i] : PHYS_BODY_STATIC;
@@ -843,12 +850,16 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                 u32 shapeA = pair->shapeA;  // cached from broadphase — no re-inference
                 u32 shapeB = pair->shapeB;
 
-                Vec3 posA = {((f32 *)fA[bA->posX])[iA],
-                              ((f32 *)fA[bA->posY])[iA],
-                              ((f32 *)fA[bA->posZ])[iA]};
-                Vec3 posB = {((f32 *)fB[bB->posX])[iB],
-                              ((f32 *)fB[bB->posY])[iB],
-                              ((f32 *)fB[bB->posZ])[iB]};
+                Vec3 posA = {
+                    ((f32 *)fA[bA->posX])[iA] + (bA->offsetX >= 0 ? ((f32 *)fA[bA->offsetX])[iA] : 0.0f),
+                    ((f32 *)fA[bA->posY])[iA] + (bA->offsetY >= 0 ? ((f32 *)fA[bA->offsetY])[iA] : 0.0f),
+                    ((f32 *)fA[bA->posZ])[iA] + (bA->offsetZ >= 0 ? ((f32 *)fA[bA->offsetZ])[iA] : 0.0f)
+                };
+                Vec3 posB = {
+                    ((f32 *)fB[bB->posX])[iB] + (bB->offsetX >= 0 ? ((f32 *)fB[bB->offsetX])[iB] : 0.0f),
+                    ((f32 *)fB[bB->posY])[iB] + (bB->offsetY >= 0 ? ((f32 *)fB[bB->offsetY])[iB] : 0.0f),
+                    ((f32 *)fB[bB->posZ])[iB] + (bB->offsetZ >= 0 ? ((f32 *)fB[bB->offsetZ])[iB] : 0.0f)
+                };
 
                 if (world->manifoldCount >= MAX_PHYS_MANIFOLDS) break;
                 ContactManifold *m = &world->manifolds[world->manifoldCount];
@@ -1388,6 +1399,17 @@ void physShutdown(void)
 void physTick(f32 dt)
 {
     if (physicsWorld) physWorldStep(physicsWorld, dt);
+}
+
+DAPI void physWorldDebugDraw(PhysicsWorld *world, PhysDebugBodyFn fn, void *userdata)
+{
+    if (!world || !fn) return;
+    for (u32 i = 0; i < g_bodyCount; i++)
+    {
+        Vec3 center = {g_bpPosX[i], g_bpPosY[i], g_bpPosZ[i]};
+        Vec3 half   = {g_bpHalfX[i], g_bpHalfY[i], g_bpHalfZ[i]};
+        fn(center, half, g_bpRadius[i], g_bpShape[i], userdata);
+    }
 }
 
 void physAutoRegisterScene(SceneData *scene)

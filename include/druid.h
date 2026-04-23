@@ -2463,6 +2463,14 @@ extern "C"
     } PhysicsDLL;
 
     // World
+    #define PSHAPE_SPHERE 1u
+    #define PSHAPE_BOX    2u
+
+    // Callback receives the world-space AABB center, half-extents, bounding radius,
+    // and shape type (PSHAPE_SPHERE or PSHAPE_BOX) for every body in the last step.
+    typedef void (*PhysDebugBodyFn)(Vec3 center, Vec3 half, f32 radius, u32 shape, void *userdata);
+    DAPI void          physWorldDebugDraw(PhysicsWorld *world, PhysDebugBodyFn fn, void *userdata);
+
     DAPI PhysicsWorld *physWorldCreate(Vec3 gravity, f32 timestep);
     DAPI void          physWorldDestroy(PhysicsWorld *world);
     DAPI void          physWorldStep(PhysicsWorld *world, f32 dt);
