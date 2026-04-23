@@ -32,6 +32,7 @@ typedef struct
     i32 halfX, halfY, halfZ;  // ColliderHalfX/Y/Z
     i32 offsetX, offsetY, offsetZ; // ColliderOffsetX/Y/Z — shifts AABB center from entity origin
     i32 shape;                // ColliderShape field (optional, used if present)
+    i32 ccdEnabled;           // CCDEnabled b8 — opt into swept CCD for fast movers
     // Scale — for fallback when radius/half are 0
     i32 scaleField;
     u32 scaleFieldSize;       // sizeof(f32) or sizeof(Vec3)
@@ -45,12 +46,13 @@ typedef struct
     u32 archA,  indexA, chunkA;
     u32 archB,  indexB, chunkB;
     u32 shapeA, shapeB;  // cached from broadphase — avoids re-inferring in narrowphase
+    u32 bpIdxA, bpIdxB;  // flat body indices into g_bp* arrays — used by CCD narrowphase
 } CollisionPair;
 
 static f32 g_bpPosX[MAX_PHYS_BODIES];
 static f32 g_bpPosY[MAX_PHYS_BODIES];
 static f32 g_bpPosZ[MAX_PHYS_BODIES];
-static f32 g_bpRadius[MAX_PHYS_BODIES];    // bounding sphere radius
+static f32 g_bpRadius[MAX_PHYS_BODIES];    // bounding sphere radius (expanded for CCD bodies)
 static f32 g_bpHalfX[MAX_PHYS_BODIES];     // box half-extents (0 if sphere)
 static f32 g_bpHalfY[MAX_PHYS_BODIES];
 static f32 g_bpHalfZ[MAX_PHYS_BODIES];
@@ -59,6 +61,10 @@ static u32 g_bpBodyType[MAX_PHYS_BODIES];
 static u32 g_bpArchIdx[MAX_PHYS_BODIES];
 static u32 g_bpChunkIdx[MAX_PHYS_BODIES];
 static u32 g_bpEntityIdx[MAX_PHYS_BODIES];
+static f32 g_bpVelX[MAX_PHYS_BODIES];      // start-of-step velocity (CCD bodies only)
+static f32 g_bpVelY[MAX_PHYS_BODIES];
+static f32 g_bpVelZ[MAX_PHYS_BODIES];
+static b8  g_bpCCD[MAX_PHYS_BODIES];       // true if this body has CCDEnabled
 static u32 g_bodyCount;
 
 //=====================================================================================================================
@@ -296,6 +302,7 @@ static PhysFieldBinding buildBinding(StructLayout *layout)
     b.offsetY    = findField(layout, "ColliderOffsetY");
     b.offsetZ    = findField(layout, "ColliderOffsetZ");
     b.shape      = findField(layout, "ColliderShape");
+    b.ccdEnabled = findField(layout, "CCDEnabled");
 
     // Scale — prefer Vec3, fall back to f32 uniform
     b.scaleField = findField(layout, "Scale");
@@ -376,7 +383,7 @@ static u32 inferShape(void **fields, PhysFieldBinding *b, u32 i)
 //=====================================================================================================================
 // Flat body list build — iterate all registered archetypes each substep
 
-static void buildBodyList(PhysicsWorld *world)
+static void buildBodyList(PhysicsWorld *world, f32 subDt)
 {
     g_bodyCount = 0;
     const b8 *vis = world->visibility;
@@ -400,10 +407,20 @@ static void buildBodyList(PhysicsWorld *world)
             f32 *offX = (b->offsetX >= 0) ? (f32 *)fields[b->offsetX] : NULL;
             f32 *offY = (b->offsetY >= 0) ? (f32 *)fields[b->offsetY] : NULL;
             f32 *offZ = (b->offsetZ >= 0) ? (f32 *)fields[b->offsetZ] : NULL;
+            f32 *velX = (b->velX >= 0) ? (f32 *)fields[b->velX] : NULL;
+            f32 *velY = (b->velY >= 0) ? (f32 *)fields[b->velY] : NULL;
+            f32 *velZ = (b->velZ >= 0) ? (f32 *)fields[b->velZ] : NULL;
+            b8  *ccd  = (b->ccdEnabled >= 0) ? (b8 *)fields[b->ccdEnabled] : NULL;
             u32 *bt   = (b->bodyType >= 0) ? (u32 *)fields[b->bodyType] : NULL;
 
             for (u32 i = 0; i < count && g_bodyCount < MAX_PHYS_BODIES; i++)
             {
+                // Skip dead entities in pooled archetypes — prevents despawned bodies
+                // from re-firing collision callbacks on the next physics step.
+                if (FLAG_CHECK(arch->flags, ARCH_BUFFERED) &&
+                    !archetypePoolIsAlive(arch, c * arch->chunkCapacity + i))
+                    continue;
+
                 // Skip non-visible entities from collision detection entirely
                 if (vis && (visIdx + i) < visCount && !vis[visIdx + i])
                     continue;
@@ -431,6 +448,22 @@ static void buildBodyList(PhysicsWorld *world)
                 {
                     g_bpRadius[idx] = effectiveRadius(fields, b, i);
                     g_bpHalfX[idx] = g_bpHalfY[idx] = g_bpHalfZ[idx] = 0.0f;
+                }
+
+                // CCD: store velocity and expand bounding sphere to cover full sweep
+                g_bpCCD[idx] = ccd ? ccd[i] : false;
+                if (g_bpCCD[idx] && velX && velY && velZ)
+                {
+                    f32 vx = velX[i], vy = velY[i], vz = velZ[i];
+                    g_bpVelX[idx] = vx;
+                    g_bpVelY[idx] = vy;
+                    g_bpVelZ[idx] = vz;
+                    f32 speed = sqrtf(vx*vx + vy*vy + vz*vz);
+                    g_bpRadius[idx] += speed * subDt;
+                }
+                else
+                {
+                    g_bpVelX[idx] = g_bpVelY[idx] = g_bpVelZ[idx] = 0.0f;
                 }
             }
             visIdx += count;
@@ -549,6 +582,8 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
                                 p->archB  = g_bpArchIdx[j];  p->chunkB = g_bpChunkIdx[j]; p->indexB = g_bpEntityIdx[j];
                                 p->shapeA = g_bpShape[i];
                                 p->shapeB = g_bpShape[j];
+                                p->bpIdxA = i;
+                                p->bpIdxB = j;
                             }
                         }
                     }
@@ -564,6 +599,66 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
     return pairCount;
     #undef SEEN_SIZE
     #undef SEEN_MASK
+}
+
+//=====================================================================================================================
+// CCD swept tests — used when a body has CCDEnabled
+
+// Sweep sphere of radius r from p0 by displacement v against an AABB.
+// Returns true + outT in [0,1] (fraction of v at first contact) + outward face normal.
+static b8 sweptSphereVsBox(Vec3 p0, Vec3 v, f32 r,
+                            Vec3 bc, Vec3 bh,
+                            f32 *outT, Vec3 *outN)
+{
+    // Minkowski sum: expand box by sphere radius
+    Vec3 eh = { bh.x + r, bh.y + r, bh.z + r };
+    f32 tMin = 0.0f, tMax = 1.0f;
+    Vec3 n = {0, 1, 0};
+    f32 d, t1, t2, tmp, nAxis;
+
+#define CCDSL(POS,VEL,C,H,NX,NY,NZ)                                        \
+    d = (VEL);                                                               \
+    if (fabsf(d) < 1e-9f) {                                                  \
+        if ((POS) < (C)-(H) || (POS) > (C)+(H)) return false;               \
+    } else {                                                                 \
+        t1 = ((C)-(H)-(POS))/(d); t2 = ((C)+(H)-(POS))/(d);               \
+        nAxis = -1.0f;                                                       \
+        if (t1 > t2) { tmp=t1; t1=t2; t2=tmp; nAxis=1.0f; }               \
+        if (t1 > tMin) { tMin=t1; n=(Vec3){(NX)*nAxis,(NY)*nAxis,(NZ)*nAxis}; } \
+        if (t2 < tMax)   tMax=t2;                                           \
+        if (tMin > tMax) return false;                                      \
+    }
+
+    CCDSL(p0.x, v.x, bc.x, eh.x, 1,0,0)
+    CCDSL(p0.y, v.y, bc.y, eh.y, 0,1,0)
+    CCDSL(p0.z, v.z, bc.z, eh.z, 0,0,1)
+#undef CCDSL
+
+    if (tMin < 0.0f || tMin > 1.0f) return false;
+    *outT = tMin;
+    *outN = n;  // outward face normal of target box (points away from box toward incoming sphere)
+    return true;
+}
+
+// Sweep sphere of radius rA from p0 by displacement v against a stationary sphere of radius rB at center.
+static b8 sweptSphereVsSphere(Vec3 p0, Vec3 v, f32 rA,
+                               Vec3 center, f32 rB,
+                               f32 *outT, Vec3 *outN)
+{
+    f32 sumR = rA + rB;
+    Vec3 oc = v3Sub(p0, center);
+    f32 a = v3Dot(v, v);
+    if (a < 1e-12f) return false;
+    f32 b = 2.0f * v3Dot(oc, v);
+    f32 c = v3Dot(oc, oc) - sumR * sumR;
+    f32 disc = b*b - 4.0f*a*c;
+    if (disc < 0.0f) return false;
+    f32 t = (-b - sqrtf(disc)) / (2.0f * a);
+    if (t < 0.0f || t > 1.0f) return false;
+    *outT = t;
+    Vec3 hitPos = { p0.x + v.x*t, p0.y + v.y*t, p0.z + v.z*t };
+    *outN = v3Norm(v3Sub(hitPos, center));  // outward from target sphere toward incoming sphere
+    return true;
 }
 
 //=====================================================================================================================
@@ -820,7 +915,7 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
             }
 
             // ── 2. Broadphase — spatial hash ────────────────────────────────
-            buildBodyList(world);
+            buildBodyList(world, subDt);
             world->pairCount = broadphaseGetPairs(world->pairs, MAX_PHYS_PAIRS);
             if (world->physFrameCounter < 3)
             {
@@ -862,6 +957,70 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                 };
 
                 if (world->manifoldCount >= MAX_PHYS_MANIFOLDS) break;
+
+                // ── CCD path: swept sphere for fast-moving bodies ──────────
+                b8 ccdA = g_bpCCD[pair->bpIdxA];
+                b8 ccdB = g_bpCCD[pair->bpIdxB];
+                if (ccdA || ccdB)
+                {
+                    b8 ccdIsA = ccdA;
+                    u32 ccdBp = ccdIsA ? pair->bpIdxA : pair->bpIdxB;
+                    u32 tgtBp = ccdIsA ? pair->bpIdxB : pair->bpIdxA;
+                    PhysFieldBinding *bCCD = ccdIsA ? bA : bB;
+                    void **fCCD = ccdIsA ? fA : fB;
+                    u32 iCCD = ccdIsA ? iA : iB;
+
+                    Vec3 p0  = {g_bpPosX[ccdBp], g_bpPosY[ccdBp], g_bpPosZ[ccdBp]};
+                    Vec3 vel = {g_bpVelX[ccdBp], g_bpVelY[ccdBp], g_bpVelZ[ccdBp]};
+                    Vec3 sw  = {vel.x * subDt, vel.y * subDt, vel.z * subDt};
+                    f32  ccdR = effectiveRadius(fCCD, bCCD, iCCD);
+
+                    // Only sweep if the body is actually moving
+                    if (sw.x*sw.x + sw.y*sw.y + sw.z*sw.z > 1e-6f)
+                    {
+                        f32 t = 1.0f;
+                        Vec3 n = {0, 1, 0};
+                        b8 sweptHit = false;
+
+                        if (g_bpShape[tgtBp] == PSHAPE_BOX)
+                        {
+                            Vec3 bc = {g_bpPosX[tgtBp], g_bpPosY[tgtBp], g_bpPosZ[tgtBp]};
+                            Vec3 bh = {g_bpHalfX[tgtBp], g_bpHalfY[tgtBp], g_bpHalfZ[tgtBp]};
+                            sweptHit = sweptSphereVsBox(p0, sw, ccdR, bc, bh, &t, &n);
+                        }
+                        else
+                        {
+                            Vec3 tc = {g_bpPosX[tgtBp], g_bpPosY[tgtBp], g_bpPosZ[tgtBp]};
+                            f32  tr = g_bpShape[tgtBp] == PSHAPE_SPHERE ? g_bpRadius[tgtBp] : 0.5f;
+                            sweptHit = sweptSphereVsSphere(p0, sw, ccdR, tc, tr, &t, &n);
+                        }
+
+                        if (sweptHit)
+                        {
+                            Vec3 hitPos = {p0.x + sw.x*t, p0.y + sw.y*t, p0.z + sw.z*t};
+
+                            // Snap CCD body to contact point and zero its velocity
+                            if (bCCD->posX >= 0) ((f32 *)fCCD[bCCD->posX])[iCCD] = hitPos.x;
+                            if (bCCD->posY >= 0) ((f32 *)fCCD[bCCD->posY])[iCCD] = hitPos.y;
+                            if (bCCD->posZ >= 0) ((f32 *)fCCD[bCCD->posZ])[iCCD] = hitPos.z;
+                            if (bCCD->velX >= 0) ((f32 *)fCCD[bCCD->velX])[iCCD] = 0.0f;
+                            if (bCCD->velY >= 0) ((f32 *)fCCD[bCCD->velY])[iCCD] = 0.0f;
+                            if (bCCD->velZ >= 0) ((f32 *)fCCD[bCCD->velZ])[iCCD] = 0.0f;
+
+                            ContactManifold *m = &world->manifolds[world->manifoldCount++];
+                            m->bodyA = p; m->bodyB = p;
+                            m->pointCount = 1;
+                            // Normal from A toward B per engine convention;
+                            // n is outward from target (B side) so negate when CCD is A
+                            m->points[0].normal = ccdIsA ? (Vec3){-n.x,-n.y,-n.z} : n;
+                            m->points[0].depth  = 0.0f;
+                            m->points[0].point  = hitPos;
+                        }
+                        continue;
+                    }
+                }
+
+                // ── Static narrowphase ─────────────────────────────────────
                 ContactManifold *m = &world->manifolds[world->manifoldCount];
                 m->bodyA = p; m->bodyB = p;
 

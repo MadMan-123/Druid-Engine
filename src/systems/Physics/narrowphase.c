@@ -17,7 +17,9 @@ typedef struct
     i32 damping;
     i32 radius;
     i32 halfX, halfY, halfZ;
+    i32 offsetX, offsetY, offsetZ;
     i32 shape;
+    i32 ccdEnabled;
     i32 scaleField;
     u32 scaleFieldSize;
 } PhysFieldBinding;
