@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 
+#define DR_MP3_IMPLEMENTATION
+#include "../../include/dr_mp3.h"
+
 // OpenGL constants (from GL/gl.h)
 #define GL_REPEAT 0x2901
 #define GL_CLAMP_TO_EDGE 0x812F
@@ -189,12 +192,12 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
     // vert, frag, geom, glsl, comp
     u32 shaderExtCount = 5;
     u32 textureExtCount = 3;
-    u32 audioExtCount = 1;
+    u32 audioExtCount = 2;
 
     const c8 *fileExtentions[] = {"fbx",  "obj",  "blend", "vert",
                                     "frag", "geom", "glsl", "comp",
                                     "png",  "jpg",  "bmp",  // textures
-                                    "wav"};                  // audio
+                                    "wav",  "mp3"}; // audio
 
     if (!filename || filename[0] == '\0') filename = "../" RES_FOLDER;
 
@@ -430,7 +433,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                     }
                     else
                     {
-                        // audio (.wav)
+                        // audio (.wav / .mp3)
                         c8 clipName[MAX_NAME_SIZE];
                         snprintf(clipName, MAX_NAME_SIZE, "%s", fileName);
 
@@ -444,32 +447,59 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                             break;
                         }
 
-                        SDL_AudioSpec spec;
-                        u8 *wavBuf = NULL;
-                        u32 wavLen = 0;
-                        if (!SDL_LoadWAV(filePath, &spec, &wavBuf, &wavLen))
-                        {
-                            WARN("Failed to load WAV: %s — %s", filePath, SDL_GetError());
-                            break;
-                        }
-
                         AudioClip *clip = &manager->audioBuffer[manager->audioUsed];
                         snprintf(clip->name, sizeof(clip->name), "%s", clipName);
-                        clip->spec    = spec;
-                        clip->byteLen = wavLen;
-                        clip->pcm     = (u8 *)dalloc(wavLen, MEM_TAG_AUDIO);
-                        if (!clip->pcm)
+
+                        if (strcmp(ext, "mp3") == 0)
                         {
-                            WARN("Out of audio memory for %s", clipName);
-                            SDL_free(wavBuf);
-                            break;
+                            drmp3_config cfg;
+                            drmp3_uint64 frameCount = 0;
+                            float *decoded = drmp3_open_file_and_read_pcm_frames_f32(
+                                filePath, &cfg, &frameCount, NULL);
+                            if (!decoded)
+                            {
+                                WARN("Failed to decode MP3: %s", filePath);
+                                break;
+                            }
+                            u32 byteLen = (u32)(frameCount * cfg.channels * sizeof(float));
+                            clip->spec    = (SDL_AudioSpec){ SDL_AUDIO_F32, cfg.channels, cfg.sampleRate };
+                            clip->byteLen = byteLen;
+                            clip->pcm     = (u8 *)dalloc(byteLen, MEM_TAG_AUDIO);
+                            if (!clip->pcm)
+                            {
+                                WARN("Out of audio memory for %s", clipName);
+                                drmp3_free(decoded, NULL);
+                                break;
+                            }
+                            memcpy(clip->pcm, decoded, byteLen);
+                            drmp3_free(decoded, NULL);
                         }
-                        memcpy(clip->pcm, wavBuf, wavLen);
-                        SDL_free(wavBuf);
+                        else
+                        {
+                            SDL_AudioSpec spec;
+                            u8 *wavBuf = NULL;
+                            u32 wavLen = 0;
+                            if (!SDL_LoadWAV(filePath, &spec, &wavBuf, &wavLen))
+                            {
+                                WARN("Failed to load WAV: %s — %s", filePath, SDL_GetError());
+                                break;
+                            }
+                            clip->spec    = spec;
+                            clip->byteLen = wavLen;
+                            clip->pcm     = (u8 *)dalloc(wavLen, MEM_TAG_AUDIO);
+                            if (!clip->pcm)
+                            {
+                                WARN("Out of audio memory for %s", clipName);
+                                SDL_free(wavBuf);
+                                break;
+                            }
+                            memcpy(clip->pcm, wavBuf, wavLen);
+                            SDL_free(wavBuf);
+                        }
 
                         insertMap(&manager->audioIDs, clipName, &manager->audioUsed);
-                        if(DEBUG_RESOURCES)
-                            INFO("Loaded audio: %s (%u bytes)", clipName, wavLen);
+                        if (DEBUG_RESOURCES)
+                            INFO("Loaded audio: %s (%u bytes)", clipName, clip->byteLen);
                         manager->audioUsed++;
                         break;
                     }

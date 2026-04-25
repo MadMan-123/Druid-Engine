@@ -4404,9 +4404,10 @@ static void drawPrefabsWindow()
             }
             if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0.0f)
             {
-                // Scroll wheel to zoom: positive wheel = zoom out (increase distance)
-                s_previewZoom *= (1.0f + ImGui::GetIO().MouseWheel * 0.1f);
-                s_previewZoom = clamp(s_previewZoom, 0.1f, 10.0f);
+                f32 wheel = ImGui::GetIO().MouseWheel;
+                f32 stepMag = (s_previewZoom > 1.0f) ? 0.5f : (s_previewZoom > 0.01f) ? 0.05f : 0.001f;
+                s_previewZoom += wheel * -stepMag;
+                s_previewZoom = clamp(s_previewZoom, 0.001f, 10.0f);
             }
             ImGui::TextDisabled("Drag to orbit, Scroll to zoom");
         }
@@ -4502,6 +4503,11 @@ static void drawPrefabsWindow()
                         ImGui::PopID();
                     }
                     ImGui::EndCombo();
+                }
+                if (mid != (u32)-1 && mid < resources->modelUsed)
+                {
+                    f32 r = resources->modelBuffer[mid].boundingRadius;
+                    ImGui::TextDisabled("Bounding radius: %.4g  (scale 1 = %.4g world units)", r, r);
                 }
             }
             else if (modelF < 0)
@@ -5547,8 +5553,8 @@ static void drawInspectorWindow()
             }
         }
 
-        // ---- Header row: name | active | delete ----
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
+        // ---- Header row: name | active | goto | delete ----
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 140.0f);
         ImGui::InputText("##Name", &names[inspectorEntityID * MAX_NAME_SIZE], MAX_NAME_SIZE);
         ImGui::SameLine();
         if (isActive)
@@ -5559,6 +5565,20 @@ static void drawInspectorWindow()
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active");
             ImGui::SameLine();
         }
+        if (ImGui::Button("Goto"))
+        {
+            Vec3 entityPos = positions[inspectorEntityID];
+            Vec3 camPos    = { entityPos.x, entityPos.y + 2.0f, entityPos.z + 5.0f };
+            Vec3 dir       = v3Norm(v3Sub(entityPos, camPos));
+            yaw            = atan2f(dir.x, -dir.z);
+            currentPitch   = asinf(dir.y);
+            Vec4 yawQ      = quatFromAxisAngle(v3Up, yaw);
+            Vec4 pitchQ    = quatFromAxisAngle(v3Right, currentPitch);
+            sceneCam.pos         = camPos;
+            sceneCam.orientation = quatNormalize(quatMul(yawQ, pitchQ));
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Move camera to entity");
+        ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
         if (ImGui::Button("Delete"))
         {
@@ -6897,6 +6917,72 @@ static void drawResourceTab_Materials()
     ImGui::EndChild();
 }
 
+static void drawResourceTab_Audio()
+{
+    static c8 audioFilter[128] = "";
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Filter##audF", audioFilter, sizeof(audioFilter));
+    ImGui::SameLine();
+    ImGui::TextDisabled("%u / %u used", resources->audioUsed, resources->audioCount);
+    ImGui::Separator();
+
+    if (resources->audioUsed == 0)
+    {
+        ImGui::TextDisabled("No audio clips loaded.");
+        ImGui::TextDisabled("Drop .wav or .mp3 files into your project's audio/ folder.");
+        return;
+    }
+
+    ImGui::BeginChild("##audioList", ImVec2(0, 0), false);
+    for (u32 i = 0; i < resources->audioIDs.capacity; i++)
+    {
+        if (!resources->audioIDs.pairs[i].occupied) continue;
+        const c8 *name = (const c8 *)resources->audioIDs.pairs[i].key;
+        u32 idx        = *(u32 *)resources->audioIDs.pairs[i].value;
+        if (idx >= resources->audioUsed) continue;
+        if (audioFilter[0] != '\0' && !strstr(name, audioFilter)) continue;
+
+        AudioClip *clip = &resources->audioBuffer[idx];
+
+        ImGui::PushID((int)idx);
+        ImGui::AlignTextToFramePadding();
+
+        // Play button
+        if (audio && ImGui::SmallButton("Play"))
+            playSoundID(idx, 0.8f);
+        ImGui::SameLine();
+
+        // Name + info
+        f32 seconds = 0.0f;
+        if (clip->spec.freq > 0 && clip->spec.channels > 0)
+        {
+            u32 bytesPerSample = 0;
+            switch (clip->spec.format)
+            {
+                case SDL_AUDIO_U8:  case SDL_AUDIO_S8:  bytesPerSample = 1; break;
+                case SDL_AUDIO_S16: case SDL_AUDIO_S16BE: bytesPerSample = 2; break;
+                case SDL_AUDIO_S32: case SDL_AUDIO_F32: bytesPerSample = 4; break;
+                default: bytesPerSample = 2; break;
+            }
+            u32 bytesPerFrame = bytesPerSample * clip->spec.channels;
+            if (bytesPerFrame > 0)
+                seconds = (f32)clip->byteLen / (f32)(bytesPerFrame * clip->spec.freq);
+        }
+
+        c8 info[128];
+        snprintf(info, sizeof(info), "%s  [%uch  %uHz  %.1fs  %ukB]",
+                 name,
+                 clip->spec.channels,
+                 clip->spec.freq,
+                 seconds,
+                 clip->byteLen / 1024);
+        ImGui::TextUnformatted(info);
+
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+}
+
 static void drawResourceManagerWindow()
 {
     if (!showResourceManager) return;
@@ -6928,6 +7014,9 @@ static void drawResourceManagerWindow()
 
         if (ImGui::BeginTabItem("Materials", nullptr, setTabActive(3)))
         { drawResourceTab_Materials(); ImGui::EndTabItem(); }
+
+        if (ImGui::BeginTabItem("Audio", nullptr, setTabActive(4)))
+        { drawResourceTab_Audio(); ImGui::EndTabItem(); }
 
         ImGui::EndTabBar();
     }
@@ -7365,8 +7454,8 @@ static void drawCameraSettingsWindow()
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Text("Movement");
-    ImGui::SliderFloat("Move Speed", &camMoveSpeed, 1.0f, 10.0f, "%.2f");
-    ImGui::TextDisabled("(Scroll wheel to adjust)");
+    ImGui::SliderFloat("Move Speed", &camMoveSpeed, 1.0f, 25.0f, "%.2f");
+    ImGui::TextDisabled("(Scroll while right-click flying to adjust)");
 
     ImGui::Spacing();
     ImGui::TextDisabled("Current: FOV %.1f  Near %.4f  Far %.0f", g_editorFov, g_editorNear, g_editorFar);

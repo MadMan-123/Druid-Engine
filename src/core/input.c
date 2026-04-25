@@ -58,6 +58,11 @@ void initInput()
 	// SDL_Init already called by initDisplay  do not re-init here
 	state = SDL_GetKeyboardState(NULL);
 
+	// Pump events so SDL registers any already-connected controllers
+	// before we query them — without this, initial GAMEPAD_ADDED events
+	// may still be queued and SDL_GetGamepads returns an empty list.
+	SDL_PumpEvents();
+
 	int connectedCount = 0;
 	SDL_JoystickID *connected = SDL_GetGamepads(&connectedCount);
 	if (connected)

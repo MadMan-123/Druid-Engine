@@ -125,12 +125,12 @@ void moveViewPortCamera(f32 dt)
     moveCamera(dt);
     rotateCamera(dt);
     
-    // Handle camera move speed with scroll wheel
+    // Scroll wheel adjusts speed only while right-click-flying the camera
     ImGuiIO &io = ImGui::GetIO();
-    if (io.MouseWheel != 0.0f)
+    if (io.MouseWheel != 0.0f && isMouseDown(SDL_BUTTON_RIGHT))
     {
-        camMoveSpeed += io.MouseWheel * 0.1f;
-        camMoveSpeed = clamp(camMoveSpeed, 1.0f, 10.0f);
+        camMoveSpeed += io.MouseWheel * 0.5f;
+        camMoveSpeed = clamp(camMoveSpeed, 1.0f, 25.0f);
     }
 }
 void processInput(void *appData)

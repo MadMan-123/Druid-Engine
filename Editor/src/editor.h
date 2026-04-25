@@ -81,6 +81,9 @@ extern f32 *lightOuterCones;
 extern Mesh* cubeMesh;
 extern Material* materials;
 
+extern f32 yaw;
+extern f32 currentPitch;
+
 extern b8 canMoveViewPort;
 extern b8 g_runtimeFreeView;
 extern b8 manipulateTransform;
