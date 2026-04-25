@@ -99,7 +99,8 @@ static const c8 *s_physFieldNames[] = {
     "PhysicsBodyType",
     "Mass", "InvMass", "Restitution", "LinearDamping",
     "SphereRadius",
-    "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ"
+    "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ",
+    "ColliderOffsetX", "ColliderOffsetY", "ColliderOffsetZ"
 };
 static const c8 *s_physFieldTypes[] = {
     "f32", "f32", "f32",
@@ -107,9 +108,10 @@ static const c8 *s_physFieldTypes[] = {
     "u32",
     "f32", "f32", "f32", "f32",
     "f32",
+    "f32", "f32", "f32",
     "f32", "f32", "f32"
 };
-static const u32 s_physFieldTableCount = 15;
+static const u32 s_physFieldTableCount = 18;
 
 static c8 *readFileToString(const c8 *path)
 {
@@ -165,7 +167,8 @@ static b8 findExistingEnumName(const c8 *existingBlock, const c8 *displayName,
 //   Used to preserve user-defined enum names for existing fields.
 static c8 *buildGenBlock(const c8 *archetypeName, const c8 *upperName,
                           const FieldInfo *fields, const c8 **typeNames, u32 fieldCount,
-                          b8 isSingle, b8 isBuffered, u32 poolCapacity, b8 isPhysicsBody,
+                          b8 isSingle, b8 isBuffered, u32 poolCapacity,
+                          b8 isPhysicsBody, b8 isPersistent, b8 uniformScale,
                           const b8 *physFieldSkip, u32 physFieldCount,
                           const c8 *existingBlock)
 {
@@ -185,8 +188,10 @@ static c8 *buildGenBlock(const c8 *archetypeName, const c8 *upperName,
 
     u8 genFlags = 0;
     if (isSingle)      FLAG_SET(genFlags, ARCH_SINGLE);
-    if (isBuffered)    FLAG_SET(genFlags, ARCH_BUFFERED);
+    if (isPersistent)  FLAG_SET(genFlags, ARCH_PERSISTENT);
     if (isPhysicsBody) FLAG_SET(genFlags, ARCH_PHYSICS_BODY);
+    if (isBuffered)    FLAG_SET(genFlags, ARCH_BUFFERED);
+    if (uniformScale)  FLAG_SET(genFlags, ARCH_FILE_UNIFORM_SCALE);
     BA("// DRUID_FLAGS 0x%02X\n", genFlags);
     if (isBuffered)    BA("// isBuffered\n");
     if (isSingle)      BA("// isSingle\n");
@@ -201,22 +206,16 @@ static c8 *buildGenBlock(const c8 *archetypeName, const c8 *upperName,
     if (isBuffered)
     {
         entryIdx++;
-        c8 aliveEnum[256];
-        if (!findExistingEnumName(existingBlock, "Alive", aliveEnum, sizeof(aliveEnum)))
-            snprintf(aliveEnum, sizeof(aliveEnum), "%s_ALIVE", upperName);
-        BA("    FIELD(%s, \"Alive\", b8, COLD)%s\n", aliveEnum,
+        BA("    FIELD(%s_ALIVE, \"Alive\", b8, COLD)%s\n", upperName,
            (entryIdx < totalFields) ? " \\" : "");
     }
     for (u32 i = 0; i < fieldCount; i++)
     {
         entryIdx++;
+        c8 snake[256];
+        camelToUpperSnake(fields[i].name, snake, sizeof(snake));
         c8 enumName[256];
-        if (!findExistingEnumName(existingBlock, fields[i].name, enumName, sizeof(enumName)))
-        {
-            c8 snake[256];
-            camelToUpperSnake(fields[i].name, snake, sizeof(snake));
-            snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-        }
+        snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
         BA("    FIELD(%s, \"%s\", %s, %s)%s\n",
            enumName, fields[i].name, typeNames[i],
            (fields[i].temperature == FIELD_TEMP_HOT) ? "HOT" : "COLD",
@@ -226,13 +225,10 @@ static c8 *buildGenBlock(const c8 *archetypeName, const c8 *upperName,
     {
         if (!isPhysicsBody || physFieldSkip[i]) continue;
         entryIdx++;
+        c8 snake[256];
+        camelToUpperSnake(s_physFieldNames[i], snake, sizeof(snake));
         c8 enumName[256];
-        if (!findExistingEnumName(existingBlock, s_physFieldNames[i], enumName, sizeof(enumName)))
-        {
-            c8 snake[256];
-            camelToUpperSnake(s_physFieldNames[i], snake, sizeof(snake));
-            snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-        }
+        snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
         BA("    FIELD(%s, \"%s\", %s, HOT)%s\n",
            enumName, s_physFieldNames[i], s_physFieldTypes[i],
            (entryIdx < totalFields) ? " \\" : "");
@@ -254,6 +250,8 @@ b8 generateArchetypeFiles(const c8 *projectDir,
                            b8 isBuffered,
                            u32 poolCapacity,
                            b8 isPhysicsBody,
+                           b8 isPersistent,
+                           b8 uniformScale,
                            b8 useCpp)
 {
     if (!projectDir || !archetypeName || !fields || !typeNames || fieldCount == 0)
@@ -271,7 +269,7 @@ b8 generateArchetypeFiles(const c8 *projectDir,
         upperName[i] = (c8)toupper((unsigned char)archetypeName[i]);
     upperName[strlen(archetypeName)] = '\0';
 
-    b8  physFieldSkip[15] = {0};
+    b8  physFieldSkip[32] = {0};  // must be >= s_physFieldTableCount
     u32 physFieldCount    = 0;
     if (isPhysicsBody)
     {
@@ -308,7 +306,8 @@ b8 generateArchetypeFiles(const c8 *projectDir,
     }
 
     c8 *genBlock = buildGenBlock(archetypeName, upperName, fields, typeNames, fieldCount,
-                                  isSingle, isBuffered, poolCapacity, isPhysicsBody,
+                                  isSingle, isBuffered, poolCapacity,
+                                  isPhysicsBody, isPersistent, uniformScale,
                                   physFieldSkip, physFieldCount, existingBlock);
     if (!genBlock) { free(existingHeader); return false; }
 

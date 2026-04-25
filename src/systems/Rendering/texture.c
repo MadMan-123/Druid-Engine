@@ -1,6 +1,14 @@
 #include "../../../include/druid.h"
 #include "../../external/stb_image.h"
 
+// hash helpers defined in resourcemanager.c
+extern u32 djb2Hash(const void *str, u32 capacity);
+extern b8  equals(const void *a, const void *b);
+
+// Cache failed texture loads to avoid repeated error spam from materials
+static HashMap s_failedTextures = {0};
+static b8 s_failedTexturesInitialized = false;
+
 u32 initTexture(const c8* fileName)
 {
 	if (!fileName) 
@@ -9,15 +17,31 @@ u32 initTexture(const c8* fileName)
 		return 0;
 	}
 
+	// Initialize failed texture cache on first use
+	if (!s_failedTexturesInitialized)
+	{
+		createMap(&s_failedTextures, 256, sizeof(c8) * 512, sizeof(u8), djb2Hash, equals);
+		s_failedTexturesInitialized = true;
+	}
+
 	u32 textureHandler = 0;	
 	i32 width, height, numComponents;
 	u8 * imageData = stbi_load(fileName, &width, &height, &numComponents, 4); //load the image and store the data
 
 	if (imageData == NULL)
 	{
-
-		ERROR("STB ERROR %s", stbi_failure_reason());
-		ERROR("texture load failed %s", fileName);
+		// Check if we've already logged this failure
+		u8 alreadyFailed = 0;
+		if (!findInMap(&s_failedTextures, fileName, &alreadyFailed))
+		{
+			// First time seeing this failure — log it
+			WARN("STB ERROR %s", stbi_failure_reason());
+			WARN("texture load failed %s", fileName);
+			
+			// Mark as failed so we don't log it again
+			u8 marker = 1;
+			insertMap(&s_failedTextures, fileName, &marker);
+		}
 		return 0;
 	}
 	
@@ -100,7 +124,16 @@ u32 createCubeMapTexture(const c8** faces,u32 count)
 void freeTexture(u32 texture)
 {
 	//free the texture from memory
-	glDeleteTextures(1, &texture); 
+	glDeleteTextures(1, &texture);
+}
+
+void textureSystemReset(void)
+{
+    if (s_failedTexturesInitialized)
+    {
+        destroyMap(&s_failedTextures);
+        s_failedTexturesInitialized = false;
+    }
 }
 
 void bindTexture(u32 texture,u32 unit, GLenum type)

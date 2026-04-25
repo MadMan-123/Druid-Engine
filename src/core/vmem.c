@@ -76,6 +76,7 @@ static const MemArenaID tagToArena[MEM_TAG_MAX] = {
     MEM_ARENA_GENERAL,    // GAME
     MEM_ARENA_RENDERER,   // MODEL
     MEM_ARENA_RENDERER,   // GEOMETRY_BUFFER
+    MEM_ARENA_GENERAL,    // AUDIO
 };
 
 //=====================================================================================================================
@@ -353,7 +354,8 @@ static const c8 *tagNames[MEM_TAG_MAX] = {
     "EDITOR",
     "GAME",
     "MODEL",
-    "GEOMETRY_BUFFER"
+    "GEOMETRY_BUFFER",
+    "AUDIO"
 };
 
 static const c8 *arenaNames[MEM_ARENA_COUNT] = {

@@ -65,7 +65,7 @@ i32 compare_files_for_loading_priority(const void* a, const void* b) {
 
 ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
                                        u32 meshCount, u32 modelCount,
-                                       u32 shaderCount)
+                                       u32 shaderCount, u32 audioCount)
 {
     ResourceManager *manager =
         (ResourceManager *)dalloc(sizeof(ResourceManager), MEM_TAG_RENDERER);
@@ -82,12 +82,14 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     manager->modelCount = modelCount;
     manager->shaderCount = shaderCount;
     manager->textureCount = textureCount;
+    manager->audioCount = audioCount;
 
     manager->meshUsed = 0;
     manager->materialUsed = 0;
     manager->modelUsed = 0;
     manager->shaderUsed = 0;
     manager->textureUsed = 0;
+    manager->audioUsed = 0;
     manager->geoBuffer = NULL;  // created later in initSystems after GL context
 
     // allocate arrays
@@ -101,6 +103,7 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     manager->textureAlphaThresholds = (f32 *)dalloc(sizeof(f32) * textureCount, MEM_TAG_TEXTURE);
     manager->textureWrapModes = (u32 *)dalloc(sizeof(u32) * textureCount, MEM_TAG_TEXTURE);
     manager->textureFilterModes = (u32 *)dalloc(sizeof(u32) * textureCount, MEM_TAG_TEXTURE);
+    manager->audioBuffer = (AudioClip *)dalloc(sizeof(AudioClip) * audioCount, MEM_TAG_AUDIO);
 
     // null check
     assert(manager->materialBuffer != NULL && "material buffers not created");
@@ -112,8 +115,9 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     assert(manager->textureAlphaThresholds != NULL && "texture alpha thresholds not created");
     assert(manager->textureWrapModes != NULL && "texture wrap modes not created");
     assert(manager->textureFilterModes != NULL && "texture filter modes not created");
+    assert(manager->audioBuffer != NULL && "audio buffer not created");
 
-    //    DEBUG("mangeger pointers: %p, %p, %p, 
+    //    DEBUG("mangeger pointers: %p, %p, %p,
     //    %p",manager->materialBuffer,manager->meshBuffer);
 
     // create hashmaps
@@ -143,6 +147,11 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
     {
         FATAL("Model Hash map failed to create");
     }
+    if (!createMap(&manager->audioIDs, audioCount > 0 ? audioCount : 8,
+                   sizeof(c8) * MAX_NAME_SIZE, sizeof(u32), djb2Hash, equals))
+    {
+        FATAL("Audio Hash map failed to create");
+    }
 
     if(DEBUG_RESOURCES)
     DEBUG("Resource Manager created successfully\n");
@@ -153,6 +162,7 @@ ResourceManager *createResourceManager(u32 materialCount, u32 textureCount,
 void cleanUpResourceManager(ResourceManager *manager)
 {
     if (!manager) return;
+    textureSystemReset();
     if (manager->geoBuffer) geometryBufferDestroy(manager->geoBuffer);
     dfree(manager->materialBuffer, sizeof(Material) * manager->materialCount, MEM_TAG_MATERIAL);
     dfree(manager->meshBuffer, sizeof(Mesh) * manager->meshCount, MEM_TAG_MESH);
@@ -163,6 +173,13 @@ void cleanUpResourceManager(ResourceManager *manager)
     dfree(manager->textureAlphaThresholds, sizeof(f32) * manager->textureCount, MEM_TAG_TEXTURE);
     dfree(manager->textureWrapModes, sizeof(u32) * manager->textureCount, MEM_TAG_TEXTURE);
     dfree(manager->textureFilterModes, sizeof(u32) * manager->textureCount, MEM_TAG_TEXTURE);
+    // free decoded PCM for each audio clip
+    for (u32 i = 0; i < manager->audioUsed; i++)
+    {
+        if (manager->audioBuffer[i].pcm)
+            dfree(manager->audioBuffer[i].pcm, manager->audioBuffer[i].byteLen, MEM_TAG_AUDIO);
+    }
+    dfree(manager->audioBuffer, sizeof(AudioClip) * manager->audioCount, MEM_TAG_AUDIO);
     dfree(manager, sizeof(ResourceManager), MEM_TAG_RENDERER);
 }
 
@@ -172,10 +189,12 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
     // vert, frag, geom, glsl, comp
     u32 shaderExtCount = 5;
     u32 textureExtCount = 3;
+    u32 audioExtCount = 1;
 
     const c8 *fileExtentions[] = {"fbx",  "obj",  "blend", "vert",
                                     "frag", "geom", "glsl", "comp",
-                                    "png",  "jpg",  "bmp"}; // textures
+                                    "png",  "jpg",  "bmp",  // textures
+                                    "wav"};                  // audio
 
     if (!filename || filename[0] == '\0') filename = "../" RES_FOLDER;
 
@@ -283,7 +302,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                 continue;
             ext++;
 
-            for (u32 m = 0; m < modelExtCount + shaderExtCount + textureExtCount; m++)
+            for (u32 m = 0; m < modelExtCount + shaderExtCount + textureExtCount + audioExtCount; m++)
             {
                 if (strcmp(ext, fileExtentions[m]) == 0)
                 {
@@ -372,7 +391,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                         }
                         break; 
                     }
-                    else
+                    else if (m < modelExtCount + shaderExtCount + textureExtCount)
                     {
                         c8 texName[MAX_NAME_SIZE];
                         snprintf(texName, MAX_NAME_SIZE, "%s", fileName);
@@ -389,7 +408,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
 
                         u32 texture = initTexture(filePath);
                         if (texture == 0) {
-                            WARN("Failed to load texture: %s", filePath);
+                            // initTexture() already logged the warning on first failure
                             continue;
                         }
                         manager->textureHandles[manager->textureUsed] = texture;
@@ -397,7 +416,7 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                         insertMap(&manager->textureIDs, texName, &manager->textureUsed);
                         if(DEBUG_RESOURCES)
                             INFO("Loaded texture: %s", texName);
-                        
+
                         // Initialize default alpha threshold and GL settings
                         if (manager->textureAlphaThresholds)
                             manager->textureAlphaThresholds[manager->textureUsed] = 0.5f;
@@ -405,8 +424,53 @@ DAPI void readResources(ResourceManager *manager, const c8 *filename)
                             manager->textureWrapModes[manager->textureUsed] = GL_REPEAT;
                         if (manager->textureFilterModes)
                             manager->textureFilterModes[manager->textureUsed] = GL_LINEAR;
-                        
+
                         manager->textureUsed++;
+                        break;
+                    }
+                    else
+                    {
+                        // audio (.wav)
+                        c8 clipName[MAX_NAME_SIZE];
+                        snprintf(clipName, MAX_NAME_SIZE, "%s", fileName);
+
+                        u32 existingAudio = 0;
+                        if (findInMap(&manager->audioIDs, clipName, &existingAudio))
+                            break;
+
+                        if (manager->audioUsed >= manager->audioCount)
+                        {
+                            WARN("Audio buffer full, cannot load %s", clipName);
+                            break;
+                        }
+
+                        SDL_AudioSpec spec;
+                        u8 *wavBuf = NULL;
+                        u32 wavLen = 0;
+                        if (!SDL_LoadWAV(filePath, &spec, &wavBuf, &wavLen))
+                        {
+                            WARN("Failed to load WAV: %s — %s", filePath, SDL_GetError());
+                            break;
+                        }
+
+                        AudioClip *clip = &manager->audioBuffer[manager->audioUsed];
+                        snprintf(clip->name, sizeof(clip->name), "%s", clipName);
+                        clip->spec    = spec;
+                        clip->byteLen = wavLen;
+                        clip->pcm     = (u8 *)dalloc(wavLen, MEM_TAG_AUDIO);
+                        if (!clip->pcm)
+                        {
+                            WARN("Out of audio memory for %s", clipName);
+                            SDL_free(wavBuf);
+                            break;
+                        }
+                        memcpy(clip->pcm, wavBuf, wavLen);
+                        SDL_free(wavBuf);
+
+                        insertMap(&manager->audioIDs, clipName, &manager->audioUsed);
+                        if(DEBUG_RESOURCES)
+                            INFO("Loaded audio: %s (%u bytes)", clipName, wavLen);
+                        manager->audioUsed++;
                         break;
                     }
                 }
@@ -502,6 +566,20 @@ u32 resGetShaderByName(const c8 *name)
     return resGetShader(idx);
 }
 
+i32 resFindAudio(const c8 *name)
+{
+    if (!resources || !name) return -1;
+    u32 idx = 0;
+    if (!findInMap(&resources->audioIDs, name, &idx)) return -1;
+    return (i32)idx;
+}
+
+AudioClip *resGetAudio(u32 index)
+{
+    if (!resources || index >= resources->audioUsed) return NULL;
+    return &resources->audioBuffer[index];
+}
+
 //=====================================================================================================================
 // Texture metadata persistence (alpha cutoff settings)
 //=====================================================================================================================
@@ -562,9 +640,6 @@ DAPI void saveTextureMetadata(const c8 *filePath)
         f32 threshold = resources->textureAlphaThresholds ? resources->textureAlphaThresholds[i] : 0.5f;
         u32 wrapMode = resources->textureWrapModes ? resources->textureWrapModes[i] : GL_REPEAT;
         u32 filterMode = resources->textureFilterModes ? resources->textureFilterModes[i] : GL_LINEAR;
-        
-        if (i < 3) // Log first 3 textures to avoid spam
-            DEBUG("Saving texture %u: name='%s' flags=%u threshold=%.2f wrap=%u filter=%u", i, texName, flags, threshold, wrapMode, filterMode);
         
         size_t written = 0;
         written += fwrite(&flags, sizeof(u8), 1, f);

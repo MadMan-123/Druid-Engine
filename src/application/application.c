@@ -38,20 +38,14 @@ Application* createApplication(const c8* title, FncPtr init, FncPtrFloat update,
 
 void destroyApplication(Application* app)
 {
-    INFO("destroyApplication called - saving texture metadata before cleanup");
-    
-    // Save texture metadata BEFORE app destroy (resources still valid)
     const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
     c8 texMetaPath[256];
     snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
-    INFO("destroyApplication: saving to '%s' (resPath=%s)", texMetaPath, resPath);
     saveTextureMetadata(texMetaPath);
-    INFO("destroyApplication: texture metadata saved, calling app->destroy()");
-    
+
     app->destroy();
+    audioShutdown();
     onDestroy(display);
-    SDL_Quit();
-    
     shutdownLogging();
     cleanUpResourceManager(resources);
     memorySystemShutdown();
@@ -71,6 +65,7 @@ void run(Application* app)
 #define MESH_COUNT     8192
 #define MODEL_COUNT    2048
 #define SHADER_COUNT   128
+#define AUDIO_COUNT    256
 
 void initSystems(const Application* app)
 {
@@ -84,7 +79,7 @@ void initSystems(const Application* app)
 
 	initLogging();
 	resources = createResourceManager(
-		MATERIAL_COUNT, TEXTURE_COUNT, MESH_COUNT, MODEL_COUNT, SHADER_COUNT);
+		MATERIAL_COUNT, TEXTURE_COUNT, MESH_COUNT, MODEL_COUNT, SHADER_COUNT, AUDIO_COUNT);
 	assert(resources != NULL && "Resource Manager not created correctly");
 
 	profileCalibrate();
@@ -102,6 +97,8 @@ void initSystems(const Application* app)
 	c8 texMetaPath[256];
 	snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
 	loadTextureMetadata(texMetaPath);
+
+	audioInit();
 
 	app->init();
 
@@ -126,6 +123,7 @@ void startApplication(Application* app)
 
 		{ PROFILE_SCOPE("Input");  inputUpdate(app); }
 		{ PROFILE_SCOPE("Update"); app->update(dt);  }
+		{ PROFILE_SCOPE("Audio");  audioPump();       }
 		{ PROFILE_SCOPE("Render"); applicationRenderStep(app, dt); }
 
 		profileEndFrame();

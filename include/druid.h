@@ -483,6 +483,7 @@ extern "C"
         MEM_TAG_GAME,
         MEM_TAG_MODEL,
         MEM_TAG_GEOMETRY_BUFFER,
+        MEM_TAG_AUDIO,
         MEM_TAG_MAX
     } MemTag;
 
@@ -934,6 +935,8 @@ extern "C"
                                     b8 isBuffered,
                                     u32 poolCapacity,
                                     b8 isPhysicsBody,
+                                    b8 isPersistent,
+                                    b8 uniformScale,
                                     b8 useCpp);
 
     // compile all archetype system DLLs in the project
@@ -1556,6 +1559,8 @@ extern "C"
     DAPI u32 initTexture(const c8 *fileName);
     // free texture from memory
     DAPI void freeTexture(u32 texture);
+    // reset internal texture caches (call before memorySystemShutdown)
+    DAPI void textureSystemReset(void);
 
     DAPI u32 createCubeMapTexture(const c8 **faces, u32 count);
     // Terrain stuff
@@ -1809,6 +1814,15 @@ extern "C"
     DAPI void draw(Model *model, u32 shader, b8 shouldUpdateMaterials);
 
 
+    // audio clip — decoded PCM owned by the resource manager
+    typedef struct
+    {
+        c8            name[256];
+        u8           *pcm;
+        u32           byteLen;
+        SDL_AudioSpec spec;
+    } AudioClip;
+
     // resource manager
     typedef struct
     {
@@ -1821,6 +1835,7 @@ extern "C"
         f32 *textureAlphaThresholds;  // per-texture alpha cutoff threshold (0-1)
         u32 *textureWrapModes;  // GL wrap mode: GL_REPEAT, GL_CLAMP_TO_EDGE, GL_MIRRORED_REPEAT
         u32 *textureFilterModes;  // GL filter mode: GL_LINEAR, GL_NEAREST
+        AudioClip *audioBuffer;
 
         // Global geometry pool — owned by the resource manager
         GeometryBuffer *geoBuffer;
@@ -1829,6 +1844,7 @@ extern "C"
         HashMap mesheIDs;
         HashMap modelIDs;
         HashMap materialIDs;
+        HashMap audioIDs;
         // TODO: create seperate meta data struct
         //  meta data
         u32 materialCount;
@@ -1836,20 +1852,22 @@ extern "C"
         u32 modelCount;
         u32 textureCount;
         u32 shaderCount;
+        u32 audioCount;
 
         u32 materialUsed;
         u32 meshUsed;
         u32 modelUsed;
         u32 textureUsed;
         u32 shaderUsed;
+        u32 audioUsed;
     } ResourceManager;
 
     DAPI extern ResourceManager *resources;
 
     DAPI ResourceManager *createResourceManager(u32 materialCount,
                                                 u32 textureCount, u32 meshCount,
-                                                u32 modelCount,
-                                                u32 shaderCount);
+                                                u32 modelCount, u32 shaderCount,
+                                                u32 audioCount);
     void cleanUpResourceManager(ResourceManager *manager);
     DAPI void readResources(ResourceManager *manager, const c8 *filename);
     // After readResources(), overlay any saved .drmt presets on top of the
@@ -1885,6 +1903,53 @@ extern "C"
                                   const c8 *filename);
     DAPI void resRegisterPrimitive(ResourceManager *manager,
                                    const c8 *name, Mesh *mesh);
+
+    // audio lookup helpers
+    DAPI i32       resFindAudio(const c8 *name);
+    DAPI AudioClip *resGetAudio(u32 index);
+
+    //=====================================================================================================================
+    // Audio system
+    //=====================================================================================================================
+
+#define AUDIO_MAX_VOICES 32
+
+    typedef struct
+    {
+        SDL_AudioStream *stream;
+        b8               active;
+    } AudioVoice;
+
+    typedef struct
+    {
+        SDL_AudioDeviceID device;
+        SDL_AudioStream  *musicStream;
+        AudioVoice        voices[AUDIO_MAX_VOICES];
+        b8                musicLoop;
+        u32               musicClipIdx;  // index into resources->audioBuffer, U32_MAX = none
+        u32               musicCursor;   // byte offset into pcm for looping
+        f32               masterVol;
+        f32               sfxVol;
+        f32               musicVol;
+    } AudioSystem;
+
+    DAPI extern AudioSystem *audio;
+
+    DAPI b8   audioInit(void);
+    DAPI void audioShutdown(void);
+    DAPI void audioPump(void);          // call once per frame to refill music, reap finished voices
+
+    DAPI i32  playSound(const c8 *name, f32 volume);
+    DAPI i32  playSoundID(u32 audioIdx, f32 volume);
+    DAPI void stopSound(i32 voice);
+
+    DAPI void playMusic(const c8 *name, b8 loop);
+    DAPI void stopMusic(void);
+    DAPI void pauseMusic(b8 paused);
+
+    DAPI void setMasterVolume(f32 v);
+    DAPI void setSfxVolume(f32 v);
+    DAPI void setMusicVolume(f32 v);
 
     // keys
     // keyboard keys enum

@@ -75,7 +75,10 @@
     FIELD(SE_LIGHT_DIR_Y,   "lightDirY",         f32,  COLD)                        \
     FIELD(SE_LIGHT_DIR_Z,   "lightDirZ",         f32,  COLD)                        \
     FIELD(SE_LIGHT_IN_CONE, "lightInnerCone",    f32,  COLD)                        \
-    FIELD(SE_LIGHT_OUT_CONE,"lightOuterCone",    f32,  COLD)
+    FIELD(SE_LIGHT_OUT_CONE,"lightOuterCone",    f32,  COLD)                        \
+    FIELD(SE_COLLIDER_OFF_X,"ColliderOffsetX",   f32,  COLD)                        \
+    FIELD(SE_COLLIDER_OFF_Y,"ColliderOffsetY",   f32,  COLD)                        \
+    FIELD(SE_COLLIDER_OFF_Z,"ColliderOffsetZ",   f32,  COLD)
 
 // Enum for field indices
 enum { SCENEENTITY_FIELDS(_ARCH_ENUM_ENTRY) SceneEntity_FIELD_COUNT };
@@ -331,10 +334,18 @@ static u32             g_ecsSystemCount = 0;
 // Each registered archetype gets its own Archetype instance populated only
 // with the scene entities assigned to it. This way each ECS system operates
 // on its own field layout and entity set.
+// Maximum number of fields per archetype tracked by the editor's scanner and
+// prefab UI. All per-field arrays (g_scannedFields, g_scannedFieldNames,
+// g_ecsFieldMap, hcIsHot) must use this — a size mismatch corrupts adjacent
+// archetype memory at runtime.
+#define PREFAB_UI_MAX_FIELDS 64
+#define PREFAB_UI_FIELD_DATA 256  // bytes per field
+#define EDITOR_FIELD_NAME_MAX 128 // length of in-editor cached field names
+
 static Archetype g_ecsArchetypes[MAX_ARCHETYPE_SYSTEMS] = {0};
 static u32      *g_ecsSceneMap[MAX_ARCHETYPE_SYSTEMS]    = {0}; // per-sys idx → scene entity id
 static u32       g_ecsArchEntityCount[MAX_ARCHETYPE_SYSTEMS] = {0};
-static i32       g_ecsFieldMap[MAX_ARCHETYPE_SYSTEMS][64];     // [sys][field] → scene field idx (-1 = no match)
+static i32       g_ecsFieldMap[MAX_ARCHETYPE_SYSTEMS][PREFAB_UI_MAX_FIELDS]; // [sys][field] → scene field idx (-1 = no match)
 static i32       g_ecsUniformScaleIdx[MAX_ARCHETYPE_SYSTEMS];            // system field idx for f32 Scale (-1 = none)
 static b8        g_archPhysRegistered[MAX_ARCHETYPE_SYSTEMS] = {0};      // cached physics registration state
 
@@ -344,8 +355,8 @@ static ColliderFieldCache g_colliderCache[MAX_ARCHETYPE_SYSTEMS] = {0};
 
 // Scanned field storage — populated by scanProjectArchetypes so the registry
 // has valid layout.fields pointers even before the DLL is loaded.
-static FieldInfo g_scannedFields[MAX_ARCHETYPE_SYSTEMS][64];
-static c8        g_scannedFieldNames[MAX_ARCHETYPE_SYSTEMS][32][128];
+static FieldInfo g_scannedFields[MAX_ARCHETYPE_SYSTEMS][PREFAB_UI_MAX_FIELDS];
+static c8        g_scannedFieldNames[MAX_ARCHETYPE_SYSTEMS][PREFAB_UI_MAX_FIELDS][EDITOR_FIELD_NAME_MAX];
 
 // Physics archetype for scene entities that aren't part of any ECS archetype
 // but still need collision (e.g. static floor, walls).  Built at play-start
@@ -369,6 +380,9 @@ static FieldInfo g_scenePhysFields[] = {
     { "ColliderHalfX",   sizeof(f32), FIELD_TEMP_COLD },
     { "ColliderHalfY",   sizeof(f32), FIELD_TEMP_COLD },
     { "ColliderHalfZ",   sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderOffsetX", sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderOffsetY", sizeof(f32), FIELD_TEMP_COLD },
+    { "ColliderOffsetZ", sizeof(f32), FIELD_TEMP_COLD },
     { "ColliderShape",   sizeof(u32), FIELD_TEMP_COLD },
     { "Scale",           sizeof(Vec3), FIELD_TEMP_COLD },
 };
@@ -627,9 +641,6 @@ static void renderModelPreview(u32 modelIdx)
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
 }
 
-#define PREFAB_UI_MAX_FIELDS 64
-#define PREFAB_UI_FIELD_DATA 256  // bytes per field
-
 // Render a prefab model preview with orbit camera into g_modelPreviewGBuffer/OutputFBO.
 // modelIdx: index in resources->modelBuffer  (u32)-1 to just clear
 // scale: applied to model matrix
@@ -741,19 +752,27 @@ static void renderPrefabPreview(u32 modelIdx, Vec3 scale, f32 yaw, f32 pitch, f3
         Mat4 gProj     = mat4Perspective(radians(45.0f), 1.0f, dist * 0.01f, dist * 20.0f);
         Mat4 viewProj  = mat4Mul(gProj, gView);
 
-        // Model always at origin in preview; find field indices for sizes
+        // Model always at origin in preview; find field indices for sizes and offset
         i32 radiusF = -1, halfXF = -1, halfYF = -1, halfZF = -1;
+        i32 offXF = -1, offYF = -1, offZF = -1;
         for (u32 f = 0; f < layout->count; f++)
         {
             const c8 *n = layout->fields[f].name;
             if (!n) continue;
-            if      (strcmp(n, "SphereRadius")   == 0) radiusF = (i32)f;
-            else if (strcmp(n, "ColliderHalfX")  == 0) halfXF  = (i32)f;
-            else if (strcmp(n, "ColliderHalfY")  == 0) halfYF  = (i32)f;
-            else if (strcmp(n, "ColliderHalfZ")  == 0) halfZF  = (i32)f;
+            if      (strcmp(n, "SphereRadius")    == 0) radiusF = (i32)f;
+            else if (strcmp(n, "ColliderHalfX")   == 0) halfXF  = (i32)f;
+            else if (strcmp(n, "ColliderHalfY")   == 0) halfYF  = (i32)f;
+            else if (strcmp(n, "ColliderHalfZ")   == 0) halfZF  = (i32)f;
+            else if (strcmp(n, "ColliderOffsetX") == 0) offXF   = (i32)f;
+            else if (strcmp(n, "ColliderOffsetY") == 0) offYF   = (i32)f;
+            else if (strcmp(n, "ColliderOffsetZ") == 0) offZF   = (i32)f;
         }
 
-        Vec3 origin = {0.0f, 0.0f, 0.0f};
+        Vec3 origin = {
+            (offXF >= 0) ? *(f32*)fields[offXF] : 0.0f,
+            (offYF >= 0) ? *(f32*)fields[offYF] : 0.0f,
+            (offZF >= 0) ? *(f32*)fields[offZF] : 0.0f,
+        };
         glDisable(GL_DEPTH_TEST);  // output FBO has no depth attachment
         gizmoBeginFrame();
         if (colliderShape == 1) // Sphere
@@ -1172,7 +1191,7 @@ static void populateEcsArchetypes()
         // Special case: f32 Scale <-> Vec3 scale (uniform scale).
         g_ecsUniformScaleIdx[a] = -1;
         u32 mappedCount = 0;
-        for (u32 f = 0; f < dllLayout->count && f < 64; f++)
+        for (u32 f = 0; f < dllLayout->count && f < PREFAB_UI_MAX_FIELDS; f++)
         {
             g_ecsFieldMap[a][f] = -1;
             for (u32 sf = 0; sf < sceneArchetype.layout->count; sf++)
@@ -1227,7 +1246,7 @@ static void populateEcsArchetypes()
             if (ecsSlotIDs) ecsSlotIDs[id] = idx;
 
             // Copy matching fields from scene → per-system
-            for (u32 f = 0; f < dllLayout->count && f < 64; f++)
+            for (u32 f = 0; f < dllLayout->count && f < PREFAB_UI_MAX_FIELDS; f++)
             {
                 i32 sf = g_ecsFieldMap[a][f];
                 if (sf < 0) continue;
@@ -1393,8 +1412,11 @@ static void setupScenePhysicsArchetype()
     f32  *spHX     = (f32  *)pf[15];
     f32  *spHY     = (f32  *)pf[16];
     f32  *spHZ     = (f32  *)pf[17];
-    u32  *spShape  = (u32  *)pf[18];
-    Vec3 *spScale  = (Vec3 *)pf[19];
+    f32  *spOffX   = (f32  *)pf[18];
+    f32  *spOffY   = (f32  *)pf[19];
+    f32  *spOffZ   = (f32  *)pf[20];
+    u32  *spShape  = (u32  *)pf[21];
+    Vec3 *spScale  = (Vec3 *)pf[22];
 
     u32 idx = 0;
     for (u32 i = 0; i < total; i++)
@@ -1432,6 +1454,10 @@ static void setupScenePhysicsArchetype()
         spDamp[idx]  = 0.01f;
         spRad[idx]   = sphereRadii[i];
         spScale[idx] = scales[i];
+
+        spOffX[idx]  = colliderOffsetXs ? colliderOffsetXs[i] : 0.0f;
+        spOffY[idx]  = colliderOffsetYs ? colliderOffsetYs[i] : 0.0f;
+        spOffZ[idx]  = colliderOffsetZs ? colliderOffsetZs[i] : 0.0f;
 
         // Infer box collider from half-extents or scale if colliderShape not set
         u32 shape = colliderShapes[i];
@@ -1500,7 +1526,7 @@ static void syncEcsToScene()
         for (u32 idx = 0; idx < g_ecsArchEntityCount[a]; idx++)
         {
             u32 sceneID = g_ecsSceneMap[a][idx];
-            for (u32 f = 0; f < sysLayout->count && f < 64; f++)
+            for (u32 f = 0; f < sysLayout->count && f < PREFAB_UI_MAX_FIELDS; f++)
             {
                 i32 sf = g_ecsFieldMap[a][f];
                 if (sf < 0) continue;
@@ -2024,6 +2050,13 @@ static void renderGameScene()
             if (!isActive[id] || colliderShapes[id] == 0) continue;
 
             Vec3 pos = positions[id];
+            if (colliderOffsetXs || colliderOffsetYs || colliderOffsetZs)
+            {
+                Vec3 off = { colliderOffsetXs ? colliderOffsetXs[id] : 0.0f,
+                             colliderOffsetYs ? colliderOffsetYs[id] : 0.0f,
+                             colliderOffsetZs ? colliderOffsetZs[id] : 0.0f };
+                pos = v3Add(pos, off);
+            }
             GizmoColor col = (manipulateTransform && id == (u32)inspectorEntityID)
                              ? makeGizmoColor(1.0f, 1.0f, 0.0f, 1.0f)
                              : makeGizmoColor(0.0f, 1.0f, 0.0f, 1.0f);
@@ -2594,7 +2627,7 @@ void scanProjectArchetypes(const c8 *projectDir)
                 scan = strchr(scan, '{');
                 if (scan) scan++; // skip the opening {
 
-                while (scan && fieldCount < 32)
+                while (scan && fieldCount < PREFAB_UI_MAX_FIELDS)
                 {
                     // find next field entry — accept both { "name" and {"name"
                     const c8 *e1 = strstr(scan, "{ \"");
@@ -2682,7 +2715,7 @@ void scanProjectArchetypes(const c8 *projectDir)
                     if (hScan)
                     {
                         // Walk through FIELD( entries until end of macro (no trailing backslash)
-                        while (hScan && fieldCount < 32)
+                        while (hScan && fieldCount < PREFAB_UI_MAX_FIELDS)
                         {
                             const c8 *fe = strstr(hScan, "FIELD(");
                             if (!fe) break;
@@ -2845,7 +2878,7 @@ void scanProjectArchetypes(const c8 *projectDir)
 
             for (u32 f = 0; f < soCount; f++)
             {
-                strncpy(g_scannedFieldNames[idx][f], soFieldNames[f], 127);
+                strncpy(g_scannedFieldNames[idx][f], soFieldNames[f], EDITOR_FIELD_NAME_MAX - 1);
                 g_scannedFields[idx][f].name = g_scannedFieldNames[idx][f];
                 g_scannedFields[idx][f].size = soFieldSizes[f];
                 g_scannedFields[idx][f].temperature = (f < 5) ? FIELD_TEMP_HOT : FIELD_TEMP_COLD;
@@ -3030,7 +3063,126 @@ static void drawArchetypesWindow()
             allTypes[tfCount + i]       = typeNames[fieldTypeIndex[i]];
         }
 
-        if (generateArchetypeFiles(hubProjectDir, archName, allFields, allTypes, totalFields, archIsSingle, archIsBuffered, (u32)archBufferSize, archIsPhysicsBody, archUseCpp))
+        // Ensure header has a DRUID_GEN sentinel with complete block so the generator can update it.
+        {
+            c8 hPath[MAX_PATH_LENGTH];
+            snprintf(hPath, sizeof(hPath), "%s/src/%s.h", hubProjectDir, archName);
+            FILE *hf = fopen(hPath, "r");
+            if (hf)
+            {
+                fseek(hf, 0, SEEK_END);
+                long hsz = ftell(hf);
+                fseek(hf, 0, SEEK_SET);
+                if (hsz > 0 && hsz <= 65536)
+                {
+                    c8 *hbuf = (c8 *)malloc((u32)hsz + 1);
+                    if (hbuf)
+                    {
+                        fread(hbuf, 1, (u32)hsz, hf);
+                        hbuf[hsz] = '\0';
+                        c8 beginTag[256];
+                        snprintf(beginTag, sizeof(beginTag), "// <DRUID_GEN_BEGIN %s>", archName);
+                        if (!strstr(hbuf, beginTag))
+                        {
+                            fclose(hf);
+                            hf = fopen(hPath, "a");
+                            if (hf)
+                            {
+                                c8 upperName[256];
+                                for (u32 i = 0; archName[i] != '\0' && i + 1 < sizeof(upperName); i++)
+                                    upperName[i] = (c8)toupper((unsigned char)archName[i]);
+                                upperName[strlen(archName)] = '\0';
+
+                                u8 genFlags = 0;
+                                if (archIsSingle) FLAG_SET(genFlags, ARCH_SINGLE);
+                                if (archIsBuffered) FLAG_SET(genFlags, ARCH_BUFFERED);
+                                if (archIsPhysicsBody) FLAG_SET(genFlags, ARCH_PHYSICS_BODY);
+
+                                fprintf(hf, "\n// <DRUID_GEN_BEGIN %s>\n", archName);
+                                fprintf(hf, "// DRUID_FLAGS 0x%02X\n", (unsigned int)genFlags);
+                                if (archIsBuffered) fprintf(hf, "// isBuffered\n");
+                                if (archIsSingle) fprintf(hf, "// isSingle\n");
+                                if (archIsPhysicsBody) fprintf(hf, "// isPhysicsBody\n");
+                                if (archIsBuffered && archBufferSize > 0) fprintf(hf, "#define POOL_CAPACITY %u\n", (u32)archBufferSize);
+                                fprintf(hf, "\n#define %s_FIELDS(FIELD) \\\n", upperName);
+                                
+                                // Add Alive field if buffered, then user fields, then physics fields
+                                if (archIsBuffered)
+                                    fprintf(hf, "    FIELD(%s_ALIVE, \"Alive\", b8, COLD) \\\n", upperName);
+                                
+                                // User fields (from the designer)
+                                for (u32 i = 0; i < fieldCount; i++)
+                                {
+                                    c8 snake[256], enumName[256];
+                                    const c8 *fname = fieldNames[i];
+                                    u32 si = 0;
+                                    for (u32 j = 0; fname[j] != '\0' && si + 1 < sizeof(snake); j++)
+                                    {
+                                        if (j > 0 && (unsigned char)fname[j] >= 'A' && (unsigned char)fname[j] <= 'Z')
+                                            snake[si++] = '_';
+                                        snake[si++] = (c8)toupper((unsigned char)fname[j]);
+                                    }
+                                    snake[si] = '\0';
+                                    snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
+                                    b8 isLast = (i == fieldCount - 1) && !archIsPhysicsBody;
+                                    fprintf(hf, "    FIELD(%s, \"%s\", %s, %s)%s\n",
+                                        enumName, fieldNames[i], typeNames[fieldTypeIndex[i]],
+                                        (typeSizes[fieldTypeIndex[i]] == sizeof(f32) || typeSizes[fieldTypeIndex[i]] == sizeof(Vec3) || typeSizes[fieldTypeIndex[i]] == sizeof(Vec4)) ? "HOT" : "COLD",
+                                        isLast ? "" : " \\");
+                                }
+
+                                // Physics fields (if physics body)
+                                if (archIsPhysicsBody)
+                                {
+                                    static const c8 *physNames[] = {
+                                        "LinearVelocityX", "LinearVelocityY", "LinearVelocityZ",
+                                        "ForceX", "ForceY", "ForceZ", "PhysicsBodyType",
+                                        "Mass", "InvMass", "Restitution", "LinearDamping",
+                                        "SphereRadius",
+                                        "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ",
+                                        "ColliderOffsetX", "ColliderOffsetY", "ColliderOffsetZ"
+                                    };
+                                    u32 physCount = sizeof(physNames) / sizeof(physNames[0]);
+                                    for (u32 p = 0; p < physCount; p++)
+                                    {
+                                        c8 snake[256], enumName[256];
+                                        const c8 *pname = physNames[p];
+                                        u32 si = 0;
+                                        for (u32 j = 0; pname[j] != '\0' && si + 1 < sizeof(snake); j++)
+                                        {
+                                            if (j > 0 && (unsigned char)pname[j] >= 'A' && (unsigned char)pname[j] <= 'Z')
+                                                snake[si++] = '_';
+                                            snake[si++] = (c8)toupper((unsigned char)pname[j]);
+                                        }
+                                        snake[si] = '\0';
+                                        snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
+                                        b8 isLast = (p == physCount - 1);
+                                        fprintf(hf, "    FIELD(%s, \"%s\", f32, HOT)%s\n",
+                                            enumName, physNames[p], isLast ? "" : " \\");
+                                    }
+                                }
+
+                                fprintf(hf, "\nDECLARE_ARCHETYPE(%s, %s_FIELDS)\n", archName, upperName);
+                                fprintf(hf, "// <DRUID_GEN_END %s>\n", archName);
+                                fclose(hf);
+                            }
+                        }
+                        else
+                            fclose(hf);
+                        free(hbuf);
+                    }
+                    else
+                        fclose(hf);
+                }
+                else
+                    fclose(hf);
+            }
+            else
+            {
+                // Header doesn't exist; generator will create it.
+            }
+        }
+        if (generateArchetypeFiles(hubProjectDir, archName, allFields, allTypes, totalFields, archIsSingle, archIsBuffered, (u32)archBufferSize, archIsPhysicsBody, archIsPersistent, archUniformScale, archUseCpp))
         {
             snprintf(resultMsg, sizeof(resultMsg), "Generated %s archetype files.", archName);
 
@@ -3056,14 +3208,58 @@ static void drawArchetypesWindow()
                 entry->poolCapacity  = (u32)archBufferSize;
                 entry->layout.name  = entry->name;
                 entry->layout.count = totalFields;
-                // Copy scanned fields for the registry
-                for (u32 i = 0; i < totalFields && i < 32; i++)
+                // Copy user/prototype fields into the registry slot
+                u32 nextIdx = 0;
+                for (u32 i = 0; i < totalFields && i < PREFAB_UI_MAX_FIELDS; i++)
                 {
-                    strncpy(g_scannedFieldNames[regIdx][i], allFields[i].name, 127);
+                    strncpy(g_scannedFieldNames[regIdx][i], allFields[i].name, EDITOR_FIELD_NAME_MAX - 1);
                     g_scannedFields[regIdx][i].name = g_scannedFieldNames[regIdx][i];
                     g_scannedFields[regIdx][i].size = allFields[i].size;
+                    nextIdx++;
                 }
+
+                // If this archetype is a physics body, append the default physics fields
+                // (only those not already present) so the editor shows them immediately
+                // after generation. Match the order used by the generator.
+                if (archIsPhysicsBody && nextIdx < PREFAB_UI_MAX_FIELDS)
+                {
+                    static const c8 *physNames[] = {
+                        "LinearVelocityX", "LinearVelocityY", "LinearVelocityZ",
+                        "ForceX", "ForceY", "ForceZ",
+                        "PhysicsBodyType",
+                        "Mass", "InvMass", "Restitution", "LinearDamping",
+                        "SphereRadius",
+                        "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ",
+                        "ColliderOffsetX", "ColliderOffsetY", "ColliderOffsetZ"
+                    };
+                    static const u32 physSizes[] = {
+                        sizeof(f32), sizeof(f32), sizeof(f32),
+                        sizeof(f32), sizeof(f32), sizeof(f32),
+                        sizeof(u32),
+                        sizeof(f32), sizeof(f32), sizeof(f32), sizeof(f32),
+                        sizeof(f32),
+                        sizeof(f32), sizeof(f32), sizeof(f32),
+                        sizeof(f32), sizeof(f32), sizeof(f32)
+                    };
+                    const u32 physCount = sizeof(physNames) / sizeof(physNames[0]);
+
+                    for (u32 p = 0; p < physCount && nextIdx < PREFAB_UI_MAX_FIELDS; p++)
+                    {
+                        // Skip if already included in the user fields
+                        b8 dup = false;
+                        for (u32 u = 0; u < totalFields; u++)
+                            if (strcmp(allFields[u].name, physNames[p]) == 0) { dup = true; break; }
+                        if (dup) continue;
+
+                        strncpy(g_scannedFieldNames[regIdx][nextIdx], physNames[p], EDITOR_FIELD_NAME_MAX - 1);
+                        g_scannedFields[regIdx][nextIdx].name = g_scannedFieldNames[regIdx][nextIdx];
+                        g_scannedFields[regIdx][nextIdx].size = physSizes[p];
+                        nextIdx++;
+                    }
+                }
+
                 entry->layout.fields = g_scannedFields[regIdx];
+                entry->layout.count = nextIdx;
                 if (regIdx == g_archRegistry.count)
                     g_archRegistry.count++;
             }
@@ -3110,7 +3306,7 @@ static void drawArchetypesWindow()
 
             if (generateArchetypeFiles(hubProjectDir, "StaticObject",
                     soFields, soTypes, soCount,
-                    false, false, 0, true, false))
+                    false, false, 0, true, false, false, false))
             {
                 snprintf(resultMsg, sizeof(resultMsg), "Generated StaticObject archetype.");
                 scanProjectArchetypes(hubProjectDir);
@@ -3193,10 +3389,11 @@ static void drawArchetypesWindow()
             {
                 // Load this archetype into the designer fields
                 strncpy(archName, entry->name, sizeof(archName) - 1);
-                archIsSingle      = FLAG_CHECK(entry->flags, ARCH_SINGLE);
-                archIsPersistent  = FLAG_CHECK(entry->flags, ARCH_PERSISTENT);
-                archIsBuffered    = FLAG_CHECK(entry->flags, ARCH_BUFFERED);
-                archIsPhysicsBody = FLAG_CHECK(entry->flags, ARCH_PHYSICS_BODY);
+                archIsSingle      = FLAG_CHECK(entry->flags, ARCH_SINGLE)      != 0;
+                archIsPersistent  = FLAG_CHECK(entry->flags, ARCH_PERSISTENT)  != 0;
+                archIsBuffered    = FLAG_CHECK(entry->flags, ARCH_BUFFERED)     != 0;
+                archIsPhysicsBody = FLAG_CHECK(entry->flags, ARCH_PHYSICS_BODY) != 0;
+                archUniformScale  = FLAG_CHECK(entry->flags, ARCH_FILE_UNIFORM_SCALE) != 0;
                 archBufferSize    = entry->poolCapacity > 0 ? (i32)entry->poolCapacity : 100;
 
                 // We need to re-parse the actual field data from the .c file
@@ -3304,6 +3501,24 @@ static void drawArchetypesWindow()
                                     }
 
                                     parsedNewFormat = (allFieldCount > 0);
+
+                                    // If the header carries DRUID_FLAGS in the sentinel block,
+                                    // reflect that immediately in the designer's checkboxes.
+                                    // NOTE: ARCH_* are bit indices — must use FLAG_CHECK, not raw &
+                                    const c8 *hfm_flag = strstr(hbuf, "// DRUID_FLAGS ");
+                                    if (hfm_flag)
+                                    {
+                                        unsigned int pf = 0;
+                                        if (sscanf(hfm_flag, "// DRUID_FLAGS %x", &pf) == 1)
+                                        {
+                                            archIsSingle      = FLAG_CHECK(pf, ARCH_SINGLE)              != 0;
+                                            archIsPersistent  = FLAG_CHECK(pf, ARCH_PERSISTENT)          != 0;
+                                            archIsBuffered    = FLAG_CHECK(pf, ARCH_BUFFERED)             != 0;
+                                            archIsPhysicsBody = FLAG_CHECK(pf, ARCH_PHYSICS_BODY)        != 0;
+                                            archUniformScale  = FLAG_CHECK(pf, ARCH_FILE_UNIFORM_SCALE)  != 0;
+                                        }
+                                    }
+
                                     free(hbuf);
                                 }
                                 fclose(hf);
@@ -3397,6 +3612,12 @@ static void drawArchetypesWindow()
                             fieldCount++;
                         }
 
+                        // If header didn't indicate physics, check the source for
+                        // the legacy marker comment "// isPhysicsBody" and
+                        // update the designer checkbox so Edit shows the flag.
+                        if (!archIsPhysicsBody && hasArchetypeMarkerLine(ebuf, "isPhysicsBody"))
+                            archIsPhysicsBody = true;
+
                         free(ebuf);
                     }
                     fclose(ef);
@@ -3437,9 +3658,171 @@ static void drawArchetypesWindow()
                         rFields[rgTfCount + i].temperature = FIELD_TEMP_COLD;
                         rTypes[rgTfCount + i]       = typeNames[fieldTypeIndex[i]];
                     }
-                    if (generateArchetypeFiles(hubProjectDir, archName, rFields, rTypes, rgTotal, archIsSingle, archIsBuffered, (u32)archBufferSize, archIsPhysicsBody, false))
+                    // Ensure header has a DRUID_GEN sentinel with complete block so Regenerate can update it.
                     {
-                        entry->layout.count  = rgTotal;
+                        c8 hPath[MAX_PATH_LENGTH];
+                        snprintf(hPath, sizeof(hPath), "%s/src/%s.h", hubProjectDir, archName);
+                        FILE *hf = fopen(hPath, "r");
+                        if (hf)
+                        {
+                            fseek(hf, 0, SEEK_END);
+                            long hsz = ftell(hf);
+                            fseek(hf, 0, SEEK_SET);
+                            if (hsz > 0 && hsz <= 65536)
+                            {
+                                c8 *hbuf = (c8 *)malloc((u32)hsz + 1);
+                                if (hbuf)
+                                {
+                                    fread(hbuf, 1, (u32)hsz, hf);
+                                    hbuf[hsz] = '\0';
+                                    c8 beginTag[256];
+                                    snprintf(beginTag, sizeof(beginTag), "// <DRUID_GEN_BEGIN %s>", archName);
+                                    if (!strstr(hbuf, beginTag))
+                                    {
+                                        fclose(hf);
+                                        hf = fopen(hPath, "a");
+                                        if (hf)
+                                        {
+                                            c8 upperName[256];
+                                            for (u32 i = 0; archName[i] != '\0' && i + 1 < sizeof(upperName); i++)
+                                                upperName[i] = (c8)toupper((unsigned char)archName[i]);
+                                            upperName[strlen(archName)] = '\0';
+
+                                            u8 genFlags = 0;
+                                            if (archIsSingle)      FLAG_SET(genFlags, ARCH_SINGLE);
+                                            if (archIsPersistent)  FLAG_SET(genFlags, ARCH_PERSISTENT);
+                                            if (archIsPhysicsBody) FLAG_SET(genFlags, ARCH_PHYSICS_BODY);
+                                            if (archIsBuffered)    FLAG_SET(genFlags, ARCH_BUFFERED);
+                                            if (archUniformScale)  FLAG_SET(genFlags, ARCH_FILE_UNIFORM_SCALE);
+
+                                            fprintf(hf, "\n// <DRUID_GEN_BEGIN %s>\n", archName);
+                                            fprintf(hf, "// DRUID_FLAGS 0x%02X\n", (unsigned int)genFlags);
+                                            if (archIsBuffered) fprintf(hf, "// isBuffered\n");
+                                            if (archIsSingle) fprintf(hf, "// isSingle\n");
+                                            if (archIsPhysicsBody) fprintf(hf, "// isPhysicsBody\n");
+                                            if (archIsBuffered && archBufferSize > 0) fprintf(hf, "#define POOL_CAPACITY %u\n", (u32)archBufferSize);
+                                            fprintf(hf, "\n#define %s_FIELDS(FIELD) \\\n", upperName);
+                                            
+                                            // Add Alive field if buffered, then user fields, then physics fields
+                                            if (archIsBuffered)
+                                                fprintf(hf, "    FIELD(%s_ALIVE, \"Alive\", b8, COLD) \\\n", upperName);
+                                            
+                                            // User fields (from the designer)
+                                            for (u32 i = 0; i < fieldCount; i++)
+                                            {
+                                                c8 snake[256], enumName[256];
+                                                const c8 *fname = fieldNames[i];
+                                                u32 si = 0;
+                                                for (u32 j = 0; fname[j] != '\0' && si + 1 < sizeof(snake); j++)
+                                                {
+                                                    if (j > 0 && (unsigned char)fname[j] >= 'A' && (unsigned char)fname[j] <= 'Z')
+                                                        snake[si++] = '_';
+                                                    snake[si++] = (c8)toupper((unsigned char)fname[j]);
+                                                }
+                                                snake[si] = '\0';
+                                                snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
+                                                b8 isLast = (i == fieldCount - 1) && !archIsPhysicsBody;
+                                                fprintf(hf, "    FIELD(%s, \"%s\", %s, %s)%s\n",
+                                                    enumName, fieldNames[i], typeNames[fieldTypeIndex[i]],
+                                                    (typeSizes[fieldTypeIndex[i]] == sizeof(f32) || typeSizes[fieldTypeIndex[i]] == sizeof(Vec3) || typeSizes[fieldTypeIndex[i]] == sizeof(Vec4)) ? "HOT" : "COLD",
+                                                    isLast ? "" : " \\");
+                                            }
+
+                                            // Physics fields (if physics body)
+                                            if (archIsPhysicsBody)
+                                            {
+                                                static const c8 *physNames[] = {
+                                                    "LinearVelocityX", "LinearVelocityY", "LinearVelocityZ",
+                                                    "ForceX", "ForceY", "ForceZ", "PhysicsBodyType",
+                                                    "Mass", "InvMass", "Restitution", "LinearDamping",
+                                                    "SphereRadius",
+                                                    "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ",
+                                                    "ColliderOffsetX", "ColliderOffsetY", "ColliderOffsetZ"
+                                                };
+                                                u32 physCount = sizeof(physNames) / sizeof(physNames[0]);
+                                                for (u32 p = 0; p < physCount; p++)
+                                                {
+                                                    c8 snake[256], enumName[256];
+                                                    const c8 *pname = physNames[p];
+                                                    u32 si = 0;
+                                                    for (u32 j = 0; pname[j] != '\0' && si + 1 < sizeof(snake); j++)
+                                                    {
+                                                        if (j > 0 && (unsigned char)pname[j] >= 'A' && (unsigned char)pname[j] <= 'Z')
+                                                            snake[si++] = '_';
+                                                        snake[si++] = (c8)toupper((unsigned char)pname[j]);
+                                                    }
+                                                    snake[si] = '\0';
+                                                    snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
+                                                    b8 isLast = (p == physCount - 1);
+                                                    fprintf(hf, "    FIELD(%s, \"%s\", f32, HOT)%s\n",
+                                                        enumName, physNames[p], isLast ? "" : " \\");
+                                                }
+                                            }
+
+                                            fprintf(hf, "\nDECLARE_ARCHETYPE(%s, %s_FIELDS)\n", archName, upperName);
+                                            fprintf(hf, "// <DRUID_GEN_END %s>\n", archName);
+                                            fclose(hf);
+                                        }
+                                    }
+                                    else
+                                        fclose(hf);
+                                    free(hbuf);
+                                }
+                                else
+                                    fclose(hf);
+                            }
+                            else
+                                fclose(hf);
+                        }
+                        else
+                            fclose(hf);
+                    }
+                    if (generateArchetypeFiles(hubProjectDir, archName, rFields, rTypes, rgTotal, archIsSingle, archIsBuffered, (u32)archBufferSize, archIsPhysicsBody, archIsPersistent, archUniformScale, false))
+                    {
+                        // Update registry fields to match regenerated set (cap at 32 for UI)
+                        u32 nextIdx = 0;
+                        for (u32 i = 0; i < rgTotal && i < PREFAB_UI_MAX_FIELDS; i++)
+                        {
+                            strncpy(g_scannedFieldNames[a][i], rFields[i].name, EDITOR_FIELD_NAME_MAX - 1);
+                            g_scannedFields[a][i].name = g_scannedFieldNames[a][i];
+                            g_scannedFields[a][i].size = rFields[i].size;
+                            nextIdx++;
+                        }
+                        if (archIsPhysicsBody && nextIdx < PREFAB_UI_MAX_FIELDS)
+                        {
+                            static const c8 *physNames[] = {
+                                "LinearVelocityX", "LinearVelocityY", "LinearVelocityZ",
+                                "ForceX", "ForceY", "ForceZ",
+                                "PhysicsBodyType",
+                                "Mass", "InvMass", "Restitution", "LinearDamping",
+                                "SphereRadius",
+                                "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ",
+                                "ColliderOffsetX", "ColliderOffsetY", "ColliderOffsetZ"
+                            };
+                            static const u32 physSizes[] = {
+                                sizeof(f32), sizeof(f32), sizeof(f32),
+                                sizeof(f32), sizeof(f32), sizeof(f32),
+                                sizeof(u32),
+                                sizeof(f32), sizeof(f32), sizeof(f32), sizeof(f32),
+                                sizeof(f32),
+                                sizeof(f32), sizeof(f32), sizeof(f32),
+                                sizeof(f32), sizeof(f32), sizeof(f32)
+                            };
+                            const u32 physCount = sizeof(physNames) / sizeof(physNames[0]);
+                            for (u32 p = 0; p < physCount && nextIdx < PREFAB_UI_MAX_FIELDS; p++)
+                            {
+                                b8 dup = false;
+                                for (u32 u = 0; u < rgTotal; u++)
+                                    if (strcmp(rFields[u].name, physNames[p]) == 0) { dup = true; break; }
+                                if (dup) continue;
+                                strncpy(g_scannedFieldNames[a][nextIdx], physNames[p], EDITOR_FIELD_NAME_MAX - 1);
+                                g_scannedFields[a][nextIdx].name = g_scannedFieldNames[a][nextIdx];
+                                g_scannedFields[a][nextIdx].size = physSizes[p];
+                                nextIdx++;
+                            }
+                        }
+                        entry->layout.fields = g_scannedFields[a];
+                        entry->layout.count  = nextIdx;
                         entry->flags = 0;
                         if (archIsSingle && !archIsBuffered) FLAG_SET(entry->flags, ARCH_SINGLE);
                         if (archIsPersistent)  FLAG_SET(entry->flags, ARCH_PERSISTENT);
@@ -3475,7 +3858,7 @@ static void drawArchetypesWindow()
         static i32  hcSelectedArch = -1;  // index into g_archRegistry
         // Per-field hot/cold flags — true = hot, false = cold
         // Indexed by [archIdx][fieldIdx], supports up to 32 archetypes × 32 fields
-        static bool hcIsHot[MAX_ARCHETYPE_SYSTEMS][32];
+        static bool hcIsHot[MAX_ARCHETYPE_SYSTEMS][PREFAB_UI_MAX_FIELDS];
         static bool hcInitDone[MAX_ARCHETYPE_SYSTEMS];
 
         const u32 CACHE_LINE = 64u; // bytes
@@ -3496,7 +3879,7 @@ static void drawArchetypesWindow()
                     // Default: first 3 fields (Pos X/Y/Z) are hot, rest cold
                     if (!hcInitDone[a] && g_archRegistry.entries[a].layout.count > 0)
                     {
-                        for (u32 f = 0; f < g_archRegistry.entries[a].layout.count && f < 32; f++)
+                        for (u32 f = 0; f < g_archRegistry.entries[a].layout.count && f < PREFAB_UI_MAX_FIELDS; f++)
                             hcIsHot[a][f] = (f < 3); // PositionX/Y/Z hot by default
                         hcInitDone[a] = true;
                     }
@@ -3513,7 +3896,7 @@ static void drawArchetypesWindow()
         else
         {
             ArchetypeFileEntry *ae = &g_archRegistry.entries[hcSelectedArch];
-            const u32 nFields = ae->layout.count < 32 ? ae->layout.count : 32;
+            const u32 nFields = ae->layout.count < PREFAB_UI_MAX_FIELDS ? ae->layout.count : PREFAB_UI_MAX_FIELDS;
 
             // Initialise defaults on first view of this archetype
             if (!hcInitDone[hcSelectedArch])
@@ -4054,6 +4437,7 @@ static void drawPrefabsWindow()
                    strcmp(n,"Restitution")==0 || strcmp(n,"LinearDamping")==0 ||
                    strcmp(n,"SphereRadius")==0 ||
                    strcmp(n,"ColliderHalfX")==0 || strcmp(n,"ColliderHalfY")==0 || strcmp(n,"ColliderHalfZ")==0 ||
+                   strcmp(n,"ColliderOffsetX")==0 || strcmp(n,"ColliderOffsetY")==0 || strcmp(n,"ColliderOffsetZ")==0 ||
                    strcmp(n,"LinearVelocityX")==0 || strcmp(n,"LinearVelocityY")==0 || strcmp(n,"LinearVelocityZ")==0 ||
                    strcmp(n,"ForceX")==0 || strcmp(n,"ForceY")==0 || strcmp(n,"ForceZ")==0;
         };
@@ -4132,7 +4516,7 @@ static void drawPrefabsWindow()
             if (ae->layout.fields && ae->layout.fields[f].name && isPhysics(ae->layout.fields[f].name))
                 hasPhysicsFields = true;
 
-        if (hasPhysicsFields && ImGui::CollapsingHeader("Physics / Collider"))
+        if (hasPhysicsFields && ImGui::CollapsingHeader("Physics / Collider", ImGuiTreeNodeFlags_DefaultOpen))
         {
             i32 btF = pfFindField(ae, "PhysicsBodyType");
             if (btF >= 0 && ae->layout.fields[btF].size == 4)
@@ -4183,6 +4567,7 @@ static void drawPrefabsWindow()
                 i32 oxF = pfFindField(ae, "ColliderOffsetX");
                 i32 oyF = pfFindField(ae, "ColliderOffsetY");
                 i32 ozF = pfFindField(ae, "ColliderOffsetZ");
+                
                 if (oxF >= 0 && oyF >= 0 && ozF >= 0)
                 {
                     f32 offset[3] = {*(f32*)s_fieldData[oxF], *(f32*)s_fieldData[oyF], *(f32*)s_fieldData[ozF]};
@@ -5516,6 +5901,17 @@ static void drawInspectorWindow()
                             { colliderHalfXs[eid] = he[0]; colliderHalfYs[eid] = he[1]; colliderHalfZs[eid] = he[2]; }
                             ImGui::TextDisabled("  Full size  %.2f x %.2f x %.2f",
                                                 he[0]*2.f, he[1]*2.f, he[2]*2.f);
+                            if (eid < 4096 && colliderMatchTransform[eid]) ImGui::EndDisabled();
+                        }
+                        // Collider offset (shared for both sphere and box)
+                        if (colliderOffsetXs && colliderOffsetYs && colliderOffsetZs)
+                        {
+                            if (eid < 4096 && colliderMatchTransform[eid]) ImGui::BeginDisabled();
+                            f32 off[3] = { colliderOffsetXs[eid], colliderOffsetYs[eid], colliderOffsetZs[eid] };
+                            if (ImGui::DragFloat3("Offset##phys", off, 0.01f, -100.0f, 100.0f, "%.3f"))
+                            {
+                                colliderOffsetXs[eid] = off[0]; colliderOffsetYs[eid] = off[1]; colliderOffsetZs[eid] = off[2];
+                            }
                             if (eid < 4096 && colliderMatchTransform[eid]) ImGui::EndDisabled();
                         }
                         if (cs == 0) ImGui::TextDisabled("  No collision shape");

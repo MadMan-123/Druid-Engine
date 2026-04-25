@@ -233,6 +233,9 @@ void rebindArchetypeFields()
     lightDirZs        = (fieldCount > 29) ? (f32 *)fields[29] : nullptr;
     lightInnerCones   = (fieldCount > 30) ? (f32 *)fields[30] : nullptr;
     lightOuterCones   = (fieldCount > 31) ? (f32 *)fields[31] : nullptr;
+    colliderOffsetXs   = (fieldCount > 32) ? (f32 *)fields[32] : nullptr;
+    colliderOffsetYs   = (fieldCount > 33) ? (f32 *)fields[33] : nullptr;
+    colliderOffsetZs   = (fieldCount > 34) ? (f32 *)fields[34] : nullptr;
 }
 
 // After loading an old scene whose layout has fewer fields than the current
@@ -370,6 +373,9 @@ f32 *sphereRadii = nullptr;
 f32 *colliderHalfXs = nullptr;
 f32 *colliderHalfYs = nullptr;
 f32 *colliderHalfZs = nullptr;
+f32 *colliderOffsetXs = nullptr;
+f32 *colliderOffsetYs = nullptr;
+f32 *colliderOffsetZs = nullptr;
 b8  *isLight = nullptr;
 u32 *lightTypes = nullptr;
 f32 *lightRanges = nullptr;
@@ -1091,17 +1097,16 @@ i32 main(i32 argc, char **argv)
 
     // Only launch the editor if the user confirmed a project
     if (!hubProjectSelected)
+    {
+        SDL_Quit();
         return 0;
+    }
 
     logOutputSrc = &editorLog;
     useCustomOutputSrc = true;
     consoleLines = (const c8**)calloc(MAX_CONSOLE_LINES, sizeof(c8*));
     editor = createApplication("Druid Editor",init, update, render, destroy);
 
-    // Use 80% of the primary display resolution so the window fits on screen.
-    // SDL video must be initialised to query display modes; initSystems will
-    // re-init with the full flag set, and SDL_Init is safe to call twice.
-    SDL_Init(SDL_INIT_VIDEO);
     SDL_DisplayID displayID = SDL_GetPrimaryDisplay();
     const SDL_DisplayMode *dm = displayID ? SDL_GetCurrentDisplayMode(displayID) : nullptr;
     if (dm && dm->w > 0 && dm->h > 0)
@@ -1118,5 +1123,6 @@ i32 main(i32 argc, char **argv)
     viewportHeight = (u32)editor->height;
     editor->inputProcess = processInput;
     run(editor);
+    SDL_Quit();
     return 0;
 }
