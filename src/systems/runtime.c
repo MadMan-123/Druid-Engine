@@ -85,6 +85,14 @@ DAPI GameRuntime *runtimeCreate(const c8 *projectDir, RuntimeConfig cfg)
     if (!sceneRuntime || !sceneRuntime->loaded)
         sceneRuntimeInit(projectDir);
 
+    // Prefabs — scan <projectDir>/prefabs/*.prefab
+    if (prefabRegistryCreate())
+    {
+        c8 prefabDir[MAX_PATH_LENGTH];
+        snprintf(prefabDir, sizeof(prefabDir), "%s/prefabs", projectDir);
+        prefabLoadDirectory(prefabDir);
+    }
+
     if (runtime->standaloneMode)
     {
         // Renderer — created by standalone launcher via the global display singleton
@@ -230,6 +238,7 @@ DAPI void runtimeDestroy(GameRuntime *rt)
         if (rt->lightingShader) { freeShader(rt->lightingShader);rt->lightingShader = 0;    }
     }
 
+    prefabRegistryDestroy();
     dfree(rt, sizeof(GameRuntime), MEM_TAG_GAME);
     runtime = NULL;
 }

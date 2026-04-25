@@ -627,6 +627,159 @@ static void renderModelPreview(u32 modelIdx)
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
 }
 
+#define PREFAB_UI_MAX_FIELDS 64
+#define PREFAB_UI_FIELD_DATA 256  // bytes per field
+
+// Render a prefab model preview with orbit camera into g_modelPreviewGBuffer/OutputFBO.
+// modelIdx: index in resources->modelBuffer  (u32)-1 to just clear
+// scale: applied to model matrix
+// yaw, pitch: orbit camera angles in radians
+// colliderShape: 0=none, 1=sphere, 2=box  (explicit, not inferred from field values)
+static void renderPrefabPreview(u32 modelIdx, Vec3 scale, f32 yaw, f32 pitch, f32 zoom,
+                                 StructLayout *layout, void *fieldData, i32 colliderShape)
+{
+    if (!shader || !deferredLightingShader || !screenQuadMesh) return;
+
+    if (!g_modelPreviewReady)
+    {
+        g_modelPreviewGBuffer   = createGBuffer(MATPREVIEW_SIZE, MATPREVIEW_SIZE);
+        g_modelPreviewOutputFBO = createFramebuffer(MATPREVIEW_SIZE, MATPREVIEW_SIZE, GL_RGBA8, false);
+        g_modelPreviewReady = (g_modelPreviewGBuffer.fbo != 0 && g_modelPreviewOutputFBO.fbo != 0);
+        if (!g_modelPreviewReady) return;
+    }
+
+    GLint prevFBO; glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+    GLint prevViewport[4]; glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+    // Orbit camera
+    f32 dist = 2.0f;
+    if (resources && modelIdx < resources->modelUsed)
+    {
+        f32 r = resources->modelBuffer[modelIdx].boundingRadius;
+        if (r > 0.0f) dist = r * 2.5f;
+    }
+    dist *= zoom;  // Apply zoom multiplier
+    pitch = clamp(pitch, -1.4f, 1.4f);
+    Vec3 camPos = {
+        dist * cosf(pitch) * sinf(yaw),
+        dist * sinf(pitch),
+        dist * cosf(pitch) * cosf(yaw)
+    };
+    Vec3 target = {0.0f, 0.0f, 0.0f};
+    Vec3 up     = {0.0f, 1.0f, 0.0f};
+    Mat4 view   = mat4LookAt(camPos, target, up);
+    Mat4 proj   = mat4Perspective(radians(45.0f), 1.0f, dist * 0.01f, dist * 20.0f);
+    updateCoreShaderUBO(0.0f, &camPos, &view, &proj);
+
+    // G-Buffer pass
+    glBindFramebuffer(GL_FRAMEBUFFER, g_modelPreviewGBuffer.fbo);
+    glViewport(0, 0, (GLsizei)MATPREVIEW_SIZE, (GLsizei)MATPREVIEW_SIZE);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    if (resources && modelIdx < resources->modelUsed)
+    {
+        Model *model = &resources->modelBuffer[modelIdx];
+        glUseProgram(shader);
+
+        // Build scale matrix
+        Mat4 modelMat = mat4ScaleVec(scale);
+        glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, (f32 *)&modelMat);
+        GLint baseLoc = glGetUniformLocation(shader, "u_modelBaseIndex");
+        if (baseLoc >= 0) glUniform1i(baseLoc, -1);
+        MaterialUniforms mu = getMaterialUniforms(shader);
+
+        Material fallbackMat = {0};
+        fallbackMat.colour   = {0.8f, 0.8f, 0.8f};
+        fallbackMat.roughness = 0.5f;
+        for (u32 m = 0; m < model->meshCount; m++)
+        {
+            u32 meshIdx = model->meshIndices[m];
+            if (meshIdx >= resources->meshUsed) continue;
+            Material *matToUse = &fallbackMat;
+            if (model->materialIndices && m < model->materialCount)
+            {
+                u32 matIdx = model->materialIndices[m];
+                if (matIdx < resources->materialUsed)
+                    matToUse = &resources->materialBuffer[matIdx];
+            }
+            updateMaterial(matToUse, &mu);
+            drawMesh(&resources->meshBuffer[meshIdx]);
+        }
+    }
+
+    // Lighting pass
+    glBindFramebuffer(GL_FRAMEBUFFER, g_modelPreviewOutputFBO.fbo);
+    glViewport(0, 0, (GLsizei)MATPREVIEW_SIZE, (GLsizei)MATPREVIEW_SIZE);
+    glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glUseProgram(deferredLightingShader);
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_modelPreviewGBuffer.positionTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gPosition"), 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_modelPreviewGBuffer.normalTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gNormal"), 1);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_modelPreviewGBuffer.albedoSpecTex);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "gAlbedoSpec"), 2);
+    glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+    glUniform1i(glGetUniformLocation(deferredLightingShader, "envMap"), 3);
+    glBindVertexArray(screenQuadMesh->vao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    // Draw collider gizmos overlay — driven by explicit colliderShape, not field values
+    if (colliderShape > 0 && layout && fieldData)
+    {
+        u8 (*fields)[PREFAB_UI_FIELD_DATA] = (u8 (*)[PREFAB_UI_FIELD_DATA])fieldData;
+
+        Mat4 gView = mat4LookAt(
+            {dist * cosf(pitch) * sinf(yaw), dist * sinf(pitch), dist * cosf(pitch) * cosf(yaw)},
+            {0.0f, 0.0f, 0.0f},
+            {0.0f, 1.0f, 0.0f}
+        );
+        Mat4 gProj     = mat4Perspective(radians(45.0f), 1.0f, dist * 0.01f, dist * 20.0f);
+        Mat4 viewProj  = mat4Mul(gProj, gView);
+
+        // Model always at origin in preview; find field indices for sizes
+        i32 radiusF = -1, halfXF = -1, halfYF = -1, halfZF = -1;
+        for (u32 f = 0; f < layout->count; f++)
+        {
+            const c8 *n = layout->fields[f].name;
+            if (!n) continue;
+            if      (strcmp(n, "SphereRadius")   == 0) radiusF = (i32)f;
+            else if (strcmp(n, "ColliderHalfX")  == 0) halfXF  = (i32)f;
+            else if (strcmp(n, "ColliderHalfY")  == 0) halfYF  = (i32)f;
+            else if (strcmp(n, "ColliderHalfZ")  == 0) halfZF  = (i32)f;
+        }
+
+        Vec3 origin = {0.0f, 0.0f, 0.0f};
+        glDisable(GL_DEPTH_TEST);  // output FBO has no depth attachment
+        gizmoBeginFrame();
+        if (colliderShape == 1) // Sphere
+        {
+            f32 r = (radiusF >= 0) ? *(f32*)fields[radiusF] : 0.0f;
+            if (r <= 0.0f) r = 0.5f;
+            gizmoDrawSphere(origin, r, makeGizmoColor(0.0f, 1.0f, 0.0f, 1.0f));
+        }
+        else if (colliderShape == 2) // Box
+        {
+            f32 hx = (halfXF >= 0) ? *(f32*)fields[halfXF] : 0.0f;
+            f32 hy = (halfYF >= 0) ? *(f32*)fields[halfYF] : 0.0f;
+            f32 hz = (halfZF >= 0) ? *(f32*)fields[halfZF] : 0.0f;
+            if (hx <= 0.0f) hx = 0.5f;
+            if (hy <= 0.0f) hy = 0.5f;
+            if (hz <= 0.0f) hz = 0.5f;
+            gizmoDrawBox(origin, {hx, hy, hz}, makeGizmoColor(0.0f, 1.0f, 0.0f, 1.0f));
+        }
+        gizmoEndFrame(viewProj);
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+}
+
 // ---- Shader hot-reload ----
 
 struct TrackedProjectShader {
@@ -2429,7 +2582,8 @@ void scanProjectArchetypes(const c8 *projectDir)
         // Parse field entries and store field info.
         // Old format: { "name", sizeof(type) } entries in the .c file.
         // New format: FIELD(ENUM, "name", type, HOT|COLD) entries in the .h file's FIELDS macro.
-        u32 fieldCount = 0;
+        u32 fieldCount        = 0;
+        b8  foundFlagsInHeader = false;
 
         if (!isNewFormat)
         {
@@ -2577,6 +2731,23 @@ void scanProjectArchetypes(const c8 *projectDir)
                         }
                     }
 
+                    // New-format headers carry DRUID_FLAGS and POOL_CAPACITY inside
+                    // the sentinel block — read them here before freeing hbuf.
+                    {
+                        const c8 *hfm = strstr(hbuf, "// DRUID_FLAGS ");
+                        if (hfm)
+                        {
+                            unsigned int pf = 0;
+                            if (sscanf(hfm, "// DRUID_FLAGS %x", &pf) == 1)
+                            {
+                                entry->flags = (u8)(pf & 0xFFu);
+                                foundFlagsInHeader = true;
+                            }
+                        }
+                        const c8 *hpc = strstr(hbuf, "#define POOL_CAPACITY ");
+                        if (hpc) entry->poolCapacity = (u32)atoi(hpc + 22);
+                    }
+
                     free(hbuf);
                 }
                 else
@@ -2589,17 +2760,20 @@ void scanProjectArchetypes(const c8 *projectDir)
         entry->layout.count  = fieldCount;
         entry->layout.fields = g_scannedFields[regIdx];
 
-        // Prefer canonical flags marker emitted by generateArchetypeFiles:
-        //   // DRUID_FLAGS 0xNN
-        b8 hasCanonicalFlags = false;
-        const c8 *flagsMarker = strstr(buf, "// DRUID_FLAGS ");
-        if (flagsMarker)
+        // Prefer canonical flags marker — new files put it in the .h sentinel block
+        // (already scanned above); old files put it in the .c source buffer.
+        b8 hasCanonicalFlags = foundFlagsInHeader;
+        if (!hasCanonicalFlags)
         {
-            unsigned int parsedFlags = 0;
-            if (sscanf(flagsMarker, "// DRUID_FLAGS %x", &parsedFlags) == 1)
+            const c8 *flagsMarker = strstr(buf, "// DRUID_FLAGS ");
+            if (flagsMarker)
             {
-                entry->flags = (u8)(parsedFlags & 0xFFu);
-                hasCanonicalFlags = true;
+                unsigned int parsedFlags = 0;
+                if (sscanf(flagsMarker, "// DRUID_FLAGS %x", &parsedFlags) == 1)
+                {
+                    entry->flags = (u8)(parsedFlags & 0xFFu);
+                    hasCanonicalFlags = true;
+                }
             }
         }
 
@@ -2620,7 +2794,9 @@ void scanProjectArchetypes(const c8 *projectDir)
         // Previously this code would clear ARCH_SINGLE for physics bodies,
         // but the two flags are independent and can be combined.
 
-        // Scan for POOL_CAPACITY define
+        // Scan for POOL_CAPACITY in the .c source as fallback (old files).
+        // New files have it in the .h and it was already read above.
+        if (entry->poolCapacity == 0)
         {
             const char *pcDef = strstr(buf, "#define POOL_CAPACITY ");
             if (pcDef) entry->poolCapacity = (u32)atoi(pcDef + 22);
@@ -2688,7 +2864,7 @@ void scanProjectArchetypes(const c8 *projectDir)
     remapSceneArchetypeIDsFromHashes();
 }
 
-static void drawPrefabsWindow()
+static void drawArchetypesWindow()
 {
     // ---- archetype designer state (persists across frames) ----
     static c8  archName[128]           = "";
@@ -3460,6 +3636,734 @@ static void drawPrefabsWindow()
 
     ImGui::End();
     #undef ARCH_MAX_FIELDS
+}
+
+// --------------------------------------------------------------------------
+// In-editor prefab binary loader
+
+struct EditorPrefabData
+{
+    c8  prefabName[MAX_SCENE_NAME];
+    c8  archName[MAX_SCENE_NAME];
+    u32 fieldCount;
+    c8  fieldNames[PREFAB_UI_MAX_FIELDS][PREFAB_FIELD_NAME_MAX];
+    u32 fieldSizes[PREFAB_UI_MAX_FIELDS];
+    u8  fieldData[PREFAB_UI_MAX_FIELDS][PREFAB_UI_FIELD_DATA];
+};
+
+// Parse a .prefab binary file into EditorPrefabData. Returns false on error.
+static bool loadPrefabForEditor(const c8 *path, EditorPrefabData *out)
+{
+    if (!path || !out) return false;
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+
+    u32 magic = 0, version = 0;
+    bool ok = (fread(&magic,   sizeof(u32), 1, f) == 1 && magic   == PREFAB_MAGIC &&
+               fread(&version, sizeof(u32), 1, f) == 1 && version == PREFAB_VERSION);
+    if (!ok) { fclose(f); return false; }
+
+    memset(out, 0, sizeof(EditorPrefabData));
+    if (fread(out->prefabName, 1, MAX_SCENE_NAME, f) != MAX_SCENE_NAME ||
+        fread(out->archName,   1, MAX_SCENE_NAME, f) != MAX_SCENE_NAME)
+    { fclose(f); return false; }
+
+    u32 fc = 0;
+    if (fread(&fc, sizeof(u32), 1, f) != 1 || fc > PREFAB_UI_MAX_FIELDS)
+    { fclose(f); return false; }
+    out->fieldCount = fc;
+
+    for (u32 i = 0; i < fc; i++)
+    {
+        if (fread(out->fieldNames[i], 1, PREFAB_FIELD_NAME_MAX, f) != PREFAB_FIELD_NAME_MAX)
+        { fclose(f); return false; }
+        u32 fsz = 0;
+        if (fread(&fsz, sizeof(u32), 1, f) != 1) { fclose(f); return false; }
+        out->fieldSizes[i] = fsz < PREFAB_UI_FIELD_DATA ? fsz : PREFAB_UI_FIELD_DATA;
+        if (fread(out->fieldData[i], 1, fsz, f) != fsz) { fclose(f); return false; }
+    }
+    fclose(f);
+    return true;
+}
+
+// --------------------------------------------------------------------------
+// Draw an ImGui editor widget for a single field value.
+// data: pointer to raw field bytes.  size: byte size of the field.
+// name: used as label and for integer-type heuristics.
+static void drawFieldEditor(const c8 *name, void *data, u32 size)
+{
+    // Heuristic: if name contains ID/Type/Count/Index treat 4-byte as integer
+    bool treatAsInt = (size == 4) &&
+        (strstr(name,"ID")    != NULL || strstr(name,"Type")  != NULL ||
+         strstr(name,"Count") != NULL || strstr(name,"Index") != NULL ||
+         strstr(name,"Slot")  != NULL);
+
+    switch (size)
+    {
+    case 1:  { bool v = (*(u8*)data) != 0; if (ImGui::Checkbox("##v", &v)) *(u8*)data = v ? 1 : 0; } break;
+    case 4:
+        if (treatAsInt) ImGui::DragInt  ("##v", (int*)data);
+        else            ImGui::DragFloat("##v", (f32*)data, 0.01f);
+        break;
+    case 8:  ImGui::DragFloat2("##v", (f32*)data, 0.01f); break;
+    case 12: ImGui::DragFloat3("##v", (f32*)data, 0.01f); break;
+    case 16: ImGui::DragFloat4("##v", (f32*)data, 0.01f); break;
+    case 64: ImGui::TextDisabled("(Mat4 — not editable here)"); break;
+    case 256: ImGui::InputText("##v", (c8*)data, 256); break;
+    default:
+        ImGui::TextDisabled("(%u bytes)", size);
+        break;
+    }
+}
+
+// Helper: find field index by display name in archetype layout
+static i32 pfFindField(ArchetypeFileEntry *ae, const c8 *name)
+{
+    if (!ae || !ae->layout.fields) return -1;
+    u32 nf = ae->layout.count < PREFAB_UI_MAX_FIELDS ? ae->layout.count : PREFAB_UI_MAX_FIELDS;
+    for (u32 f = 0; f < nf; f++)
+        if (ae->layout.fields[f].name && strcmp(ae->layout.fields[f].name, name) == 0)
+            return (i32)f;
+    return -1;
+}
+
+enum PfUIState { PFUI_ARCH_SELECT, PFUI_PREFAB_LIST, PFUI_PREFAB_EDIT };
+
+static void drawPrefabsWindow()
+{
+    static PfUIState s_state      = PFUI_ARCH_SELECT;
+    static i32       s_selArch    = -1;
+    static c8        s_prefabName[128]  = "";
+    static c8        s_editingFile[MAX_PATH_LENGTH] = "";  // empty = new prefab
+    static u8        s_fieldData[PREFAB_UI_MAX_FIELDS][PREFAB_UI_FIELD_DATA];
+    static bool      s_firstInit  = true;
+    static c8        s_resultMsg[256] = "";
+    static f32       s_previewYaw   = 0.5f;
+    static f32       s_previewPitch = 0.3f;
+    static f32       s_previewZoom  = 1.0f;  // Camera distance multiplier
+    // Euler angles (degrees) maintained alongside the Rotation quaternion field
+    static Vec3      s_eulerDeg = {0, 0, 0};
+    static i32       s_lastArchForEuler = -1;
+    // 0 = None, 1 = Sphere, 2 = Box
+    static i32       s_colliderShape = 0;
+
+    if (s_firstInit)
+    {
+        memset(s_fieldData, 0, sizeof(s_fieldData));
+        s_firstInit = false;
+    }
+
+    ImGui::Begin("Prefabs");
+
+    if (hubProjectDir[0] == '\0')
+    {
+        ImGui::TextDisabled("Open a project first.");
+        ImGui::End();
+        return;
+    }
+
+    // =========================================================================
+    // STATE: ARCH_SELECT — show all archetypes as a clickable list
+    // =========================================================================
+    if (s_state == PFUI_ARCH_SELECT)
+    {
+        ImGui::Text("Select Archetype");
+        ImGui::Separator();
+
+        if (g_archRegistry.count == 0)
+        {
+            ImGui::TextDisabled("No archetypes registered. Generate one in the Archetypes panel first.");
+        }
+        else
+        {
+            for (u32 a = 0; a < g_archRegistry.count; a++)
+            {
+                ArchetypeFileEntry *ae = &g_archRegistry.entries[a];
+                ImGui::PushID((int)a);
+
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.18f, 0.22f, 1.0f));
+                c8 childId[64]; snprintf(childId, sizeof(childId), "##arch%u", a);
+                ImGui::BeginChild(childId, ImVec2(-1, 52), true);
+
+                ImGui::Text("%s", ae->name);
+                ImGui::SameLine();
+                ImGui::TextDisabled("  %u fields%s%s%s",
+                    ae->layout.count,
+                    FLAG_CHECK(ae->flags, ARCH_SINGLE)      ? "  single"   : "",
+                    FLAG_CHECK(ae->flags, ARCH_PHYSICS_BODY) ? "  physics"  : "",
+                    FLAG_CHECK(ae->flags, ARCH_BUFFERED)     ? "  buffered" : "");
+                if (ImGui::SmallButton("Open Prefabs"))
+                {
+                    s_selArch = (i32)a;
+                    s_state   = PFUI_PREFAB_LIST;
+                    s_resultMsg[0] = '\0';
+                }
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+                ImGui::Spacing();
+            }
+        }
+        ImGui::End();
+        return;
+    }
+
+    // =========================================================================
+    // STATE: PREFAB_LIST — prefabs for the selected archetype
+    // =========================================================================
+    if (s_state == PFUI_PREFAB_LIST)
+    {
+        ArchetypeFileEntry *ae = (s_selArch >= 0 && s_selArch < (i32)g_archRegistry.count)
+                               ? &g_archRegistry.entries[s_selArch] : nullptr;
+        if (!ae) { s_state = PFUI_ARCH_SELECT; ImGui::End(); return; }
+
+        if (ImGui::SmallButton("< Back")) { s_state = PFUI_ARCH_SELECT; ImGui::End(); return; }
+        ImGui::SameLine();
+        ImGui::Text("%s  Prefabs", ae->name);
+        ImGui::Separator();
+
+        // List .prefab files matching this archetype
+        c8 prefabDir[MAX_PATH_LENGTH];
+        snprintf(prefabDir, sizeof(prefabDir), "%s/prefabs", hubProjectDir);
+        u32 fileCount = 0;
+        c8 **files = listFilesInDirectory(prefabDir, &fileCount);
+        bool hasAny = false;
+        static c8 s_pendingDelete[MAX_PATH_LENGTH] = "";
+
+        if (files)
+        {
+            for (u32 i = 0; i < fileCount; i++)
+            {
+                const c8 *fp = files[i];
+                u32 flen = (u32)strlen(fp);
+                if (flen <= 7 || strcmp(fp + flen - 7, ".prefab") != 0)
+                { free(files[i]); continue; }
+
+                // Peek at archName without fully loading
+                EditorPrefabData pd;
+                if (!loadPrefabForEditor(fp, &pd) ||
+                    strcmp(pd.archName, ae->name) != 0)
+                { free(files[i]); continue; }
+
+                hasAny = true;
+                ImGui::PushID((int)(i + 8000));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.14f, 0.17f, 0.21f, 1.0f));
+                c8 cid[64]; snprintf(cid, sizeof(cid), "##pf%u", i);
+                ImGui::BeginChild(cid, ImVec2(-1, 44), true);
+
+                ImGui::Text("%s", pd.prefabName);
+                ImGui::SameLine();
+                ImGui::TextDisabled("  %u fields", pd.fieldCount);
+                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 90);
+                if (ImGui::SmallButton("Edit"))
+                {
+                    // Load into editor state
+                    strncpy(s_prefabName, pd.prefabName, sizeof(s_prefabName) - 1);
+                    strncpy(s_editingFile, fp, MAX_PATH_LENGTH - 1);
+                    memset(s_fieldData, 0, sizeof(s_fieldData));
+                    u32 nf = ae->layout.count < PREFAB_UI_MAX_FIELDS ? ae->layout.count : PREFAB_UI_MAX_FIELDS;
+                    for (u32 f = 0; f < nf; f++)
+                    {
+                        const c8 *fn = ae->layout.fields ? ae->layout.fields[f].name : nullptr;
+                        if (!fn) continue;
+                        for (u32 p = 0; p < pd.fieldCount; p++)
+                        {
+                            if (strcmp(pd.fieldNames[p], fn) == 0)
+                            {
+                                u32 cp = pd.fieldSizes[p] < PREFAB_UI_FIELD_DATA ? pd.fieldSizes[p] : PREFAB_UI_FIELD_DATA;
+                                memcpy(s_fieldData[f], pd.fieldData[p], cp);
+                                break;
+                            }
+                        }
+                    }
+                    // Sync euler from stored Rotation quaternion
+                    i32 rotF = pfFindField(ae, "Rotation");
+                    if (rotF >= 0)
+                    {
+                        Vec3 eu = eulerFromQuat(*(Vec4*)s_fieldData[rotF]);
+                        s_eulerDeg = {degrees(eu.x), degrees(eu.y), degrees(eu.z)};
+                    }
+                    s_lastArchForEuler = s_selArch;
+                    // Infer collider shape from stored field data
+                    {
+                        i32 srF2 = pfFindField(ae, "SphereRadius");
+                        i32 hxF2 = pfFindField(ae, "ColliderHalfX");
+                        f32 sr2  = (srF2 >= 0) ? *(f32*)s_fieldData[srF2] : 0.0f;
+                        f32 hx2  = (hxF2 >= 0) ? *(f32*)s_fieldData[hxF2] : 0.0f;
+                        s_colliderShape = (sr2 > 0.0f) ? 1 : (hx2 > 0.0f ? 2 : 0);
+                    }
+                    s_previewYaw = 0.5f; s_previewPitch = 0.3f; s_previewZoom = 1.0f;
+                    s_state = PFUI_PREFAB_EDIT;
+                    s_resultMsg[0] = '\0';
+                }
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
+                if (ImGui::SmallButton("Del"))
+                    strncpy(s_pendingDelete, fp, MAX_PATH_LENGTH - 1);
+                ImGui::PopStyleColor();
+
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+                ImGui::Spacing();
+                free(files[i]);
+            }
+            free(files);
+        }
+
+        if (s_pendingDelete[0] != '\0')
+        {
+            remove(s_pendingDelete);
+            snprintf(s_resultMsg, sizeof(s_resultMsg), "Deleted prefab.");
+            s_pendingDelete[0] = '\0';
+        }
+
+        if (!hasAny) ImGui::TextDisabled("No prefabs for %s yet.", ae->name);
+
+        ImGui::Spacing();
+        if (ImGui::Button("+ Add Prefab"))
+        {
+            memset(s_fieldData, 0, sizeof(s_fieldData));
+            s_prefabName[0]   = '\0';
+            s_editingFile[0]  = '\0';
+            // Init Scale to {1,1,1} if present
+            i32 scF = pfFindField(ae, "Scale");
+            if (scF >= 0 && ae->layout.fields[scF].size == 12)
+                *(Vec3*)s_fieldData[scF] = {1.0f, 1.0f, 1.0f};
+            i32 scF1 = pfFindField(ae, "Scale");
+            if (scF1 >= 0 && ae->layout.fields[scF1].size == 4)
+                *(f32*)s_fieldData[scF1] = 1.0f;
+            // Init Rotation to identity
+            i32 rotF = pfFindField(ae, "Rotation");
+            if (rotF >= 0) *(Vec4*)s_fieldData[rotF] = quatIdentity();
+            s_eulerDeg = {0, 0, 0};
+            s_lastArchForEuler = s_selArch;
+            s_colliderShape = 0;
+            s_previewYaw = 0.5f; s_previewPitch = 0.3f; s_previewZoom = 1.0f;
+            s_state = PFUI_PREFAB_EDIT;
+            s_resultMsg[0] = '\0';
+        }
+
+        if (s_resultMsg[0] != '\0')
+        {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", s_resultMsg);
+        }
+        ImGui::End();
+        return;
+    }
+
+    // =========================================================================
+    // STATE: PREFAB_EDIT — full prefab editor with 3D preview
+    // =========================================================================
+    {
+        ArchetypeFileEntry *ae = (s_selArch >= 0 && s_selArch < (i32)g_archRegistry.count)
+                               ? &g_archRegistry.entries[s_selArch] : nullptr;
+        if (!ae) { s_state = PFUI_ARCH_SELECT; ImGui::End(); return; }
+        u32 nf = ae->layout.count < PREFAB_UI_MAX_FIELDS ? ae->layout.count : PREFAB_UI_MAX_FIELDS;
+
+        // Back / title row
+        if (ImGui::SmallButton("< Back"))
+        {
+            s_state = PFUI_PREFAB_LIST;
+            s_resultMsg[0] = '\0';
+            ImGui::End();
+            return;
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s  /  %s",
+            ae->name,
+            s_prefabName[0] ? s_prefabName : "(new prefab)");
+        ImGui::Separator();
+
+        // Read ModelID and Scale for preview
+        u32  previewModelID = (u32)-1;
+        Vec3 previewScale   = {1.0f, 1.0f, 1.0f};
+        i32  modelF  = pfFindField(ae, "ModelID");
+        i32  scaleF  = pfFindField(ae, "Scale");
+        i32  scaleF1 = (scaleF >= 0 && ae->layout.fields[scaleF].size == 4) ? scaleF : -1;
+        if (scaleF >= 0 && ae->layout.fields[scaleF].size == 4)  scaleF = -1; // vec3 only
+        if (scaleF >= 0)  previewScale   = *(Vec3*)s_fieldData[scaleF];
+        if (scaleF1 >= 0) previewScale   = {*(f32*)s_fieldData[scaleF1], *(f32*)s_fieldData[scaleF1], *(f32*)s_fieldData[scaleF1]};
+        if (modelF >= 0 && ae->layout.fields[modelF].size == 4)
+            previewModelID = *(u32*)s_fieldData[modelF];
+
+        // ---- Left column: 3D preview (scales with available space) ----
+        ImVec2 available = ImGui::GetContentRegionAvail();
+        // Square preview: 40% of width, capped by available height minus hint text
+        float previewSz = fmaxf(available.x * 0.40f, 220.0f);
+        previewSz = fminf(previewSz, available.y - 40.0f);   // leave room for hint text
+        previewSz = fmaxf(previewSz, 180.0f);
+        float panelWidth = available.x;
+        bool  hasSplit   = (panelWidth > previewSz + 220.0f);
+
+        if (hasSplit)
+        {
+            ImGui::BeginChild("##pfpreviewcol", ImVec2(previewSz, -1), false);
+        }
+
+        // Render into FBO and display
+        renderPrefabPreview(previewModelID, previewScale, s_previewYaw, s_previewPitch,
+                           s_previewZoom, &ae->layout, s_fieldData, s_colliderShape);
+
+        if (g_modelPreviewOutputFBO.fbo != 0)
+        {
+            // Display preview as square image scaled to calculated size
+            ImGui::Image(
+                (ImTextureID)(u64)g_modelPreviewOutputFBO.texture,
+                ImVec2(previewSz, previewSz),
+                ImVec2(0, 1), ImVec2(1, 0));
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDragging(0))
+            {
+                ImVec2 delta = ImGui::GetIO().MouseDelta;
+                s_previewYaw   += delta.x * 0.012f;
+                s_previewPitch += delta.y * 0.012f;
+            }
+            if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0.0f)
+            {
+                // Scroll wheel to zoom: positive wheel = zoom out (increase distance)
+                s_previewZoom *= (1.0f + ImGui::GetIO().MouseWheel * 0.1f);
+                s_previewZoom = clamp(s_previewZoom, 0.1f, 10.0f);
+            }
+            ImGui::TextDisabled("Drag to orbit, Scroll to zoom");
+        }
+        else
+        {
+            ImGui::TextDisabled("(preview unavailable)");
+        }
+
+        if (hasSplit)
+        {
+            ImGui::EndChild();
+            ImGui::SameLine();
+            ImGui::BeginChild("##pffields", ImVec2(0, -1), false);
+        }
+
+        // ---- Right column: field editor sections ----
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::InputText("Name##pfn", s_prefabName, sizeof(s_prefabName));
+        ImGui::Spacing();
+
+        // Helpers: field categorisation
+        auto isTransform = [](const c8 *n) {
+            return strcmp(n,"PositionX")==0 || strcmp(n,"PositionY")==0 || strcmp(n,"PositionZ")==0 ||
+                   strcmp(n,"Rotation")==0  || strcmp(n,"Scale")==0;
+        };
+        auto isPhysics = [](const c8 *n) {
+            return strcmp(n,"PhysicsBodyType")==0 || strcmp(n,"Mass")==0 || strcmp(n,"InvMass")==0 ||
+                   strcmp(n,"Restitution")==0 || strcmp(n,"LinearDamping")==0 ||
+                   strcmp(n,"SphereRadius")==0 ||
+                   strcmp(n,"ColliderHalfX")==0 || strcmp(n,"ColliderHalfY")==0 || strcmp(n,"ColliderHalfZ")==0 ||
+                   strcmp(n,"LinearVelocityX")==0 || strcmp(n,"LinearVelocityY")==0 || strcmp(n,"LinearVelocityZ")==0 ||
+                   strcmp(n,"ForceX")==0 || strcmp(n,"ForceY")==0 || strcmp(n,"ForceZ")==0;
+        };
+        auto isRender = [](const c8 *n) { return strcmp(n,"ModelID")==0; };
+
+        // ---- Transform section ----
+        if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            i32 pxF = pfFindField(ae, "PositionX");
+            i32 pyF = pfFindField(ae, "PositionY");
+            i32 pzF = pfFindField(ae, "PositionZ");
+            if (pxF >= 0 && pyF >= 0 && pzF >= 0)
+            {
+                f32 pos[3] = {*(f32*)s_fieldData[pxF], *(f32*)s_fieldData[pyF], *(f32*)s_fieldData[pzF]};
+                if (ImGui::DragFloat3("Position", pos, 0.01f))
+                {
+                    *(f32*)s_fieldData[pxF] = pos[0];
+                    *(f32*)s_fieldData[pyF] = pos[1];
+                    *(f32*)s_fieldData[pzF] = pos[2];
+                }
+            }
+            i32 rotF = pfFindField(ae, "Rotation");
+            if (rotF >= 0 && ae->layout.fields[rotF].size == 16)
+            {
+                if (s_lastArchForEuler != s_selArch)
+                {
+                    Vec3 eu = eulerFromQuat(*(Vec4*)s_fieldData[rotF]);
+                    s_eulerDeg = {degrees(eu.x), degrees(eu.y), degrees(eu.z)};
+                    s_lastArchForEuler = s_selArch;
+                }
+                if (ImGui::DragFloat3("Rotation##euler", (f32*)&s_eulerDeg, 0.5f))
+                {
+                    Vec3 rad = {radians(s_eulerDeg.x), radians(s_eulerDeg.y), radians(s_eulerDeg.z)};
+                    *(Vec4*)s_fieldData[rotF] = quatFromEuler(rad);
+                }
+            }
+            if (scaleF >= 0)
+                ImGui::DragFloat3("Scale", (f32*)s_fieldData[scaleF], 0.005f);
+            if (scaleF1 >= 0)
+                ImGui::DragFloat("Scale##f", (f32*)s_fieldData[scaleF1], 0.005f);
+        }
+
+        // ---- Rendering section ----
+        if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            if (modelF >= 0 && resources)
+            {
+                u32 mid = *(u32*)s_fieldData[modelF];
+                const c8 *preview = (mid == (u32)-1) ? "None"
+                    : (mid < resources->modelUsed ? resources->modelBuffer[mid].name : "Invalid");
+                if (ImGui::BeginCombo("Model", preview))
+                {
+                    if (ImGui::Selectable("None", mid == (u32)-1))
+                        *(u32*)s_fieldData[modelF] = (u32)-1;
+                    for (u32 mi = 0; mi < resources->modelUsed; mi++)
+                    {
+                        ImGui::PushID((int)mi + 11000);
+                        bool sel = (mid == mi);
+                        if (ImGui::Selectable(resources->modelBuffer[mi].name, sel))
+                            *(u32*)s_fieldData[modelF] = mi;
+                        if (sel) ImGui::SetItemDefaultFocus();
+                        ImGui::PopID();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            else if (modelF < 0)
+            {
+                ImGui::TextDisabled("No ModelID field on this archetype.");
+            }
+        }
+
+        // ---- Physics / Collider section ----
+        bool hasPhysicsFields = false;
+        for (u32 f = 0; f < nf && !hasPhysicsFields; f++)
+            if (ae->layout.fields && ae->layout.fields[f].name && isPhysics(ae->layout.fields[f].name))
+                hasPhysicsFields = true;
+
+        if (hasPhysicsFields && ImGui::CollapsingHeader("Physics / Collider"))
+        {
+            i32 btF = pfFindField(ae, "PhysicsBodyType");
+            if (btF >= 0 && ae->layout.fields[btF].size == 4)
+            {
+                static const c8 *bodyTypes[] = {"Static", "Dynamic", "Kinematic"};
+                i32 bt = (i32)*(u32*)s_fieldData[btF];
+                if (bt < 0 || bt > 2) bt = 0;
+                if (ImGui::Combo("Body Type", &bt, bodyTypes, 3))
+                    *(u32*)s_fieldData[btF] = (u32)bt;
+            }
+
+            // Collider shape picker — drives which size fields are shown
+            {
+                static const c8 *shapeNames[] = {"None", "Sphere", "Box"};
+                ImGui::Combo("Collider Shape", &s_colliderShape, shapeNames, 3);
+            }
+
+            // Shape-specific size fields
+            if (s_colliderShape == 1) // Sphere
+            {
+                i32 srF = pfFindField(ae, "SphereRadius");
+                if (srF >= 0)
+                    ImGui::DragFloat("Sphere Radius", (f32*)s_fieldData[srF], 0.005f, 0.001f, 100.0f);
+                else
+                    ImGui::TextDisabled("No SphereRadius field on this archetype.");
+            }
+            else if (s_colliderShape == 2) // Box
+            {
+                i32 hxF = pfFindField(ae, "ColliderHalfX");
+                i32 hyF = pfFindField(ae, "ColliderHalfY");
+                i32 hzF = pfFindField(ae, "ColliderHalfZ");
+                if (hxF >= 0 && hyF >= 0 && hzF >= 0)
+                {
+                    f32 half[3] = {*(f32*)s_fieldData[hxF], *(f32*)s_fieldData[hyF], *(f32*)s_fieldData[hzF]};
+                    if (ImGui::DragFloat3("Box Half-Extents", half, 0.005f, 0.001f, 100.0f))
+                    {
+                        *(f32*)s_fieldData[hxF] = half[0];
+                        *(f32*)s_fieldData[hyF] = half[1];
+                        *(f32*)s_fieldData[hzF] = half[2];
+                    }
+                }
+                else
+                    ImGui::TextDisabled("No ColliderHalfX/Y/Z fields on this archetype.");
+            }
+
+            // Collider offset (shared for both sphere and box)
+            {
+                i32 oxF = pfFindField(ae, "ColliderOffsetX");
+                i32 oyF = pfFindField(ae, "ColliderOffsetY");
+                i32 ozF = pfFindField(ae, "ColliderOffsetZ");
+                if (oxF >= 0 && oyF >= 0 && ozF >= 0)
+                {
+                    f32 offset[3] = {*(f32*)s_fieldData[oxF], *(f32*)s_fieldData[oyF], *(f32*)s_fieldData[ozF]};
+                    if (ImGui::DragFloat3("Collider Offset", offset, 0.01f, -100.0f, 100.0f))
+                    {
+                        *(f32*)s_fieldData[oxF] = offset[0];
+                        *(f32*)s_fieldData[oyF] = offset[1];
+                        *(f32*)s_fieldData[ozF] = offset[2];
+                    }
+                }
+            }
+
+            ImGui::Spacing();
+            // Mass / InvMass / Restitution / Damping
+            for (const c8 *fn : {"Mass", "InvMass", "Restitution", "LinearDamping"})
+            {
+                i32 fi = pfFindField(ae, fn);
+                if (fi >= 0 && ae->layout.fields[fi].size == 4)
+                {
+                    ImGui::PushID(fi + 12000);
+                    ImGui::DragFloat(fn, (f32*)s_fieldData[fi], 0.001f, 0.0f, 1000.0f);
+                    ImGui::PopID();
+                }
+            }
+        }
+
+        // ---- ECS Data section — all remaining fields ----
+        bool hasOther = false;
+        for (u32 f = 0; f < nf && !hasOther; f++)
+        {
+            const c8 *fn = ae->layout.fields ? ae->layout.fields[f].name : nullptr;
+            if (fn && !isTransform(fn) && !isPhysics(fn) && !isRender(fn)) hasOther = true;
+        }
+        if (hasOther && ImGui::CollapsingHeader("ECS Data", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            if (ImGui::BeginTable("##ecsd", 2,
+                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            {
+                ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableHeadersRow();
+
+                for (u32 f = 0; f < nf; f++)
+                {
+                    const FieldInfo *fi = ae->layout.fields ? &ae->layout.fields[f] : nullptr;
+                    if (!fi || !fi->name || fi->size == 0) continue;
+                    if (isTransform(fi->name) || isPhysics(fi->name) || isRender(fi->name)) continue;
+
+                    ImGui::TableNextRow();
+                    ImGui::PushID((int)f + 13000);
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(fi->name);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::SetNextItemWidth(-1);
+                    drawFieldEditor(fi->name, s_fieldData[f], fi->size);
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+        }
+
+        // ---- Save / Cancel ----
+        ImGui::Spacing();
+        ImGui::Separator();
+        bool canSave = (s_prefabName[0] != '\0');
+        if (!canSave) ImGui::BeginDisabled();
+        if (ImGui::Button("Save Prefab"))
+        {
+            c8 pfDir[MAX_PATH_LENGTH];
+            snprintf(pfDir, sizeof(pfDir), "%s/prefabs", hubProjectDir);
+            createDir(pfDir);
+
+            c8        fnames[PREFAB_UI_MAX_FIELDS][PREFAB_FIELD_NAME_MAX];
+            const void *fvals[PREFAB_UI_MAX_FIELDS];
+            u32        fsizes[PREFAB_UI_MAX_FIELDS];
+            u32        fcount = 0;
+            for (u32 f = 0; f < nf && fcount < PREFAB_UI_MAX_FIELDS; f++)
+            {
+                const FieldInfo *fi = ae->layout.fields ? &ae->layout.fields[f] : nullptr;
+                if (!fi || !fi->name || fi->size == 0) continue;
+                strncpy(fnames[fcount], fi->name, PREFAB_FIELD_NAME_MAX - 1);
+                fnames[fcount][PREFAB_FIELD_NAME_MAX - 1] = '\0';
+                fvals[fcount]  = s_fieldData[f];
+                fsizes[fcount] = fi->size < PREFAB_UI_FIELD_DATA ? fi->size : PREFAB_UI_FIELD_DATA;
+                fcount++;
+            }
+
+            c8 outPath[MAX_PATH_LENGTH];
+            snprintf(outPath, sizeof(outPath), "%s/prefabs/%s.prefab", hubProjectDir, s_prefabName);
+            if (prefabSave(outPath, ae->name, s_prefabName,
+                           (const c8(*)[PREFAB_FIELD_NAME_MAX])fnames,
+                           fvals, fsizes, fcount))
+            {
+                snprintf(s_resultMsg, sizeof(s_resultMsg), "Saved '%s.prefab'.", s_prefabName);
+                if (s_editingFile[0] == '\0')
+                    strncpy(s_editingFile, outPath, MAX_PATH_LENGTH - 1);
+            }
+            else
+                snprintf(s_resultMsg, sizeof(s_resultMsg), "Failed to save '%s.prefab'!", s_prefabName);
+        }
+        if (!canSave)
+        {
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Enter a prefab name first.");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Spawn in Scene") && canSave && entityCount < entitySizeCache)
+        {
+            u32 id = entityCount;
+            isActive[id]           = true;
+            rotations[id]          = quatIdentity();
+            modelIDs[id]           = (u32)-1;
+            entityMaterialIDs[id]  = (u32)-1;
+            shaderHandles[id]      = 0;
+            archetypeIDs[id]       = (u32)s_selArch;
+            if (archetypeHashes) archetypeHashes[id] = archetypeHashFromName(ae->name);
+            if (ecsSlotIDs)       ecsSlotIDs[id]      = (u32)-1;
+            if (sceneCameraFlags) sceneCameraFlags[id] = false;
+            if (entityTags)       entityTags[id * 32]  = '\0';
+            if (isLight)          isLight[id]          = false;
+            snprintf(&names[id * MAX_NAME_SIZE], MAX_NAME_SIZE, "%s", s_prefabName);
+
+            // Pull scene-visible fields from prefab data
+            i32 pxF = pfFindField(ae, "PositionX"), pyF = pfFindField(ae, "PositionY"), pzF = pfFindField(ae, "PositionZ");
+            positions[id] = {
+                (pxF >= 0 ? *(f32*)s_fieldData[pxF] : 0.0f),
+                (pyF >= 0 ? *(f32*)s_fieldData[pyF] : 0.0f),
+                (pzF >= 0 ? *(f32*)s_fieldData[pzF] : 0.0f)
+            };
+            scales[id] = (scaleF >= 0) ? *(Vec3*)s_fieldData[scaleF]
+                        : (scaleF1 >= 0 ? Vec3{*(f32*)s_fieldData[scaleF1], *(f32*)s_fieldData[scaleF1], *(f32*)s_fieldData[scaleF1]}
+                                        : Vec3{1,1,1});
+            if (modelF >= 0) modelIDs[id] = *(u32*)s_fieldData[modelF];
+
+            // Physics body type
+            i32 btF2 = pfFindField(ae, "PhysicsBodyType");
+            if (btF2 >= 0 && physicsBodyTypes)
+                physicsBodyTypes[id] = *(u32*)s_fieldData[btF2];
+
+            // Collider shape + size
+            if (colliderShapes)
+                colliderShapes[id] = (u32)s_colliderShape;
+            if (s_colliderShape == 1 && sphereRadii)
+            {
+                i32 srF2 = pfFindField(ae, "SphereRadius");
+                sphereRadii[id] = (srF2 >= 0) ? *(f32*)s_fieldData[srF2] : 0.5f;
+            }
+            else if (s_colliderShape == 2 && colliderHalfXs && colliderHalfYs && colliderHalfZs)
+            {
+                i32 hxF2 = pfFindField(ae, "ColliderHalfX");
+                i32 hyF2 = pfFindField(ae, "ColliderHalfY");
+                i32 hzF2 = pfFindField(ae, "ColliderHalfZ");
+                colliderHalfXs[id] = (hxF2 >= 0) ? *(f32*)s_fieldData[hxF2] : 0.5f;
+                colliderHalfYs[id] = (hyF2 >= 0) ? *(f32*)s_fieldData[hyF2] : 0.5f;
+                colliderHalfZs[id] = (hzF2 >= 0) ? *(f32*)s_fieldData[hzF2] : 0.5f;
+            }
+
+            // Mass
+            {
+                i32 massF = pfFindField(ae, "Mass");
+                if (massF >= 0 && masses)
+                    masses[id] = *(f32*)s_fieldData[massF];
+            }
+
+            entityCount++;
+            sceneArchetype.arena[0].count = entityCount;
+            if (sceneArchetype.activeChunkCount == 0) sceneArchetype.activeChunkCount = 1;
+            snprintf(s_resultMsg, sizeof(s_resultMsg), "Spawned '%s' in scene.", s_prefabName);
+        }
+
+        if (s_resultMsg[0] != '\0')
+        {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", s_resultMsg);
+        }
+
+        if (hasSplit) ImGui::EndChild();
+    }
+
+    ImGui::End();
 }
 
 // Ring buffer for frame time history
@@ -4709,6 +5613,98 @@ static void drawInspectorWindow()
                         if (sel) ImGui::SetItemDefaultFocus();
                     }
                     ImGui::EndCombo();
+                }
+
+                // ---- Apply Prefab to this entity ----
+                if (currentArchID < g_archRegistry.count && hubProjectDir[0] != '\0')
+                {
+                    const c8 *archName = g_archRegistry.entries[currentArchID].name;
+
+                    // Collect matching .prefab files for this archetype
+                    static c8   s_applyPrefabFiles[32][MAX_PATH_LENGTH];
+                    static c8   s_applyPrefabNames[32][MAX_SCENE_NAME];
+                    static u32  s_applyPrefabCount = 0;
+                    static u32  s_applyForArch     = (u32)-1;
+
+                    if (s_applyForArch != currentArchID)
+                    {
+                        s_applyForArch     = currentArchID;
+                        s_applyPrefabCount = 0;
+                        c8 pfDir[MAX_PATH_LENGTH];
+                        snprintf(pfDir, sizeof(pfDir), "%s/prefabs", hubProjectDir);
+                        u32 fc = 0;
+                        c8 **flist = listFilesInDirectory(pfDir, &fc);
+                        if (flist)
+                        {
+                            for (u32 fi = 0; fi < fc && s_applyPrefabCount < 32; fi++)
+                            {
+                                u32 flen = (u32)strlen(flist[fi]);
+                                if (flen > 7 && strcmp(flist[fi] + flen - 7, ".prefab") == 0)
+                                {
+                                    EditorPrefabData pd;
+                                    if (loadPrefabForEditor(flist[fi], &pd) &&
+                                        strcmp(pd.archName, archName) == 0)
+                                    {
+                                        strncpy(s_applyPrefabFiles[s_applyPrefabCount], flist[fi], MAX_PATH_LENGTH - 1);
+                                        strncpy(s_applyPrefabNames[s_applyPrefabCount], pd.prefabName, MAX_SCENE_NAME - 1);
+                                        s_applyPrefabCount++;
+                                    }
+                                }
+                                free(flist[fi]);
+                            }
+                            free(flist);
+                        }
+                    }
+
+                    if (s_applyPrefabCount > 0)
+                    {
+                        static int s_applySelIdx = -1;
+                        ImGui::SetNextItemWidth(180.0f);
+                        const c8 *applyPreview = (s_applySelIdx >= 0 && (u32)s_applySelIdx < s_applyPrefabCount)
+                                               ? s_applyPrefabNames[s_applySelIdx] : "(prefab…)";
+                        if (ImGui::BeginCombo("##applyPrefab", applyPreview))
+                        {
+                            for (u32 pi = 0; pi < s_applyPrefabCount; pi++)
+                            {
+                                bool psel = (s_applySelIdx == (i32)pi);
+                                if (ImGui::Selectable(s_applyPrefabNames[pi], psel))
+                                    s_applySelIdx = (i32)pi;
+                                if (psel) ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::EndCombo();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Apply") && s_applySelIdx >= 0)
+                        {
+                            EditorPrefabData pd;
+                            if (loadPrefabForEditor(s_applyPrefabFiles[s_applySelIdx], &pd))
+                            {
+                                for (u32 p = 0; p < pd.fieldCount; p++)
+                                {
+                                    if      (strcmp(pd.fieldNames[p], "PositionX") == 0 && pd.fieldSizes[p] == 4)
+                                        positions[inspectorEntityID].x = *(f32*)pd.fieldData[p];
+                                    else if (strcmp(pd.fieldNames[p], "PositionY") == 0 && pd.fieldSizes[p] == 4)
+                                        positions[inspectorEntityID].y = *(f32*)pd.fieldData[p];
+                                    else if (strcmp(pd.fieldNames[p], "PositionZ") == 0 && pd.fieldSizes[p] == 4)
+                                        positions[inspectorEntityID].z = *(f32*)pd.fieldData[p];
+                                    else if (strcmp(pd.fieldNames[p], "Scale") == 0 && pd.fieldSizes[p] == 12)
+                                        scales[inspectorEntityID] = *(Vec3*)pd.fieldData[p];
+                                    else if (strcmp(pd.fieldNames[p], "ModelID") == 0 && pd.fieldSizes[p] == 4)
+                                        modelIDs[inspectorEntityID] = *(u32*)pd.fieldData[p];
+                                }
+                            }
+                        }
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("Stamp prefab data (position, scale, modelID) onto this entity.");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Rescan##ap"))
+                            s_applyForArch = (u32)-1; // force re-scan next frame
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("No prefabs for '%s' — author one in the Prefabs panel.", archName);
+                    }
+                    ImGui::Spacing();
                 }
 
                 if (currentArchID < g_archRegistry.count)
@@ -6215,6 +7211,7 @@ void drawDockspaceAndPanels()
     //--actual docked windows--
     drawViewportWindow();
     drawDebugWindow();
+    drawArchetypesWindow();
     drawPrefabsWindow();
     drawScenesPanel();
     drawSceneListWindow();

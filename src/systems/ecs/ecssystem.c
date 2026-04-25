@@ -92,6 +92,159 @@ static void camelToUpperSnake(const c8 *src, c8 *dst, u32 dstSize)
     dst[j] = '\0';
 }
 
+// Physics field tables — shared by buildGenBlock and the physics-field-skip logic.
+static const c8 *s_physFieldNames[] = {
+    "LinearVelocityX", "LinearVelocityY", "LinearVelocityZ",
+    "ForceX", "ForceY", "ForceZ",
+    "PhysicsBodyType",
+    "Mass", "InvMass", "Restitution", "LinearDamping",
+    "SphereRadius",
+    "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ"
+};
+static const c8 *s_physFieldTypes[] = {
+    "f32", "f32", "f32",
+    "f32", "f32", "f32",
+    "u32",
+    "f32", "f32", "f32", "f32",
+    "f32",
+    "f32", "f32", "f32"
+};
+static const u32 s_physFieldTableCount = 15;
+
+static c8 *readFileToString(const c8 *path)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 8 * 1024 * 1024) { fclose(f); return NULL; }
+    c8 *out = (c8 *)malloc((u32)sz + 1);
+    if (!out) { fclose(f); return NULL; }
+    u32 nread = (u32)fread(out, 1, (u32)sz, f);
+    out[nread] = '\0';
+    fclose(f);
+    return out;
+}
+
+// Find the existing enum name for a field by its displayName inside an existing
+// FIELDS macro block. Returns true and fills enumNameOut if found.
+static b8 findExistingEnumName(const c8 *existingBlock, const c8 *displayName,
+                                c8 *enumNameOut, u32 enumNameSize)
+{
+    if (!existingBlock || !displayName) return false;
+    const c8 *p = existingBlock;
+    while ((p = strstr(p, "FIELD(")) != NULL)
+    {
+        p += 6;
+        c8 eName[256] = {0};
+        u32 ei = 0;
+        while (*p && *p != ',' && *p != ')' && !isspace((unsigned char)*p) && ei + 1 < sizeof(eName))
+            eName[ei++] = *p++;
+        while (*p && *p != '"' && *p != ')' && *p != '\n') p++;
+        if (*p != '"') continue;
+        p++;
+        c8 dName[256] = {0};
+        u32 di = 0;
+        while (*p && *p != '"' && di + 1 < sizeof(dName))
+            dName[di++] = *p++;
+        if (eName[0] != '\0' && strcmp(dName, displayName) == 0)
+        {
+            strncpy(enumNameOut, eName, enumNameSize - 1);
+            enumNameOut[enumNameSize - 1] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+// Builds and returns (malloc'd) the sentinel-wrapped generated block for insertion
+// into the .h file.  Includes DRUID_FLAGS, POOL_CAPACITY, the FIELDS macro, and
+// DECLARE_ARCHETYPE — everything the scanner needs to reconstruct the archetype.
+// existingBlock: the current content between the sentinel markers (or NULL for fresh).
+//   Used to preserve user-defined enum names for existing fields.
+static c8 *buildGenBlock(const c8 *archetypeName, const c8 *upperName,
+                          const FieldInfo *fields, const c8 **typeNames, u32 fieldCount,
+                          b8 isSingle, b8 isBuffered, u32 poolCapacity, b8 isPhysicsBody,
+                          const b8 *physFieldSkip, u32 physFieldCount,
+                          const c8 *existingBlock)
+{
+    u32 cap = 8192, len = 0;
+    c8 *blk = (c8 *)malloc(cap);
+    if (!blk) return NULL;
+    blk[0] = '\0';
+
+#define BA(fmt, ...) do { \
+    c8 _t[512]; int _n = snprintf(_t, sizeof(_t), fmt, ##__VA_ARGS__); \
+    if (_n > 0) { u32 _nl = (u32)_n; \
+        if (len + _nl + 1 > cap) { cap = (len + _nl + 1) * 2; blk = (c8*)realloc(blk, cap); } \
+        memcpy(blk + len, _t, _nl); len += _nl; blk[len] = '\0'; } \
+} while(0)
+
+    BA("// <DRUID_GEN_BEGIN %s>\n", archetypeName);
+
+    u8 genFlags = 0;
+    if (isSingle)      FLAG_SET(genFlags, ARCH_SINGLE);
+    if (isBuffered)    FLAG_SET(genFlags, ARCH_BUFFERED);
+    if (isPhysicsBody) FLAG_SET(genFlags, ARCH_PHYSICS_BODY);
+    BA("// DRUID_FLAGS 0x%02X\n", genFlags);
+    if (isBuffered)    BA("// isBuffered\n");
+    if (isSingle)      BA("// isSingle\n");
+    if (isPhysicsBody) BA("// isPhysicsBody\n");
+    if (isBuffered && poolCapacity > 0) BA("#define POOL_CAPACITY %u\n", poolCapacity);
+    BA("\n");
+
+    u32 totalFields = (isBuffered ? 1u : 0u) + fieldCount + physFieldCount;
+    u32 entryIdx    = 0;
+    BA("#define %s_FIELDS(FIELD) \\\n", upperName);
+
+    if (isBuffered)
+    {
+        entryIdx++;
+        c8 aliveEnum[256];
+        if (!findExistingEnumName(existingBlock, "Alive", aliveEnum, sizeof(aliveEnum)))
+            snprintf(aliveEnum, sizeof(aliveEnum), "%s_ALIVE", upperName);
+        BA("    FIELD(%s, \"Alive\", b8, COLD)%s\n", aliveEnum,
+           (entryIdx < totalFields) ? " \\" : "");
+    }
+    for (u32 i = 0; i < fieldCount; i++)
+    {
+        entryIdx++;
+        c8 enumName[256];
+        if (!findExistingEnumName(existingBlock, fields[i].name, enumName, sizeof(enumName)))
+        {
+            c8 snake[256];
+            camelToUpperSnake(fields[i].name, snake, sizeof(snake));
+            snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
+        }
+        BA("    FIELD(%s, \"%s\", %s, %s)%s\n",
+           enumName, fields[i].name, typeNames[i],
+           (fields[i].temperature == FIELD_TEMP_HOT) ? "HOT" : "COLD",
+           (entryIdx < totalFields) ? " \\" : "");
+    }
+    for (u32 i = 0; i < s_physFieldTableCount; i++)
+    {
+        if (!isPhysicsBody || physFieldSkip[i]) continue;
+        entryIdx++;
+        c8 enumName[256];
+        if (!findExistingEnumName(existingBlock, s_physFieldNames[i], enumName, sizeof(enumName)))
+        {
+            c8 snake[256];
+            camelToUpperSnake(s_physFieldNames[i], snake, sizeof(snake));
+            snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
+        }
+        BA("    FIELD(%s, \"%s\", %s, HOT)%s\n",
+           enumName, s_physFieldNames[i], s_physFieldTypes[i],
+           (entryIdx < totalFields) ? " \\" : "");
+    }
+
+    BA("\nDECLARE_ARCHETYPE(%s, %s_FIELDS)\n", archetypeName, upperName);
+    BA("// <DRUID_GEN_END %s>\n", archetypeName);
+
+#undef BA
+    return blk;
+}
+
 b8 generateArchetypeFiles(const c8 *projectDir,
                            const c8 *archetypeName,
                            const FieldInfo *fields,
@@ -109,263 +262,165 @@ b8 generateArchetypeFiles(const c8 *projectDir,
         return false;
     }
 
-    // "Bullet" → "bullet"
     c8 camelCaseName[256];
     snprintf(camelCaseName, sizeof(camelCaseName), "%c%s",
              tolower((unsigned char)archetypeName[0]), archetypeName + 1);
 
-    // "Bullet" → "BULLET"  (used as enum prefix)
     c8 upperName[256];
     for (u32 i = 0; archetypeName[i] != '\0' && i + 1 < sizeof(upperName); i++)
         upperName[i] = (c8)toupper((unsigned char)archetypeName[i]);
     upperName[strlen(archetypeName)] = '\0';
 
-    // Physics fields auto-injected for physics body archetypes
-    static const c8 *physFieldNames[] = {
-        "LinearVelocityX", "LinearVelocityY", "LinearVelocityZ",
-        "ForceX", "ForceY", "ForceZ",
-        "PhysicsBodyType",
-        "Mass", "InvMass", "Restitution", "LinearDamping",
-        "SphereRadius",
-        "ColliderHalfX", "ColliderHalfY", "ColliderHalfZ"
-    };
-    static const c8 *physFieldTypes[] = {
-        "f32", "f32", "f32",
-        "f32", "f32", "f32",
-        "u32",
-        "f32", "f32", "f32", "f32",
-        "f32",
-        "f32", "f32", "f32"
-    };
-    b8 physFieldSkip[15] = {0};
-    u32 physFieldCount = 0;
+    b8  physFieldSkip[15] = {0};
+    u32 physFieldCount    = 0;
     if (isPhysicsBody)
     {
-        for (u32 p = 0; p < 15; p++)
+        for (u32 p = 0; p < s_physFieldTableCount; p++)
         {
             b8 dup = false;
             for (u32 u = 0; u < fieldCount; u++)
-            {
-                if (strcmp(fields[u].name, physFieldNames[p]) == 0) { dup = true; break; }
-            }
+                if (strcmp(fields[u].name, s_physFieldNames[p]) == 0) { dup = true; break; }
             physFieldSkip[p] = dup;
             if (!dup) physFieldCount++;
         }
     }
 
     //=========================================================================
-    // Write .h file
+    // .h file — splice into existing file between sentinels, or create fresh.
 
     c8 headerPath[MAX_PATH_LENGTH];
     snprintf(headerPath, sizeof(headerPath), "%s/src/%s.h", projectDir, archetypeName);
-    FILE *hf = fopen(headerPath, "w");
-    if (!hf) { ERROR("generateArchetypeFiles: cannot open %s", headerPath); return false; }
 
-    fprintf(hf, "#pragma once\n");
-    fprintf(hf, "// Auto-generated by the Druid editor — safe to edit below the stubs.\n");
-    fprintf(hf, "#include <druid.h>\n\n");
-    fprintf(hf, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
+    c8 *existingHeader = readFileToString(headerPath);
 
-    // FIELDS macro — single source of truth for enum and FieldInfo array
-    // Total entries: [Alive if buffered] + user fields + auto physics fields
-    u32 totalFields = (isBuffered ? 1u : 0u) + fieldCount + physFieldCount;
-    u32 entryIdx = 0;
-
-    fprintf(hf, "#define %s_FIELDS(FIELD) \\\n", upperName);
-
-    if (isBuffered)
+    // Extract the existing sentinel block so buildGenBlock can preserve enum names.
+    const c8 *existingBlock = NULL;
+    const c8 *beginPtr = NULL, *endPtr = NULL;
+    c8 beginTag[256], endTag[256];
+    if (existingHeader)
     {
-        entryIdx++;
-        const c8 *cont = (entryIdx < totalFields) ? " \\" : "";
-        fprintf(hf, "    FIELD(%s_ALIVE, \"Alive\", b8, COLD)%s\n", upperName, cont);
+        snprintf(beginTag, sizeof(beginTag), "// <DRUID_GEN_BEGIN %s>", archetypeName);
+        snprintf(endTag,   sizeof(endTag),   "// <DRUID_GEN_END %s>",   archetypeName);
+        beginPtr = strstr(existingHeader, beginTag);
+        endPtr   = strstr(existingHeader, endTag);
+        if (beginPtr && endPtr && endPtr > beginPtr)
+            existingBlock = beginPtr;
     }
 
-    for (u32 i = 0; i < fieldCount; i++)
+    c8 *genBlock = buildGenBlock(archetypeName, upperName, fields, typeNames, fieldCount,
+                                  isSingle, isBuffered, poolCapacity, isPhysicsBody,
+                                  physFieldSkip, physFieldCount, existingBlock);
+    if (!genBlock) { free(existingHeader); return false; }
+
+    if (existingHeader)
     {
-        entryIdx++;
-        const c8 *tempStr = (fields[i].temperature == FIELD_TEMP_HOT) ? "HOT" : "COLD";
-        c8 snake[256];
-        camelToUpperSnake(fields[i].name, snake, sizeof(snake));
-        const c8 *cont = (entryIdx < totalFields) ? " \\" : "";
-        fprintf(hf, "    FIELD(%s_%s, \"%s\", %s, %s)%s\n",
-                upperName, snake, fields[i].name, typeNames[i], tempStr, cont);
+        if (beginPtr && endPtr && endPtr > beginPtr)
+        {
+            // Advance past the end-tag line
+            const c8 *afterEnd = endPtr + strlen(endTag);
+            if (*afterEnd == '\r') afterEnd++;
+            if (*afterEnd == '\n') afterEnd++;
+
+            FILE *hf = fopen(headerPath, "w");
+            if (!hf)
+            {
+                ERROR("generateArchetypeFiles: cannot open %s for writing", headerPath);
+                free(existingHeader); free(genBlock); return false;
+            }
+            fwrite(existingHeader, 1, (u32)(beginPtr - existingHeader), hf);
+            fputs(genBlock, hf);
+            fputs(afterEnd, hf);
+            fclose(hf);
+        }
+        else
+        {
+            WARN("generateArchetypeFiles: %s has no DRUID_GEN markers. "
+                 "Wrap your FIELDS macro and DECLARE_ARCHETYPE with "
+                 "// <DRUID_GEN_BEGIN %s> ... // <DRUID_GEN_END %s> "
+                 "to enable field regeneration. Header not modified.",
+                 headerPath, archetypeName, archetypeName);
+        }
+        free(existingHeader);
+    }
+    else
+    {
+        // First-time creation: write full skeleton with sentinel block embedded.
+        FILE *hf = fopen(headerPath, "w");
+        if (!hf)
+        {
+            ERROR("generateArchetypeFiles: cannot create %s", headerPath);
+            free(genBlock); return false;
+        }
+        fprintf(hf, "#pragma once\n");
+        fprintf(hf, "#include <druid.h>\n\n");
+        fprintf(hf, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
+        fputs(genBlock, hf);
+        fprintf(hf, "\nDSAPI void %sInit(void);\n", camelCaseName);
+        fprintf(hf, "DSAPI void %sUpdate(Archetype *arch, f32 dt);\n", camelCaseName);
+        fprintf(hf, "DSAPI void %sRender(Archetype *arch, Renderer *r);\n", camelCaseName);
+        fprintf(hf, "DSAPI void %sDestroy(void);\n\n", camelCaseName);
+        fprintf(hf, "DSAPI void druidGetECSSystem_%s(ECSSystemPlugin *out);\n\n", archetypeName);
+        fprintf(hf, "#ifdef __cplusplus\n}\n#endif\n");
+        fclose(hf);
     }
 
-    for (u32 i = 0; i < 15; i++)
-    {
-        if (!isPhysicsBody || physFieldSkip[i]) continue;
-        entryIdx++;
-        c8 snake[256];
-        camelToUpperSnake(physFieldNames[i], snake, sizeof(snake));
-        const c8 *cont = (entryIdx < totalFields) ? " \\" : "";
-        fprintf(hf, "    FIELD(%s_%s, \"%s\", %s, HOT)%s\n",
-                upperName, snake, physFieldNames[i], physFieldTypes[i], cont);
-    }
-
-    fprintf(hf, "\nDECLARE_ARCHETYPE(%s, %s_FIELDS)\n\n", archetypeName, upperName);
-
-    fprintf(hf, "DSAPI void %sInit(void);\n", camelCaseName);
-    fprintf(hf, "DSAPI void %sUpdate(Archetype *arch, f32 dt);\n", camelCaseName);
-    fprintf(hf, "DSAPI void %sRender(Archetype *arch, Renderer *r);\n", camelCaseName);
-    fprintf(hf, "DSAPI void %sDestroy(void);\n\n", camelCaseName);
-    fprintf(hf, "DSAPI void druidGetECSSystem_%s(ECSSystemPlugin *out);\n\n", archetypeName);
-    fprintf(hf, "#ifdef __cplusplus\n}\n#endif\n");
-    fclose(hf);
+    free(genBlock);
 
     //=========================================================================
-    // Write .c / .cpp file
+    // .c / .cpp file — only write if it does not already exist.
 
     c8 sourcePath[MAX_PATH_LENGTH];
     snprintf(sourcePath, sizeof(sourcePath), "%s/src/%s.%s",
              projectDir, archetypeName, useCpp ? "cpp" : "c");
-    FILE *sf = fopen(sourcePath, "w");
-    if (!sf) { ERROR("generateArchetypeFiles: cannot open %s", sourcePath); return false; }
 
-    // DRUID_SYSTEM_EXPORT belongs in the .c — controls dllexport/dllimport
+    FILE *sfCheck = fopen(sourcePath, "r");
+    if (sfCheck)
+    {
+        fclose(sfCheck);
+        INFO("generateArchetypeFiles: %s exists — source not overwritten", sourcePath);
+        INFO("Generated archetype header: %s.h in %s/src/", archetypeName, projectDir);
+        return true;
+    }
+
+    FILE *sf = fopen(sourcePath, "w");
+    if (!sf) { ERROR("generateArchetypeFiles: cannot create %s", sourcePath); return false; }
+
     fprintf(sf, "#define DRUID_SYSTEM_EXPORT\n");
     fprintf(sf, "#include \"%s.h\"\n\n", archetypeName);
-
-    if (isBuffered)
-        fprintf(sf, "#define POOL_CAPACITY %u\n\n", poolCapacity);
-
-    // Canonical flags marker for the scanner
-    u8 generatedFlags = 0;
-    if (isSingle)     FLAG_SET(generatedFlags, ARCH_SINGLE);
-    if (isBuffered)   FLAG_SET(generatedFlags, ARCH_BUFFERED);
-    if (isPhysicsBody) FLAG_SET(generatedFlags, ARCH_PHYSICS_BODY);
-    fprintf(sf, "// DRUID_FLAGS 0x%02X\n", generatedFlags);
-    if (isBuffered)   fprintf(sf, "// isBuffered\n");
-    if (isSingle)     fprintf(sf, "// isSingle\n");
-    if (isPhysicsBody) fprintf(sf, "// isPhysicsBody\n");
-    fprintf(sf, "\n");
-
     fprintf(sf, "DEFINE_ARCHETYPE(%s, %s_FIELDS)\n\n", archetypeName, upperName);
-
     fprintf(sf, "static u32 s_ibSlot = (u32)-1;\n\n");
 
     fprintf(sf, "void %sInit(void)\n{\n", camelCaseName);
-    fprintf(sf, "    s_ibSlot = rendererAcquireInstanceBuffer(renderer, 1024);\n");
+    if (isBuffered && poolCapacity > 0)
+        fprintf(sf, "    s_ibSlot = rendererAcquireInstanceBuffer(renderer, POOL_CAPACITY);\n");
+    else
+        fprintf(sf, "    s_ibSlot = rendererAcquireInstanceBuffer(renderer, 256);\n");
     fprintf(sf, "}\n\n");
 
-    // Build a helper lambda for emitting a typed field pointer using an enum name.
-    // Emits: "    TYPE *varName = (TYPE *)fields[ENUM_NAME];\n"
-    // The variable name is lowercased field name (plain camelCase as given).
-#define EMIT_FIELD_PTR(indent, TYPE, varName, ENUM) \
-    fprintf(sf, indent TYPE " *" varName " = (" TYPE " *)fields[" ENUM "];\n")
-
     fprintf(sf, "void %sUpdate(Archetype *arch, f32 dt)\n{\n", camelCaseName);
-    if (isPhysicsBody)
-        fprintf(sf, "    (void)dt;\n");
-
-    if (isSingle)
-    {
-        fprintf(sf, "    void **fields = getArchetypeFields(arch, 0);\n");
-        fprintf(sf, "    if (!fields || arch->arena[0].count == 0) return;\n\n");
-
-        if (isBuffered)
-        {
-            c8 enumName[512];
-            snprintf(enumName, sizeof(enumName), "%s_ALIVE", upperName);
-            fprintf(sf, "    b8 *alive = (b8 *)fields[%s];\n", enumName);
-        }
-        for (u32 i = 0; i < fieldCount; i++)
-        {
-            c8 snake[256], enumName[512];
-            camelToUpperSnake(fields[i].name, snake, sizeof(snake));
-            snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-            fprintf(sf, "    %s *%s = (%s *)fields[%s];\n",
-                    typeNames[i], fields[i].name, typeNames[i], enumName);
-        }
-        if (isPhysicsBody)
-        {
-            fprintf(sf, "    // physics SoA fields (auto-injected)\n");
-            for (u32 i = 0; i < 15; i++)
-            {
-                if (physFieldSkip[i]) continue;
-                c8 snake[256], enumName[512];
-                camelToUpperSnake(physFieldNames[i], snake, sizeof(snake));
-                snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-                fprintf(sf, "    %s *%s = (%s *)fields[%s];\n",
-                        physFieldTypes[i], physFieldNames[i], physFieldTypes[i], enumName);
-            }
-        }
-    }
-    else
+    if (!isSingle)
     {
         fprintf(sf, "    for (u32 _ch = 0; _ch < arch->activeChunkCount; _ch++)\n");
         fprintf(sf, "    {\n");
         fprintf(sf, "        void **fields = getArchetypeFields(arch, _ch);\n");
         fprintf(sf, "        if (!fields) continue;\n");
-        fprintf(sf, "        u32 count = arch->arena[_ch].count;\n\n");
-
-        if (isBuffered)
-        {
-            c8 enumName[512];
-            snprintf(enumName, sizeof(enumName), "%s_ALIVE", upperName);
-            fprintf(sf, "        b8 *alive = (b8 *)fields[%s];\n", enumName);
-        }
-        for (u32 i = 0; i < fieldCount; i++)
-        {
-            c8 snake[256], enumName[512];
-            camelToUpperSnake(fields[i].name, snake, sizeof(snake));
-            snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-            fprintf(sf, "        %s *%s = (%s *)fields[%s];\n",
-                    typeNames[i], fields[i].name, typeNames[i], enumName);
-        }
-        if (isPhysicsBody)
-        {
-            fprintf(sf, "        // physics SoA fields (auto-injected)\n");
-            for (u32 i = 0; i < 15; i++)
-            {
-                if (physFieldSkip[i]) continue;
-                c8 snake[256], enumName[512];
-                camelToUpperSnake(physFieldNames[i], snake, sizeof(snake));
-                snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-                fprintf(sf, "        %s *%s = (%s *)fields[%s];\n",
-                        physFieldTypes[i], physFieldNames[i], physFieldTypes[i], enumName);
-            }
-        }
-        fprintf(sf, "\n");
-        fprintf(sf, "        for (u32 i = 0; i < count; i++)\n");
-        fprintf(sf, "        {\n");
-        if (isBuffered)
-            fprintf(sf, "            if (!alive[i]) continue;\n");
+        fprintf(sf, "        u32 count = arch->arena[_ch].count;\n");
+        if (isBuffered) fprintf(sf, "        b8 *alive = (b8 *)fields[%s_ALIVE];\n", upperName);
+        fprintf(sf, "        for (u32 i = 0; i < count; i++)\n        {\n");
+        if (isBuffered) fprintf(sf, "            if (!alive[i]) continue;\n");
         fprintf(sf, "        }\n");
         fprintf(sf, "    }\n");
     }
+    else
+    {
+        fprintf(sf, "    void **fields = getArchetypeFields(arch, 0);\n");
+        fprintf(sf, "    if (!fields || arch->arena[0].count == 0) return;\n");
+        fprintf(sf, "    (void)dt;\n");
+    }
     fprintf(sf, "}\n\n");
-#undef EMIT_FIELD_PTR
 
-    fprintf(sf, "// Optional: implement custom rendering for this archetype.\n");
-    fprintf(sf, "// When render is NULL (see druidGetECSSystem below), the engine uses a\n");
-    fprintf(sf, "// default forward pass based on Position/Rotation/Scale/ModelID fields.\n");
-    fprintf(sf, "// Uncomment and set out->render = %sRender to take full control.\n\n", camelCaseName);
-
-    fprintf(sf, "/*\nvoid %sRender(Archetype *arch, Renderer *r)\n{\n", camelCaseName);
-    fprintf(sf, "    (void)r;\n");
-    fprintf(sf, "    for (u32 _ch = 0; _ch < arch->activeChunkCount; _ch++)\n");
-    fprintf(sf, "    {\n");
-    fprintf(sf, "        void **fields = getArchetypeFields(arch, _ch);\n");
-    fprintf(sf, "        if (!fields) continue;\n");
-    fprintf(sf, "        u32 count = arch->arena[_ch].count;\n\n");
-    if (isBuffered)
-    {
-        c8 enumName[512];
-        snprintf(enumName, sizeof(enumName), "%s_ALIVE", upperName);
-        fprintf(sf, "        b8 *alive = (b8 *)fields[%s];\n", enumName);
-    }
-    for (u32 i = 0; i < fieldCount; i++)
-    {
-        c8 snake[256], enumName[512];
-        camelToUpperSnake(fields[i].name, snake, sizeof(snake));
-        snprintf(enumName, sizeof(enumName), "%s_%s", upperName, snake);
-        fprintf(sf, "        %s *%s = (%s *)fields[%s];\n",
-                typeNames[i], fields[i].name, typeNames[i], enumName);
-    }
-    fprintf(sf, "\n        for (u32 i = 0; i < count; i++)\n");
-    fprintf(sf, "        {\n        }\n");
-    fprintf(sf, "    }\n");
-    fprintf(sf, "}\n*/\n\n");
+    fprintf(sf, "// Optional custom render — set out->render = %sRender to use.\n", camelCaseName);
+    fprintf(sf, "/*\nvoid %sRender(Archetype *arch, Renderer *r) { (void)arch; (void)r; }\n*/\n\n");
 
     fprintf(sf, "void %sDestroy(void)\n{\n", camelCaseName);
     fprintf(sf, "    if (s_ibSlot != (u32)-1) { rendererReleaseInstanceBuffer(renderer, s_ibSlot); s_ibSlot = (u32)-1; }\n");
@@ -374,7 +429,7 @@ b8 generateArchetypeFiles(const c8 *projectDir,
     fprintf(sf, "void druidGetECSSystem_%s(ECSSystemPlugin *out)\n{\n", archetypeName);
     fprintf(sf, "    out->init    = %sInit;\n", camelCaseName);
     fprintf(sf, "    out->update  = %sUpdate;\n", camelCaseName);
-    fprintf(sf, "    out->render  = NULL;  // default forward pass; set to %sRender for custom\n", camelCaseName);
+    fprintf(sf, "    out->render  = NULL;\n");
     fprintf(sf, "    out->destroy = %sDestroy;\n", camelCaseName);
     fprintf(sf, "}\n");
 

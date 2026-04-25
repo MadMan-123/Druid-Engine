@@ -939,6 +939,71 @@ extern "C"
     // compile all archetype system DLLs in the project
     DAPI b8 buildArchetypeSystems(const c8 *projectDir, c8 *outLog, u32 logSize);
 
+    //=====================================================================================================================
+    // Prefab system
+    // Prefabs are named presets of archetype field values stored in binary .prefab files.
+    // The engine auto-loads all *.prefab files from <projectDir>/prefabs/ at startup.
+    // Game code spawns a prefab entity with: prefabSpawn(&g_enemyArch, prefabIdx, pos)
+
+    #define PREFAB_MAGIC          0x46505244u  // "DRPF"
+    #define PREFAB_VERSION        1u
+    #define PREFAB_MAX_FIELDS     48           // stored fields per prefab
+    #define PREFAB_MAX_PER_ARCH    8           // prefabs per archetype bucket
+    #define PREFAB_MAX_BUCKETS    16           // total archetype buckets
+    #define PREFAB_FIELD_NAME_MAX 32           // max field name length in file
+    #define PREFAB_DATA_POOL_SIZE 768          // bytes of field value storage per prefab (48 * 16)
+
+    typedef struct {
+        c8  name[PREFAB_FIELD_NAME_MAX];  // field name (e.g. "ModelID")
+        u32 size;                          // field size in bytes
+        u32 dataOffset;                    // byte offset into Prefab.data[]
+    } PrefabField;
+
+    typedef struct {
+        c8         name[MAX_SCENE_NAME];
+        PrefabField fields[PREFAB_MAX_FIELDS];
+        u32        fieldCount;
+        u8         data[PREFAB_DATA_POOL_SIZE];
+    } Prefab;
+
+    typedef struct {
+        c8        archName[MAX_SCENE_NAME];
+        Archetype *archRuntime;             // NULL until first prefabSpawn — resolved lazily
+        Prefab    prefabs[PREFAB_MAX_PER_ARCH];
+        u32       prefabCount;
+    } PrefabBucket;
+
+    typedef struct {
+        PrefabBucket buckets[PREFAB_MAX_BUCKETS];
+        u32          bucketCount;
+    } PrefabRegistry;
+
+    DAPI extern PrefabRegistry *prefabRegistry;
+
+    // Lifecycle — called automatically by runtimeCreate/runtimeDestroy
+    DAPI b8    prefabRegistryCreate(void);
+    DAPI void  prefabRegistryDestroy(void);
+
+    // Load all *.prefab files from the given directory.
+    // Called automatically by runtimeCreate on "<projectDir>/prefabs/".
+    DAPI u32   prefabLoadDirectory(const c8 *dir);
+
+    // Load / save a single prefab file
+    DAPI b8    prefabLoad(const c8 *path);
+    DAPI b8    prefabSave(const c8 *path, const c8 *archName, const c8 *prefabName,
+                          const c8 (*fieldNames)[PREFAB_FIELD_NAME_MAX],
+                          const void **fieldValues, const u32 *fieldSizes, u32 fieldCount);
+
+    // Runtime spawn: stamp prefab[prefabIdx] onto a new pooled entity and set its position.
+    // Returns poolIdx on success, (u32)-1 on failure.
+    DAPI u32   prefabSpawn(Archetype *arch, u32 prefabIdx, Vec3 pos);
+
+    // Number of prefabs registered for this archetype
+    DAPI u32   prefabCount(Archetype *arch);
+
+    // Direct bucket access (e.g. for editor inspection)
+    DAPI PrefabBucket *prefabGetBucket(Archetype *arch);
+
     // Entity manager
     typedef struct
     {
