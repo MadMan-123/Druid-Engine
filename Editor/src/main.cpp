@@ -142,8 +142,9 @@ void processInput(void *appData)
 
     while (SDL_PollEvent(&evnt)) // get and process events
     {
-        // pass imgui events
-        ImGui_ImplSDL3_ProcessEvent(&evnt);
+        // pass imgui events — guard against stale events arriving before init
+        if (ImGui::GetCurrentContext())
+            ImGui_ImplSDL3_ProcessEvent(&evnt);
         switch (evnt.type)
         {
         // if the quit event is triggered then change the state to exit
@@ -1081,6 +1082,7 @@ void destroy()
         consoleLines = NULL;
     }
 
+    modelThumbsClear();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();

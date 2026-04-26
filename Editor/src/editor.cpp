@@ -641,6 +641,42 @@ static void renderModelPreview(u32 modelIdx)
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
 }
 
+// Per-model thumbnail cache — rendered once, stored as individual GL textures.
+#define MAX_MODEL_THUMBS 512
+static u32 s_modelThumbTex[MAX_MODEL_THUMBS] = {0};
+
+static u32 modelThumbGet(u32 modelIdx)
+{
+    if (!resources || modelIdx >= resources->modelUsed) return 0;
+    if (modelIdx >= MAX_MODEL_THUMBS) return 0;
+    if (s_modelThumbTex[modelIdx]) return s_modelThumbTex[modelIdx];
+
+    renderModelPreview(modelIdx);
+    if (!g_modelPreviewOutputFBO.fbo) return 0;
+
+    glGenTextures(1, &s_modelThumbTex[modelIdx]);
+    glBindTexture(GL_TEXTURE_2D, s_modelThumbTex[modelIdx]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, MATPREVIEW_SIZE, MATPREVIEW_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    GLint prevRead; glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_modelPreviewOutputFBO.fbo);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, MATPREVIEW_SIZE, MATPREVIEW_SIZE);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, prevRead);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return s_modelThumbTex[modelIdx];
+}
+
+void modelThumbsClear()
+{
+    for (u32 i = 0; i < MAX_MODEL_THUMBS; i++)
+    {
+        if (s_modelThumbTex[i]) { glDeleteTextures(1, &s_modelThumbTex[i]); s_modelThumbTex[i] = 0; }
+    }
+}
+
 // Render a prefab model preview with orbit camera into g_modelPreviewGBuffer/OutputFBO.
 // modelIdx: index in resources->modelBuffer  (u32)-1 to just clear
 // scale: applied to model matrix
@@ -1559,30 +1595,145 @@ static void syncEcsToScene()
 static void drawTextureSelector(const c8 *label, u32 *textureHandle, const c8 *comboID)
 {
     if (!textureHandle || !resources) return;
+
+    // Resolve current texture name for display
+    const c8 *currentName = "None";
+    for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+    {
+        if (!resources->textureIDs.pairs[i].occupied) continue;
+        u32 idx = *(u32 *)resources->textureIDs.pairs[i].value;
+        if (idx < resources->textureUsed && resources->textureHandles[idx] == *textureHandle)
+        {
+            currentName = (const c8 *)resources->textureIDs.pairs[i].key;
+            break;
+        }
+    }
+
     ImGui::Text("%s", label);
     ImGui::Image((void *)(intptr_t)(*textureHandle), ImVec2(64, 64), ImVec2(0, 1), ImVec2(1, 0));
     ImGui::SameLine();
-    if (ImGui::BeginCombo(comboID, "Select Texture"))
-    {
-        for (u32 texIdx = 0; texIdx < resources->textureIDs.capacity; texIdx++)
-        {
-            if (resources->textureIDs.pairs[texIdx].occupied)
-            {
-                const c8 *texName = (const c8 *)resources->textureIDs.pairs[texIdx].key;
-                u32 textureIndex = *(u32 *)resources->textureIDs.pairs[texIdx].value;
-                u32 handle = resources->textureHandles[textureIndex];
+    ImGui::BeginGroup();
+    ImGui::TextDisabled("%s", currentName);
 
-                const b8 is_selected = (*textureHandle == handle);
-                if (ImGui::Selectable(texName, is_selected))
-                {
-                    *textureHandle = handle;
-                }
-                if (is_selected)
-                    ImGui::SetItemDefaultFocus();
+    c8 btnLabel[64];
+    snprintf(btnLabel, sizeof(btnLabel), "Pick...##TxBtn_%s", label);
+    c8 popupID[64];
+    snprintf(popupID, sizeof(popupID), "TxPicker_%s", label);
+
+    if (ImGui::Button(btnLabel))
+        ImGui::OpenPopup(popupID);
+    ImGui::EndGroup();
+
+    if (ImGui::BeginPopup(popupID))
+    {
+        const f32 thumbSize = 64.0f;
+        const int maxCols   = 6;
+        const f32 spacing   = 4.0f;
+        // Account for ImageButton frame padding so all columns are fully visible
+        const f32 btnW = thumbSize + ImGui::GetStyle().FramePadding.x * 2.0f;
+        const f32 childW = maxCols * btnW + (maxCols - 1) * spacing
+                           + ImGui::GetStyle().ScrollbarSize + 8.0f;
+        ImGui::BeginChild("##tpGrid", ImVec2(childW, 380.0f), false);
+        int col = 0;
+        for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+        {
+            if (!resources->textureIDs.pairs[i].occupied) continue;
+            const c8 *name = (const c8 *)resources->textureIDs.pairs[i].key;
+            u32 idx        = *(u32 *)resources->textureIDs.pairs[i].value;
+            if (idx >= resources->textureUsed) continue;
+            u32 handle = resources->textureHandles[idx];
+
+            ImGui::PushID((int)idx);
+            if (col > 0) ImGui::SameLine(0, 4.0f);
+
+            bool selected = (*textureHandle == handle);
+            if (selected)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+
+            c8 imgBtnID[16];
+            snprintf(imgBtnID, sizeof(imgBtnID), "##tb%u", idx);
+            if (ImGui::ImageButton(imgBtnID, (void *)(intptr_t)handle, ImVec2(thumbSize, thumbSize), ImVec2(0, 1), ImVec2(1, 0)))
+            {
+                *textureHandle = handle;
+                ImGui::CloseCurrentPopup();
             }
+            if (selected)
+                ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", name);
+
+            ImGui::PopID();
+            col = (col + 1) % maxCols;
         }
-        ImGui::EndCombo();
+        ImGui::EndChild();
+        ImGui::EndPopup();
     }
+}
+
+static void drawModelPickerPopup(const c8 *popupID, u32 *modelID)
+{
+    if (!resources || !ImGui::BeginPopup(popupID)) return;
+
+    // Selected model preview using cached thumbnail
+    u32 selThumb = (*modelID != (u32)-1 && *modelID < resources->modelUsed)
+                   ? modelThumbGet(*modelID) : 0;
+    if (selThumb)
+    {
+        f32 pw = ImGui::GetContentRegionAvail().x;
+        f32 off = (pw - 100.0f) * 0.5f;
+        if (off > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + off);
+        ImGui::Image((void *)(intptr_t)selThumb, ImVec2(100.0f, 100.0f), ImVec2(0, 1), ImVec2(1, 0));
+    }
+    else
+        ImGui::Dummy(ImVec2(0, 4.0f));
+
+    ImGui::Separator();
+
+    const f32 thumbSize = 64.0f;
+    const f32 spacing   = 4.0f;
+    const f32 btnW      = thumbSize + ImGui::GetStyle().FramePadding.x * 2.0f;
+    const int cols      = 4;
+    const f32 childW    = cols * btnW + (cols - 1) * spacing + ImGui::GetStyle().ScrollbarSize + 8.0f;
+    ImGui::BeginChild("##mdlPickGrid", ImVec2(childW, 300.0f), false);
+
+    // None button
+    bool noneSelected = (*modelID == (u32)-1);
+    if (noneSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    if (ImGui::Button("None##mdlpknone", ImVec2(childW - ImGui::GetStyle().ScrollbarSize - 4.0f, 24.0f)))
+    { *modelID = (u32)-1; ImGui::CloseCurrentPopup(); }
+    if (noneSelected) ImGui::PopStyleColor();
+    ImGui::Separator();
+
+    int col = 0;
+    for (u32 mi = 0; mi < resources->modelUsed; mi++)
+    {
+        ImGui::PushID((int)mi + 20000);
+        if (col > 0) ImGui::SameLine(0, spacing);
+
+        bool sel = (*modelID == mi);
+        u32 thumb = modelThumbGet(mi);
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+
+        c8 btnID[32]; snprintf(btnID, sizeof(btnID), "##mpk%u", mi);
+        b8 clicked = false;
+        if (thumb)
+            clicked = ImGui::ImageButton(btnID, (void *)(intptr_t)thumb, ImVec2(thumbSize, thumbSize), ImVec2(0, 1), ImVec2(1, 0));
+        else
+            clicked = ImGui::Button(btnID, ImVec2(thumbSize + ImGui::GetStyle().FramePadding.x * 2.0f, thumbSize + ImGui::GetStyle().FramePadding.y * 2.0f));
+
+        if (clicked) { *modelID = mi; ImGui::CloseCurrentPopup(); }
+        if (sel) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s\nmeshes: %u  r: %.2f",
+                resources->modelBuffer[mi].name,
+                resources->modelBuffer[mi].meshCount,
+                resources->modelBuffer[mi].boundingRadius);
+
+        ImGui::PopID();
+        col = (col + 1) % cols;
+    }
+    ImGui::EndChild();
+    ImGui::EndPopup();
 }
 
 static void resizeViewportFramebuffers(u32 width, u32 height)
@@ -4489,21 +4640,11 @@ static void drawPrefabsWindow()
                 u32 mid = *(u32*)s_fieldData[modelF];
                 const c8 *preview = (mid == (u32)-1) ? "None"
                     : (mid < resources->modelUsed ? resources->modelBuffer[mid].name : "Invalid");
-                if (ImGui::BeginCombo("Model", preview))
-                {
-                    if (ImGui::Selectable("None", mid == (u32)-1))
-                        *(u32*)s_fieldData[modelF] = (u32)-1;
-                    for (u32 mi = 0; mi < resources->modelUsed; mi++)
-                    {
-                        ImGui::PushID((int)mi + 11000);
-                        bool sel = (mid == mi);
-                        if (ImGui::Selectable(resources->modelBuffer[mi].name, sel))
-                            *(u32*)s_fieldData[modelF] = mi;
-                        if (sel) ImGui::SetItemDefaultFocus();
-                        ImGui::PopID();
-                    }
-                    ImGui::EndCombo();
-                }
+                ImGui::TextDisabled("Model: %s", preview);
+                ImGui::SameLine();
+                if (ImGui::Button("Pick...##MdlBtnPfab"))
+                    ImGui::OpenPopup("##MdlPickPfab");
+                drawModelPickerPopup("##MdlPickPfab", (u32*)s_fieldData[modelF]);
                 if (mid != (u32)-1 && mid < resources->modelUsed)
                 {
                     f32 r = resources->modelBuffer[mid].boundingRadius;
@@ -5625,24 +5766,14 @@ static void drawInspectorWindow()
         {
             u32 currentModelID = modelIDs[inspectorEntityID];
 
-            // Model combo
+            // Model picker
             const c8 *modelPreview = (currentModelID == (u32)-1) ? "None"
                 : (currentModelID < resources->modelUsed ? resources->modelBuffer[currentModelID].name : "Invalid");
-            if (ImGui::BeginCombo("Model##rend", modelPreview))
-            {
-                if (ImGui::Selectable("None", currentModelID == (u32)-1))
-                    modelIDs[inspectorEntityID] = (u32)-1;
-                for (u32 mi = 0; mi < resources->modelUsed; mi++)
-                {
-                    ImGui::PushID((int)mi);
-                    bool sel = (currentModelID == mi);
-                    if (ImGui::Selectable(resources->modelBuffer[mi].name, sel))
-                        modelIDs[inspectorEntityID] = mi;
-                    if (sel) ImGui::SetItemDefaultFocus();
-                    ImGui::PopID();
-                }
-                ImGui::EndCombo();
-            }
+            ImGui::TextDisabled("Model: %s", modelPreview);
+            ImGui::SameLine();
+            if (ImGui::Button("Pick...##MdlBtnInsp"))
+                ImGui::OpenPopup("##MdlPickInsp");
+            drawModelPickerPopup("##MdlPickInsp", &modelIDs[inspectorEntityID]);
 
             // Shader combo
             if (shaderHandles)
@@ -6358,11 +6489,124 @@ static void drawResourceTab_Textures()
 {
     if (!resources) return;
     static c8 texFilter[128] = "";
+    static bool texGridView = false;
     ImGui::SetNextItemWidth(200.0f);
     ImGui::InputText("Filter##texF", texFilter, sizeof(texFilter));
     ImGui::SameLine();
     ImGui::TextDisabled("%u / %u used", resources->textureUsed, resources->textureCount);
+    ImGui::SameLine();
+    if (ImGui::Button(texGridView ? "List View" : "Grid View"))
+        texGridView = !texGridView;
     ImGui::Separator();
+
+    if (texGridView)
+    {
+        static i32 s_selTex = -1;
+
+        const f32 thumbSize = 80.0f;
+        const f32 padding   = 4.0f;
+        f32 panelWidth = ImGui::GetContentRegionAvail().x;
+        int cols = (int)(panelWidth / (thumbSize + padding));
+        if (cols < 1) cols = 1;
+
+        f32 detailH = (s_selTex >= 0 && (u32)s_selTex < resources->textureUsed) ? 58.0f : 26.0f;
+        ImGui::BeginChild("##texGrid", ImVec2(0, -detailH), false);
+        int col = 0;
+        for (u32 i = 0; i < resources->textureIDs.capacity; i++)
+        {
+            if (!resources->textureIDs.pairs[i].occupied) continue;
+            const c8 *name = (const c8 *)resources->textureIDs.pairs[i].key;
+            u32 idx        = *(u32 *)resources->textureIDs.pairs[i].value;
+            if (idx >= resources->textureUsed) continue;
+            if (texFilter[0] != '\0' && !strstr(name, texFilter)) continue;
+
+            u32 glHandle = resources->textureHandles[idx];
+            ImGui::PushID((int)idx);
+            if (col > 0) ImGui::SameLine(0, padding);
+
+            bool selected = (s_selTex == (i32)idx);
+            if (selected)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+
+            c8 tgID[16];
+            snprintf(tgID, sizeof(tgID), "##tg%u", idx);
+            if (glHandle)
+            {
+                if (ImGui::ImageButton(tgID, (void *)(intptr_t)glHandle, ImVec2(thumbSize, thumbSize), ImVec2(0, 1), ImVec2(1, 0)))
+                    s_selTex = selected ? -1 : (i32)idx;
+            }
+            else
+            {
+                if (ImGui::Button(tgID, ImVec2(thumbSize, thumbSize)))
+                    s_selTex = selected ? -1 : (i32)idx;
+                ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(120,120,120,180));
+            }
+            if (selected) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s\nslot %u  GL %u", name, idx, glHandle);
+
+            ImGui::PopID();
+            col = (col + 1) % cols;
+        }
+        ImGui::EndChild();
+
+        ImGui::Separator();
+        if (s_selTex < 0 || (u32)s_selTex >= resources->textureUsed)
+        {
+            ImGui::TextDisabled("Click a texture to edit its settings.");
+        }
+        else
+        {
+            u32 idx = (u32)s_selTex;
+            const c8 *selName = "(unknown)";
+            for (u32 k = 0; k < resources->textureIDs.capacity; k++)
+            {
+                if (!resources->textureIDs.pairs[k].occupied) continue;
+                if (*(u32 *)resources->textureIDs.pairs[k].value == idx)
+                { selName = (const c8 *)resources->textureIDs.pairs[k].key; break; }
+            }
+            ImGui::Text("%s", selName);
+            ImGui::SameLine(); ImGui::TextDisabled("GL %u", resources->textureHandles[idx]);
+
+            ImGui::PushID((int)idx + 90000);
+            if (resources->textureFlags)
+            {
+                b8 isT = (resources->textureFlags[idx] & 0x01) != 0;
+                ImGui::SameLine();
+                if (ImGui::Checkbox("Alpha Cutoff", &isT))
+                { if (isT) resources->textureFlags[idx] |= 0x01; else resources->textureFlags[idx] &= ~0x01; }
+                if (isT && resources->textureAlphaThresholds)
+                { ImGui::SameLine(); ImGui::SetNextItemWidth(80.0f); ImGui::SliderFloat("Threshold", &resources->textureAlphaThresholds[idx], 0.0f, 1.0f, "%.2f"); }
+            }
+            if (resources->textureWrapModes)
+            {
+                i32 wi = 0; u32 wm = resources->textureWrapModes[idx];
+                if (wm == GL_CLAMP_TO_EDGE) wi = 1; else if (wm == GL_MIRRORED_REPEAT) wi = 2;
+                ImGui::SameLine(); ImGui::SetNextItemWidth(90.0f);
+                if (ImGui::Combo("Wrap", &wi, "Repeat\0Clamp\0Mirror\0"))
+                {
+                    u32 nw = wi == 1 ? GL_CLAMP_TO_EDGE : wi == 2 ? GL_MIRRORED_REPEAT : GL_REPEAT;
+                    resources->textureWrapModes[idx] = nw;
+                    u32 gh = resources->textureHandles[idx];
+                    if (gh) { glBindTexture(GL_TEXTURE_2D, gh); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, nw); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, nw); glBindTexture(GL_TEXTURE_2D, 0); }
+                }
+            }
+            if (resources->textureFilterModes)
+            {
+                i32 fi = (resources->textureFilterModes[idx] == GL_NEAREST) ? 1 : 0;
+                ImGui::SameLine(); ImGui::SetNextItemWidth(90.0f);
+                if (ImGui::Combo("Filter", &fi, "Linear\0Nearest\0"))
+                {
+                    u32 nf = fi == 1 ? GL_NEAREST : GL_LINEAR;
+                    resources->textureFilterModes[idx] = nf;
+                    u32 gh = resources->textureHandles[idx];
+                    if (gh) { glBindTexture(GL_TEXTURE_2D, gh); glTexParameteri(GL_TEXTURE_2D, GL_MIN_FILTER, nf); glTexParameteri(GL_TEXTURE_2D, GL_MAG_FILTER, nf); glBindTexture(GL_TEXTURE_2D, 0); }
+                }
+            }
+            ImGui::PopID();
+        }
+        return;
+    }
 
     const f32 thumbSize = 64.0f;
     ImGui::BeginChild("##texList", ImVec2(0, 0), false);
@@ -6573,33 +6817,102 @@ static void drawResourceTab_Shaders()
 static void drawResourceTab_Models()
 {
     if (!resources) return;
+    static bool mdlGridView = false;
+    static c8 mdlFilter[128] = "";
 
-    // Left panel — model list
-    ImGui::BeginChild("##modelList", ImVec2(220, 0), true);
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Filter##mdlF", mdlFilter, sizeof(mdlFilter));
+    ImGui::SameLine();
     ImGui::TextDisabled("%u / %u models", resources->modelUsed, resources->modelCount);
+    ImGui::SameLine();
+    if (ImGui::Button(mdlGridView ? "List View" : "Grid View"))
+        mdlGridView = !mdlGridView;
     ImGui::Separator();
-    for (u32 i = 0; i < resources->modelIDs.capacity; i++)
+
+    if (mdlGridView)
     {
-        if (!resources->modelIDs.pairs[i].occupied) continue;
-        const c8 *name = (const c8 *)resources->modelIDs.pairs[i].key;
-        u32 idx        = *(u32 *)resources->modelIDs.pairs[i].value;
-        if (idx >= resources->modelUsed) continue;
-        Model *m = &resources->modelBuffer[idx];
-        ImGui::PushID((int)idx);
-        bool selected = (g_selectedModelIdx == (i32)idx);
-        c8 label[128];
-        snprintf(label, sizeof(label), "%s##mdl%u", name, idx);
-        if (ImGui::Selectable(label, selected))
-            g_selectedModelIdx = (i32)idx;
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("meshes: %u  radius: %.2f", m->meshCount, m->boundingRadius);
-        ImGui::PopID();
+        const int   mdlCols    = 4;
+        const float mdlThumb   = 80.0f;
+        const float mdlSpacing = ImGui::GetStyle().ItemSpacing.x;
+        const float mdlFP      = ImGui::GetStyle().FramePadding.x;
+        const float mdlBtnW    = mdlThumb + mdlFP * 2.0f;
+        const float mdlPanelW  = mdlCols * mdlBtnW + (mdlCols - 1) * mdlSpacing
+                                 + ImGui::GetStyle().ScrollbarSize + 8.0f;
+
+        ImGui::BeginChild("##mdlGridLeft", ImVec2(mdlPanelW, 0), true);
+        int col = 0;
+        for (u32 i = 0; i < resources->modelIDs.capacity; i++)
+        {
+            if (!resources->modelIDs.pairs[i].occupied) continue;
+            const c8 *name = (const c8 *)resources->modelIDs.pairs[i].key;
+            u32 idx        = *(u32 *)resources->modelIDs.pairs[i].value;
+            if (idx >= resources->modelUsed) continue;
+            if (mdlFilter[0] != '\0' && !strstr(name, mdlFilter)) continue;
+            Model *m = &resources->modelBuffer[idx];
+
+            ImGui::PushID((int)idx);
+            bool sel   = (g_selectedModelIdx == (i32)idx);
+            u32  thumb = modelThumbGet(idx);
+
+            ImGui::BeginGroup();
+
+            if (sel)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+
+            bool clicked = false;
+            if (thumb)
+                clicked = ImGui::ImageButton("##t", (void *)(intptr_t)thumb,
+                                             ImVec2(mdlThumb, mdlThumb), ImVec2(0, 1), ImVec2(1, 0));
+            else
+                clicked = ImGui::Button("##t", ImVec2(mdlBtnW, mdlBtnW));
+
+            if (clicked)
+                g_selectedModelIdx = (i32)idx;
+
+            if (sel)
+                ImGui::PopStyleColor();
+
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s\nmeshes: %u  r: %.2f", name, m->meshCount, m->boundingRadius);
+
+            ImGui::EndGroup();
+            ImGui::PopID();
+
+            col++;
+            if (col < mdlCols)
+                ImGui::SameLine();
+            else
+                col = 0;
+        }
+        ImGui::EndChild();
     }
-    ImGui::EndChild();
+    else
+    {
+        ImGui::BeginChild("##modelList", ImVec2(220, 0), true);
+        for (u32 i = 0; i < resources->modelIDs.capacity; i++)
+        {
+            if (!resources->modelIDs.pairs[i].occupied) continue;
+            const c8 *name = (const c8 *)resources->modelIDs.pairs[i].key;
+            u32 idx        = *(u32 *)resources->modelIDs.pairs[i].value;
+            if (idx >= resources->modelUsed) continue;
+            if (mdlFilter[0] != '\0' && !strstr(name, mdlFilter)) continue;
+            Model *m = &resources->modelBuffer[idx];
+            ImGui::PushID((int)idx);
+            bool selected = (g_selectedModelIdx == (i32)idx);
+            c8 label[128];
+            snprintf(label, sizeof(label), "%s##mdl%u", name, idx);
+            if (ImGui::Selectable(label, selected))
+                g_selectedModelIdx = (i32)idx;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("meshes: %u  radius: %.2f", m->meshCount, m->boundingRadius);
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+    }
 
     ImGui::SameLine();
 
-    // Right panel — preview + info
+    // Right panel — preview + info (shared by both modes)
     ImGui::BeginChild("##modelDetail", ImVec2(0, 0), false);
 
     if (g_selectedModelIdx < 0 || (u32)g_selectedModelIdx >= resources->modelUsed)

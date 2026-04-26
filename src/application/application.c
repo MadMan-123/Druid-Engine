@@ -102,6 +102,11 @@ void initSystems(const Application* app)
 
 	app->init();
 
+    // Flush any SDL events that queued during init or from a previous
+    // application run (hub window-destroy events, stale focus-loss, etc.)
+    // so they never reach this application's event loop.
+    SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+
 	previousTime = SDL_GetPerformanceCounter();
 	performanceFreq = (f64)SDL_GetPerformanceFrequency();
 }

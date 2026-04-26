@@ -246,8 +246,8 @@ void listFilesRecursive(const c8 *directory, c8 ***fileList, u32 *count, u32 *ca
             // store file
             if (*count >= *capacity)
             {
-                WARN("File list capacity exceeded");
-                break;
+                *capacity *= 2;
+                *fileList = (c8 **)realloc(*fileList, sizeof(c8 *) * (*capacity));
             }
             (*fileList)[*count] = _strdup(fullPath);
             if(DEBUG_RESOURCES)

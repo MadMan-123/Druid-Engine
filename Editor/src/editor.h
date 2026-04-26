@@ -187,3 +187,5 @@ void editorLog(LogLevel level, const c8* msg);
 void initMultiFBOs();
 void destroyMultiFBOs();
 void renderFBOToScreen(u32 fboIndex, u32 shaderProgram);
+
+void modelThumbsClear();
