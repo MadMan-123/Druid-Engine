@@ -154,13 +154,23 @@ static u32 g_shGhostBody[SH_MAX_GHOSTS];
 static u32 g_shGhostNext[SH_MAX_GHOSTS];
 static u32 g_shGhostCount = 0;
 
+// Bodies that span more cells than SH_MAX_CELLS_PER_BODY are too large for the
+// ghost pool.  They are registered here and paired with every dynamic body in a
+// brute-force pass after the hash query — guarantees large statics (floors, walls)
+// are never silently dropped from collision detection.
+#define SH_MAX_CELLS_PER_BODY 64
+#define SH_MAX_OVERSIZED      256
+static u32 g_shOversized[SH_MAX_OVERSIZED];
+static u32 g_shOversizedCount = 0;
+
 static void sh_clear(void)
 {
     // Only clear buckets that were actually touched — avoids memset of 65K entries
     for (u32 i = 0; i < g_shDirtyCount; i++) g_shTable[g_shDirtyBuckets[i]] = SH_SENTINEL;
     for (u32 i = 0; i < g_bodyCount;    i++) g_shNext[i] = SH_SENTINEL;
     for (u32 i = 0; i < g_shGhostCount; i++) g_shGhostNext[i] = SH_SENTINEL;
-    g_shDirtyCount = 0;
+    g_shDirtyCount    = 0;
+    g_shOversizedCount = 0;
 }
 
 static void sh_insertSingle(u32 idx, i32 cx, i32 cy, i32 cz, b8 isGhost)
@@ -210,12 +220,13 @@ static void sh_insert(u32 idx)
     i32 minX = sh_floor(g_bpPosX[idx] - extX), maxX = sh_floor(g_bpPosX[idx] + extX);
     i32 minY = sh_floor(g_bpPosY[idx] - extY), maxY = sh_floor(g_bpPosY[idx] + extY);
     i32 minZ = sh_floor(g_bpPosZ[idx] - extZ), maxZ = sh_floor(g_bpPosZ[idx] + extZ);
-    // Cap to avoid degenerate cases flooding the hash table
+    // Bodies spanning too many cells go into the oversized sidelist.  They are
+    // paired with every dynamic body in a brute-force pass — never silently dropped.
     i32 span = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-    if (span > 512)
+    if (span > SH_MAX_CELLS_PER_BODY)
     {
-        sh_insertSingle(idx, sh_floor(g_bpPosX[idx]), sh_floor(g_bpPosY[idx]),
-                         sh_floor(g_bpPosZ[idx]), false);
+        if (g_shOversizedCount < SH_MAX_OVERSIZED)
+            g_shOversized[g_shOversizedCount++] = idx;
         return;
     }
     b8 first = true;
@@ -496,14 +507,13 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
     if (g_shCellSize < 0.01f) g_shCellSize = 1.0f;
     g_shInvCell  = 1.0f / g_shCellSize;
 
-    g_shGhostCount = 0;
+    g_shGhostCount     = 0;
+    g_shOversizedCount = 0;
     sh_clear();
     for (u32 i = 0; i < g_bodyCount; i++) sh_insert(i);
 
-    // Track which pairs we've already emitted so multi-cell ghosts don't
-    // generate duplicates.  Simple bitset would be huge, so use a small
-    // seen-pair hash set (open addressing, power-of-two).
-    #define SEEN_SIZE 4096u
+    // Dedup hash set — sized large enough to handle heavy ghost/oversized loads.
+    #define SEEN_SIZE 16384u
     #define SEEN_MASK (SEEN_SIZE - 1u)
     static u64 seenPairs[SEEN_SIZE];
     static u32 seenSlots[SEEN_SIZE];
@@ -511,87 +521,114 @@ static u32 broadphaseGetPairs(CollisionPair *pairs, u32 maxPairs)
     memset(seenPairs, 0xFF, sizeof(seenPairs));
 
     u32 pairCount = 0;
+
+    // Dedup-check and emit one candidate pair (I, J).
+    #define TRY_EMIT_PAIR(I, J)                                                          \
+    do {                                                                                 \
+        u32 _i = (I), _j = (J);                                                         \
+        if (_i == _j) break;                                                             \
+        if (g_bpBodyType[_i] == PHYS_BODY_STATIC &&                                     \
+            g_bpBodyType[_j] == PHYS_BODY_STATIC) break;                                \
+        u32 _lo = _i < _j ? _i : _j;                                                    \
+        u32 _hi = _i < _j ? _j : _i;                                                    \
+        u64 _key = ((u64)_lo << 32) | _hi;                                              \
+        u32 _sh  = (u32)(_key ^ (_key >> 17)) & SEEN_MASK;                              \
+        b8  _dup = false;                                                                \
+        for (u32 _p = 0; _p < 16; _p++) {                                               \
+            u32 _slot = (_sh + _p) & SEEN_MASK;                                         \
+            if (seenPairs[_slot] == _key) { _dup = true; break; }                       \
+            if (seenPairs[_slot] == 0xFFFFFFFFFFFFFFFFULL) {                             \
+                seenPairs[_slot] = _key;                                                 \
+                if (seenCount < SEEN_SIZE) seenSlots[seenCount++] = _slot;              \
+                break;                                                                   \
+            }                                                                            \
+        }                                                                                \
+        if (!_dup) {                                                                     \
+            f32 _dx = g_bpPosX[_i] - g_bpPosX[_j];                                     \
+            f32 _dy = g_bpPosY[_i] - g_bpPosY[_j];                                     \
+            f32 _dz = g_bpPosZ[_i] - g_bpPosZ[_j];                                     \
+            f32 _sr = g_bpRadius[_i] + g_bpRadius[_j];                                  \
+            if (_dx*_dx + _dy*_dy + _dz*_dz < _sr * _sr && pairCount < maxPairs) {     \
+                CollisionPair *_cp = &pairs[pairCount++];                                \
+                _cp->archA  = g_bpArchIdx[_i];  _cp->chunkA = g_bpChunkIdx[_i];        \
+                _cp->indexA = g_bpEntityIdx[_i];                                         \
+                _cp->archB  = g_bpArchIdx[_j];  _cp->chunkB = g_bpChunkIdx[_j];        \
+                _cp->indexB = g_bpEntityIdx[_j];                                         \
+                _cp->shapeA = g_bpShape[_i];  _cp->shapeB = g_bpShape[_j];             \
+                _cp->bpIdxA = _i;             _cp->bpIdxB = _j;                         \
+            }                                                                            \
+        }                                                                                \
+    } while (0)
+
+    // ── Hash query pass ──────────────────────────────────────────────────────────
+    // Query the AABB of each body (not just its center ±1) so medium-large bodies
+    // correctly find their neighbors without relying solely on ghost insertion.
     for (u32 i = 0; i < g_bodyCount; i++)
     {
-        i32 cx = sh_floor(g_bpPosX[i]);
-        i32 cy = sh_floor(g_bpPosY[i]);
-        i32 cz = sh_floor(g_bpPosZ[i]);
+        f32 ex = g_bpHalfX[i] > 0.0f ? g_bpHalfX[i] : g_bpRadius[i];
+        f32 ey = g_bpHalfY[i] > 0.0f ? g_bpHalfY[i] : g_bpRadius[i];
+        f32 ez = g_bpHalfZ[i] > 0.0f ? g_bpHalfZ[i] : g_bpRadius[i];
 
-        for (i32 nx = cx - 1; nx <= cx + 1; nx++)
-        for (i32 ny = cy - 1; ny <= cy + 1; ny++)
-        for (i32 nz = cz - 1; nz <= cz + 1; nz++)
+        i32 qMinX = sh_floor(g_bpPosX[i] - ex) - 1;
+        i32 qMaxX = sh_floor(g_bpPosX[i] + ex) + 1;
+        i32 qMinY = sh_floor(g_bpPosY[i] - ey) - 1;
+        i32 qMaxY = sh_floor(g_bpPosY[i] + ey) + 1;
+        i32 qMinZ = sh_floor(g_bpPosZ[i] - ez) - 1;
+        i32 qMaxZ = sh_floor(g_bpPosZ[i] + ez) + 1;
+
+        // Clamp oversized query to centre ±1 — those bodies are caught by the
+        // oversized pass below.
+        i32 qspan = (qMaxX - qMinX + 1) * (qMaxY - qMinY + 1) * (qMaxZ - qMinZ + 1);
+        if (qspan > SH_MAX_CELLS_PER_BODY)
         {
-            u32 h = sh_hash(nx, ny, nz);
+            i32 cx = sh_floor(g_bpPosX[i]);
+            i32 cy = sh_floor(g_bpPosY[i]);
+            i32 cz = sh_floor(g_bpPosZ[i]);
+            qMinX = cx - 1; qMaxX = cx + 1;
+            qMinY = cy - 1; qMaxY = cy + 1;
+            qMinZ = cz - 1; qMaxZ = cz + 1;
+        }
+
+        for (i32 nx = qMinX; nx <= qMaxX; nx++)
+        for (i32 ny = qMinY; ny <= qMaxY; ny++)
+        for (i32 nz = qMinZ; nz <= qMaxZ; nz++)
+        {
+            u32 h   = sh_hash(nx, ny, nz);
             u32 raw = g_shTable[h];
             while (raw != SH_SENTINEL)
             {
-                // Resolve ghost entries to real body index
-                u32 j;
-                u32 nextRaw;
+                u32 j, nextRaw;
                 if (raw >= MAX_PHYS_BODIES)
                 {
                     u32 gi = raw - MAX_PHYS_BODIES;
-                    j = g_shGhostBody[gi];
+                    j       = g_shGhostBody[gi];
                     nextRaw = g_shGhostNext[gi];
                 }
                 else
                 {
-                    j = raw;
+                    j       = raw;
                     nextRaw = g_shNext[j];
                 }
-
-                if (j != i)
-                {
-                    // Canonical order for dedup: smaller index first
-                    u32 lo = i < j ? i : j;
-                    u32 hi = i < j ? j : i;
-                    u64 key = ((u64)lo << 32) | hi;
-                    u32 sh = (u32)(key ^ (key >> 17)) & SEEN_MASK;
-                    b8 duplicate = false;
-                    for (u32 probe = 0; probe < 8; probe++)
-                    {
-                        u32 slot = (sh + probe) & SEEN_MASK;
-                        if (seenPairs[slot] == key) { duplicate = true; break; }
-                        if (seenPairs[slot] == 0xFFFFFFFFFFFFFFFFULL)
-                        {
-                            seenPairs[slot] = key;
-                            if (seenCount < SEEN_SIZE) seenSlots[seenCount++] = slot;
-                            break;
-                        }
-                    }
-
-                    if (!duplicate)
-                    {
-                        // Both static — no collision response needed
-                        if (g_bpBodyType[i] == PHYS_BODY_STATIC &&
-                            g_bpBodyType[j] == PHYS_BODY_STATIC)
-                        {
-                            raw = nextRaw; continue;
-                        }
-                        // Bounding sphere overlap test (fast reject)
-                        f32 dx = g_bpPosX[i] - g_bpPosX[j];
-                        f32 dy = g_bpPosY[i] - g_bpPosY[j];
-                        f32 dz = g_bpPosZ[i] - g_bpPosZ[j];
-                        f32 sr = g_bpRadius[i] + g_bpRadius[j];
-                        if (dx*dx + dy*dy + dz*dz < sr * sr)
-                        {
-                            if (pairCount < maxPairs)
-                            {
-                                CollisionPair *p = &pairs[pairCount++];
-                                p->archA  = g_bpArchIdx[i];  p->chunkA = g_bpChunkIdx[i]; p->indexA = g_bpEntityIdx[i];
-                                p->archB  = g_bpArchIdx[j];  p->chunkB = g_bpChunkIdx[j]; p->indexB = g_bpEntityIdx[j];
-                                p->shapeA = g_bpShape[i];
-                                p->shapeB = g_bpShape[j];
-                                p->bpIdxA = i;
-                                p->bpIdxB = j;
-                            }
-                        }
-                    }
-                }
+                TRY_EMIT_PAIR(i, j);
                 raw = nextRaw;
             }
         }
     }
+
+    // ── Oversized pass ───────────────────────────────────────────────────────────
+    // Bodies too large for the ghost pool (floors, walls, large triggers) were not
+    // inserted into the hash at all.  Pair each against every dynamic body.
+    for (u32 k = 0; k < g_shOversizedCount; k++)
+    {
+        u32 j = g_shOversized[k];
+        for (u32 i = 0; i < g_bodyCount; i++)
+        {
+            if (g_bpBodyType[i] == PHYS_BODY_STATIC) continue;
+            TRY_EMIT_PAIR(i, j);
+        }
+    }
+
+    #undef TRY_EMIT_PAIR
 
     // Clean up seen-pair set for next call
     for (u32 s = 0; s < seenCount; s++) seenPairs[seenSlots[s]] = 0xFFFFFFFFFFFFFFFFULL;
@@ -774,8 +811,9 @@ PhysicsWorld *physWorldCreate(Vec3 gravity, f32 timestep)
 
     // Initialize spatial hash table — dirty tracking only clears used buckets
     for (u32 i = 0; i < SH_TABLE_SIZE; i++) g_shTable[i] = SH_SENTINEL;
-    g_shDirtyCount = 0;
-    g_shGhostCount = 0;
+    g_shDirtyCount     = 0;
+    g_shGhostCount     = 0;
+    g_shOversizedCount = 0;
 
     if (!g_csInitialised)
     {
@@ -793,11 +831,12 @@ void physWorldDestroy(PhysicsWorld *world)
     if (!world) return;
 
     // Reset static broadphase state so re-init starts clean
-    g_bodyCount    = 0;
-    g_shCellSize   = 0.0f;
-    g_shInvCell    = 0.0f;
-    g_shDirtyCount = 0;
-    g_shGhostCount = 0;
+    g_bodyCount        = 0;
+    g_shCellSize       = 0.0f;
+    g_shInvCell        = 0.0f;
+    g_shDirtyCount     = 0;
+    g_shGhostCount     = 0;
+    g_shOversizedCount = 0;
     memset(g_csPrev, 0xFF, sizeof(g_csPrev));
     memset(g_csCurr, 0xFF, sizeof(g_csCurr));
     g_csCurrCount  = 0;
@@ -919,9 +958,9 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
             world->pairCount = broadphaseGetPairs(world->pairs, MAX_PHYS_PAIRS);
             if (world->physFrameCounter < 3)
             {
-                INFO("PhysStep[%u]: archetypes=%u bodies=%u ghosts=%u pairs=%u cellSize=%.2f",
+                INFO("PhysStep[%u]: archetypes=%u bodies=%u ghosts=%u oversized=%u pairs=%u cellSize=%.2f",
                      world->physFrameCounter, world->bodyArchetypeCount,
-                     g_bodyCount, g_shGhostCount, world->pairCount, g_shCellSize);
+                     g_bodyCount, g_shGhostCount, g_shOversizedCount, world->pairCount, g_shCellSize);
                 for (u32 bi = 0; bi < g_bodyCount && bi < 8; bi++)
                     INFO("  body[%u]: pos=(%.1f,%.1f,%.1f) bt=%u shape=%u r=%.2f half=(%.2f,%.2f,%.2f)",
                          bi, g_bpPosX[bi], g_bpPosY[bi], g_bpPosZ[bi],
