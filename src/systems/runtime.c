@@ -181,7 +181,7 @@ DAPI void runtimeUpdate(GameRuntime *rt, f32 dt)
 DAPI void runtimeBeginScenePass(GameRuntime *rt, f32 dt)
 {
     (void)dt;
-    if (!rt->standaloneMode || !renderer) return;
+    if (!rt || !rt->standaloneMode || !renderer) return;
 
     if (renderer->useDeferredRendering && rt->gbufferShader)
     {
@@ -195,7 +195,7 @@ DAPI void runtimeBeginScenePass(GameRuntime *rt, f32 dt)
 
 DAPI void runtimeEndScenePass(GameRuntime *rt)
 {
-    if (!rt->standaloneMode || !renderer) return;
+    if (!rt || !rt->standaloneMode || !renderer) return;
 
     if (renderer->useDeferredRendering && rt->lightingShader)
     {

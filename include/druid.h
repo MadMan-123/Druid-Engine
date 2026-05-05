@@ -271,6 +271,7 @@ extern "C"
     DAPI Vec4 quatConjugate(const Vec4 q);
     DAPI Vec4 quatFromEuler(const Vec3 axis);
     DAPI Vec3 eulerFromQuat(Vec4 quat);
+    DAPI Vec4 quatSlerp(Vec4 q0, Vec4 q1, f32 t);
 
     // Matrix methods
     DAPI void matAdd(f32 **a, f32 **b, Vec2i aSize);

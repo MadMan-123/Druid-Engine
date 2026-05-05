@@ -7475,6 +7475,105 @@ static void drawLoadedEntitiesWindow()
         }
     }
 
+    // Game-side archetypes — query via druidGetGameArchetypes export if game is running
+    if (g_gameRunning && g_gameDLL.loaded)
+    {
+        typedef u32 (*GetArchsFn)(Archetype **out, u32 max);
+        GetArchsFn getArchs = (GetArchsFn)dllSymbol(&g_gameDLL.dll, "druidGetGameArchetypes");
+        if (getArchs)
+        {
+            Archetype *gameArchs[32];
+            u32 gameArchCount = getArchs(gameArchs, 32);
+
+            for (u32 a = 0; a < gameArchCount; a++)
+            {
+                Archetype *arch = gameArchs[a];
+                if (!arch || !arch->layout || !arch->arena) continue;
+
+                u32 count = 0;
+                for (u32 c = 0; c < arch->activeChunkCount; c++)
+                    count += arch->arena[c].count;
+
+                totalArchetypes++;
+                totalEntities += count;
+
+                c8 header[128];
+                snprintf(header, sizeof(header), "%s (%u entities) [game]###gameArch%u",
+                         arch->layout->name, count, a);
+
+                if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    StructLayout *layout = arch->layout;
+
+                    i32 posXIdx = -1, posYIdx = -1, posZIdx = -1;
+                    i32 aliveIdx = -1, modelIdx = -1;
+                    for (u32 f = 0; f < layout->count; f++)
+                    {
+                        const c8 *n = layout->fields[f].name;
+                        if      (strcmp(n, "PositionX") == 0) posXIdx  = (i32)f;
+                        else if (strcmp(n, "PositionY") == 0) posYIdx  = (i32)f;
+                        else if (strcmp(n, "PositionZ") == 0) posZIdx  = (i32)f;
+                        else if (strcmp(n, "Alive")     == 0) aliveIdx = (i32)f;
+                        else if (strcmp(n, "ModelID")   == 0) modelIdx = (i32)f;
+                    }
+
+                    for (u32 c = 0; c < arch->activeChunkCount; c++)
+                    {
+                        void **fields = getArchetypeFields(arch, c);
+                        if (!fields) continue;
+                        u32 chunkCount = arch->arena[c].count;
+
+                        f32 *posX  = posXIdx  >= 0 ? (f32 *)fields[posXIdx]  : nullptr;
+                        f32 *posY  = posYIdx  >= 0 ? (f32 *)fields[posYIdx]  : nullptr;
+                        f32 *posZ  = posZIdx  >= 0 ? (f32 *)fields[posZIdx]  : nullptr;
+                        b8  *alive = aliveIdx >= 0 ? (b8  *)fields[aliveIdx] : nullptr;
+                        u32 *model = modelIdx >= 0 ? (u32 *)fields[modelIdx] : nullptr;
+
+                        u32 displayMax = chunkCount < 500 ? chunkCount : 500;
+                        if (chunkCount > displayMax)
+                            ImGui::TextDisabled("Showing %u / %u", displayMax, chunkCount);
+
+                        if (ImGui::BeginTable("##gameEntities", 4,
+                            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                            ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 16)))
+                        {
+                            ImGui::TableSetupColumn("ID",       ImGuiTableColumnFlags_WidthFixed,   40.0f);
+                            ImGui::TableSetupColumn("Alive",    ImGuiTableColumnFlags_WidthFixed,   40.0f);
+                            ImGui::TableSetupColumn("Model",    ImGuiTableColumnFlags_WidthFixed,   50.0f);
+                            ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthStretch);
+                            ImGui::TableHeadersRow();
+
+                            ImGuiListClipper clipper;
+                            clipper.Begin((int)displayMax);
+                            while (clipper.Step())
+                            {
+                                for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
+                                {
+                                    u32 e = (u32)row;
+                                    ImGui::TableNextRow();
+                                    ImGui::TableSetColumnIndex(0); ImGui::Text("%u", e);
+                                    ImGui::TableSetColumnIndex(1);
+                                    if (alive)
+                                        ImGui::TextColored(alive[e] ? ImVec4(0,1,0,1) : ImVec4(1,0,0,1), alive[e] ? "Y" : "N");
+                                    else
+                                        ImGui::TextDisabled("-");
+                                    ImGui::TableSetColumnIndex(2);
+                                    if (model) ImGui::Text("%u", model[e]); else ImGui::TextDisabled("-");
+                                    ImGui::TableSetColumnIndex(3);
+                                    if (posX && posY && posZ)
+                                        ImGui::Text("%.1f, %.1f, %.1f", posX[e], posY[e], posZ[e]);
+                                    else
+                                        ImGui::TextDisabled("-");
+                                }
+                            }
+                            ImGui::EndTable();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (totalArchetypes == 0)
         ImGui::TextDisabled("No runtime archetypes loaded. Run the game (F5) to see entities.");
     else
@@ -7686,8 +7785,10 @@ void doBuildAndRun()
     populateEcsArchetypes();
 
     // Initialize physics world and auto-register any physics-body archetypes
+    // Use RuntimeConfig to respect the game's configured gravity and timestep
     memset(g_archPhysRegistered, 0, sizeof(g_archPhysRegistered));
-    physInit(Vec3{0.0f, -9.81f, 0.0f}, 1.0f / 60.0f);
+    RuntimeConfig runtimeCfg = runtimeDefaultConfig();
+    physInit(runtimeCfg.gravity, runtimeCfg.physicsTimestep);
     for (u32 a = 0; a < g_archRegistry.count && a < MAX_ARCHETYPE_SYSTEMS; a++)
     {
         if (FLAG_CHECK(g_archRegistry.entries[a].flags, ARCH_PHYSICS_BODY) && g_ecsArchetypes[a].arena)
@@ -7711,6 +7812,7 @@ void doBuildAndRun()
     }
 
     g_gameRunning = true;
+    showLoadedEntities = true;
     INFO("Game started (%u ECS systems discovered)", g_ecsSystemCount);
 }
 

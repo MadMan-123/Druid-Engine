@@ -938,8 +938,9 @@ void physWorldStep(PhysicsWorld *world, f32 dt)
                         simdNeg(dampFactor, dampFactor, count);           // -(damp * dt)
                         simdAddScalar(dampFactor, 1.0f, dampFactor, count);  // 1 - damp*dt
 
-                        // Clamp negative values to 0
+                        // Clamp negative values to 0; skip non-dynamic bodies
                         for (u32 i = 0; i < count; i++) {
+                            if (bt && bt[i] != PHYS_BODY_DYNAMIC) { dampFactor[i] = 1.0f; continue; }
                             if (dampFactor[i] < 0.0f) dampFactor[i] = 0.0f;
                         }
 

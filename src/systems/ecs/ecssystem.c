@@ -354,11 +354,14 @@ b8 generateArchetypeFiles(const c8 *projectDir,
         fprintf(hf, "#include <druid.h>\n\n");
         fprintf(hf, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
         fputs(genBlock, hf);
-        fprintf(hf, "\nDSAPI void %sInit(void);\n", camelCaseName);
+        fprintf(hf, "\nDSAPI void %sInit(Archetype *arch);\n", camelCaseName);
         fprintf(hf, "DSAPI void %sUpdate(Archetype *arch, f32 dt);\n", camelCaseName);
-        fprintf(hf, "DSAPI void %sRender(Archetype *arch, Renderer *r);\n", camelCaseName);
-        fprintf(hf, "DSAPI void %sDestroy(void);\n\n", camelCaseName);
+        fprintf(hf, "DSAPI void %sDestroy(void);\n", camelCaseName);
+        fprintf(hf, "DSAPI Archetype *%sGetArchetype(void);\n", camelCaseName);
+        fprintf(hf, "DSAPI void %sSpawn(Vec3 position);\n\n", camelCaseName);
         fprintf(hf, "DSAPI void druidGetECSSystem_%s(ECSSystemPlugin *out);\n\n", archetypeName);
+        fprintf(hf, "// In gameInit: createArchetype(&%s_layout, POOL_CAPACITY, &g_%sArch);\n", archetypeName, camelCaseName);
+        fprintf(hf, "//             %sInit(&g_%sArch); runtimeRegisterArchetype(runtime, &g_%sArch);\n\n", camelCaseName, camelCaseName, camelCaseName);
         fprintf(hf, "#ifdef __cplusplus\n}\n#endif\n");
         fclose(hf);
     }
@@ -387,13 +390,10 @@ b8 generateArchetypeFiles(const c8 *projectDir,
     fprintf(sf, "#define DRUID_SYSTEM_EXPORT\n");
     fprintf(sf, "#include \"%s.h\"\n\n", archetypeName);
     fprintf(sf, "DEFINE_ARCHETYPE(%s, %s_FIELDS)\n\n", archetypeName, upperName);
-    fprintf(sf, "static u32 s_ibSlot = (u32)-1;\n\n");
+    fprintf(sf, "static Archetype *s_arch = NULL;\n\n");
 
-    fprintf(sf, "void %sInit(void)\n{\n", camelCaseName);
-    if (isBuffered && poolCapacity > 0)
-        fprintf(sf, "    s_ibSlot = rendererAcquireInstanceBuffer(renderer, POOL_CAPACITY);\n");
-    else
-        fprintf(sf, "    s_ibSlot = rendererAcquireInstanceBuffer(renderer, 256);\n");
+    fprintf(sf, "void %sInit(Archetype *arch)\n{\n", camelCaseName);
+    fprintf(sf, "    s_arch = arch;\n");
     fprintf(sf, "}\n\n");
 
     fprintf(sf, "void %sUpdate(Archetype *arch, f32 dt)\n{\n", camelCaseName);
@@ -418,15 +418,24 @@ b8 generateArchetypeFiles(const c8 *projectDir,
     }
     fprintf(sf, "}\n\n");
 
-    fprintf(sf, "// Optional custom render — set out->render = %sRender to use.\n", camelCaseName);
-    fprintf(sf, "/*\nvoid %sRender(Archetype *arch, Renderer *r) { (void)arch; (void)r; }\n*/\n\n");
-
     fprintf(sf, "void %sDestroy(void)\n{\n", camelCaseName);
-    fprintf(sf, "    if (s_ibSlot != (u32)-1) { rendererReleaseInstanceBuffer(renderer, s_ibSlot); s_ibSlot = (u32)-1; }\n");
+    fprintf(sf, "    s_arch = NULL;\n");
     fprintf(sf, "}\n\n");
 
+    fprintf(sf, "Archetype *%sGetArchetype(void) { return s_arch; }\n\n", camelCaseName);
+
+    fprintf(sf, "void %sSpawn(Vec3 position)\n{\n", camelCaseName);
+    fprintf(sf, "    if (!s_arch) return;\n");
+    fprintf(sf, "    prefabSpawn(s_arch, 0, position);\n");
+    fprintf(sf, "}\n\n");
+
+    fprintf(sf, "// Optional render — uncomment and set out->render below to use.\n");
+    fprintf(sf, "/*\nvoid %sRender(Archetype *arch, Renderer *r) { (void)arch; (void)r; }\n*/\n\n", camelCaseName);
+
+    fprintf(sf, "static void %sInitPlugin(void) {}\n\n", camelCaseName);
+
     fprintf(sf, "void druidGetECSSystem_%s(ECSSystemPlugin *out)\n{\n", archetypeName);
-    fprintf(sf, "    out->init    = %sInit;\n", camelCaseName);
+    fprintf(sf, "    out->init    = %sInitPlugin;\n", camelCaseName);
     fprintf(sf, "    out->update  = %sUpdate;\n", camelCaseName);
     fprintf(sf, "    out->render  = NULL;\n");
     fprintf(sf, "    out->destroy = %sDestroy;\n", camelCaseName);

@@ -804,3 +804,53 @@ inline Vec3 eulerFromQuat(Vec4 q)
 
     return angles;
 }
+
+inline Vec4 quatSlerp(Vec4 q0, Vec4 q1, f32 t)
+{
+    // Clamp t to [0, 1]
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    
+    // Compute dot product
+    f32 dot = q0.x * q1.x + q0.y * q1.y + q0.z * q1.z + q0.w * q1.w;
+    
+    // If dot product is negative, negate one quaternion to take the shorter path
+    Vec4 q1_adjusted = q1;
+    if (dot < 0.0f)
+    {
+        q1_adjusted = (Vec4){-q1.x, -q1.y, -q1.z, -q1.w};
+        dot = -dot;
+    }
+    
+    // Clamp dot product to avoid acos domain errors
+    dot = dot < -1.0f ? -1.0f : (dot > 1.0f ? 1.0f : dot);
+    
+    // If quaternions are very close, use linear interpolation
+    if (dot > 0.9995f)
+    {
+        Vec4 result = {
+            q0.x + t * (q1_adjusted.x - q0.x),
+            q0.y + t * (q1_adjusted.y - q0.y),
+            q0.z + t * (q1_adjusted.z - q0.z),
+            q0.w + t * (q1_adjusted.w - q0.w)
+        };
+        return quatNormalize(result);
+    }
+    
+    // Calculate the angle between the quaternions
+    f32 theta = acosf(dot);
+    f32 sinTheta = sinf(theta);
+    
+    // Calculate interpolation coefficients
+    f32 w0 = sinf((1.0f - t) * theta) / sinTheta;
+    f32 w1 = sinf(t * theta) / sinTheta;
+    
+    // Perform spherical linear interpolation
+    Vec4 result = {
+        w0 * q0.x + w1 * q1_adjusted.x,
+        w0 * q0.y + w1 * q1_adjusted.y,
+        w0 * q0.z + w1 * q1_adjusted.z,
+        w0 * q0.w + w1 * q1_adjusted.w
+    };
+    
+    return result;
+}
