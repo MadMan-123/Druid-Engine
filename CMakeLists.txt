@@ -28,7 +28,7 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
 # Disable warnings on stb_image
 set_source_files_properties(${CMAKE_SOURCE_DIR}/src/external/stb_image.c PROPERTIES COMPILE_FLAGS "-w")
 
-# Build engine as a shared library using the globbed sources only
+# Build engine as a shared library for DLL exports
 add_library(druid SHARED ${ENGINE_SOURCES})
 
 # Include directories
@@ -47,7 +47,7 @@ target_compile_definitions(druid PRIVATE DRUID_EXPORT WIN32 DRUID_PROFILE)
 # These flags removed: -fno-strict-aliasing -fvisibility=hidden (too aggressive)
 target_compile_options(druid PRIVATE
     -Wall
-    -fPIC
+    $<$<NOT:$<PLATFORM_ID:Windows>>:-fPIC>  # -fPIC only on non-Windows
     -g
     -O3                        # Always optimize (was behind generator expressions that never fired)
     -march=native              # Optimize for current CPU (5-10% gain, enables SIMD/AVX)
@@ -85,13 +85,5 @@ add_custom_command(TARGET druid POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/deps/libassimp-6.dll"
     "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/libassimp-6.dll"
-)
-
-# Regenerate MSVC-compatible import library after every DLL build
-add_custom_command(TARGET druid POST_BUILD
-    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-    COMMAND gendef $<TARGET_FILE:druid>
-    COMMAND dlltool -D $<TARGET_FILE_NAME:druid> -d libdruid.def -l druid.lib
-    COMMENT "Regenerating druid.lib from updated DLL exports"
 )
 
