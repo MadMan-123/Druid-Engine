@@ -15,8 +15,13 @@ void inputUpdate(Application* app)
 
 Application* createApplication(const c8* title, FncPtr init, FncPtrFloat update, FncPtrFloat render, FncPtr destroy)
 {
-	Application* app = (Application*)calloc(1, sizeof(Application));
-	assert(app != NULL && "Application could not be created");
+	Application* app = (Application*)calloc(1, sizeof(Application));	
+
+	if(!app)
+	{
+		ERROR("Failed to allocate memory for Application");
+		return NULL;
+	}
 
 	app->state = RUN;
 
@@ -38,17 +43,37 @@ Application* createApplication(const c8* title, FncPtr init, FncPtrFloat update,
 
 void destroyApplication(Application* app)
 {
-    const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
-    c8 texMetaPath[256];
-    snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
-    saveTextureMetadata(texMetaPath);
 
-    app->destroy();
-    audioShutdown();
-    onDestroy(display);
+
+
+	// Check before calling destroy to avoid potential null dereference
+	if (app && app->destroy)
+	{
+		app->destroy();
+	}
+
+	if(resources)
+	{
+	    const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
+ 	   	c8 texMetaPath[256];
+ 	   	snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
+  	  	saveTextureMetadata(texMetaPath);
+    	audioShutdown();
+    	cleanUpResourceManager(resources);
+	}
+	else 
+	{
+		ERROR("Resource Manager should not be NULL during application destruction");
+	}
+
+	if(display)
+		onDestroy(display);
+	else
+		ERROR("Display should not be NULL during application destruction");
+
+	
     shutdownLogging();
-    cleanUpResourceManager(resources);
-    memorySystemShutdown();
+	memorySystemShutdown();
     free(app);
 }
 
@@ -79,13 +104,20 @@ void initSystems(const Application* app)
 
 	initLogging();
 	resources = createResourceManager(
-		MATERIAL_COUNT, TEXTURE_COUNT, MESH_COUNT, MODEL_COUNT, SHADER_COUNT, AUDIO_COUNT);
+		MATERIAL_COUNT,
+		TEXTURE_COUNT, 
+		MESH_COUNT, 
+		MODEL_COUNT, 
+		SHADER_COUNT, 
+		AUDIO_COUNT
+	);
 	assert(resources != NULL && "Resource Manager not created correctly");
 
 	profileCalibrate();
 
 	initDisplay(app->title, width, height);
 
+	//TODO: Make this configurable
 	resources->geoBuffer = geometryBufferCreate(2000000, 6000000);
 	if (!resources->geoBuffer)
 		WARN("GeometryBuffer creation failed, meshes will use standalone VAO/VBO/EBO");
