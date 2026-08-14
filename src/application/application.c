@@ -102,7 +102,14 @@ void initSystems(const Application* app)
 		memLoadConfig("../memory.conf", &memCfg);
 	memorySystemInit(&memCfg);
 
-	initLogging();
+
+
+	
+	if(!initLogging())
+	{
+		printf("Fallback to printf:Failed to initialize logging system\n");
+		exit(EXIT_FAILURE);
+	}
 	resources = createResourceManager(
 		MATERIAL_COUNT,
 		TEXTURE_COUNT, 
@@ -111,17 +118,91 @@ void initSystems(const Application* app)
 		SHADER_COUNT, 
 		AUDIO_COUNT
 	);
-	assert(resources != NULL && "Resource Manager not created correctly");
+	if(resources == NULL)
+	{
+		ERROR("Resource Manager not created correctly");
+		exit(EXIT_FAILURE);
+	}
+
+	//check each resource buffer allocation
+	if(resources->materialBuffer == NULL)
+	{
+		ERROR("Material buffer not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->meshBuffer == NULL)
+	{
+		ERROR("Mesh buffer not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->modelBuffer == NULL)
+	{
+		ERROR("Model buffer not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->textureHandles == NULL)
+	{
+		ERROR("Texture handles not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->shaderHandles == NULL)
+	{
+		ERROR("Shader handles not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->textureFlags == NULL)
+	{
+		ERROR("Texture flags not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->textureAlphaThresholds == NULL)
+	{
+		ERROR("Texture alpha thresholds not created");
+		exit(EXIT_FAILURE);
+	}
+	if(resources->textureWrapModes == NULL)
+	{
+		ERROR("Texture wrap modes not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->textureFilterModes == NULL)
+	{
+		ERROR("Texture filter modes not created");
+		exit(EXIT_FAILURE);
+	}
+
+	if(resources->audioBuffer == NULL)
+	{
+		ERROR("Audio buffer not created");
+		exit(EXIT_FAILURE);
+	}
+
+
 
 	profileCalibrate();
 
 	initDisplay(app->title, width, height);
+	if (!display)
+	{
+		ERROR("Display not created correctly");
+		exit(EXIT_FAILURE);
+	}
+
 
 	//TODO: Make this configurable
 	resources->geoBuffer = geometryBufferCreate(2000000, 6000000);
 	if (!resources->geoBuffer)
-		WARN("GeometryBuffer creation failed, meshes will use standalone VAO/VBO/EBO");
-
+	{
+		ERROR("GeometryBuffer creation failed");
+		exit(EXIT_FAILURE);
+	}
 	const c8 *resPath = fileExists("./"RES_FOLDER"shader.vert") ? "./"RES_FOLDER : "../"RES_FOLDER;
 	readResources(resources, resPath);
 	
@@ -130,7 +211,11 @@ void initSystems(const Application* app)
 	snprintf(texMetaPath, sizeof(texMetaPath), "%stextures.meta", resPath);
 	loadTextureMetadata(texMetaPath);
 
-	audioInit();
+	if(!audioInit())
+	{
+		ERROR("Failed to initialize audio system");
+		exit(EXIT_FAILURE);
+	}
 
 	app->init();
 
