@@ -70,3 +70,11 @@ void updateCoreShaderUBO(f32 timeSeconds, const Vec3 *camPos, const Mat4 *view, 
     updateUBO(g_coreUBO, 0, sizeof(CoreShaderData), &data);
 }
 
+void freeUBO(u32 ubo)
+{
+    if (ubo == 0)
+        return;
+    GLuint b = (GLuint)ubo;
+    glDeleteBuffers(1, &b);
+}
+

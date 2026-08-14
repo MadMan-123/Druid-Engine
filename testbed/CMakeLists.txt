@@ -31,7 +31,7 @@ link_directories(
 # Link libraries
 if(MSVC)
     target_link_libraries(testbed PRIVATE
-        ${CMAKE_SOURCE_DIR}/../bin/libdruid.dll
+        ${CMAKE_SOURCE_DIR}/../bin/druid.lib
         ${CMAKE_SOURCE_DIR}/../deps/glew32.lib
         ${CMAKE_SOURCE_DIR}/../deps/SDL3.lib
         opengl32

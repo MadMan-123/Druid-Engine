@@ -178,14 +178,6 @@ u32 createGraphicsProgram(const c8 *vertPath, const c8 *fragPath)
 }
 
 
-void freeUBO(u32 ubo)
-{
-    if (ubo == 0)
-        return;
-    GLuint b = (GLuint)ubo;
-    glDeleteBuffers(1, &b);
-}
-
 u32 createGraphicsProgramWithGeometry(const c8 *vertPath,
                                       const c8 *geomPath,
                                       const c8 *fragPath)

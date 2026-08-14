@@ -1536,7 +1536,6 @@ extern "C"
                               const Camera camera);
     // New optimized functions for UBO rendering
     DAPI void updateShaderModel(u32 shaderProgram, const Transform transform);  
-    DAPI void updateFrameUBOData(const Camera* camera, f32 deltaTime);
     //=====================================================================================================================
     // Uniform Buffer Object
     DAPI u32  createUBO(u32 size, const void *data, GLenum usage);

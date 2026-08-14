@@ -17,7 +17,7 @@ void listFilesRecursive(const c8 *directory, c8 ***fileList, u32 *count, u32 *ca
 FileData* loadFile(const c8 *filePath)
 {
     // open the file to read
-    FILE *file = fopen(filePath, "r");
+    FILE *file = fopen(filePath, "rb");
 
     // null check
     if (file == NULL)
@@ -75,7 +75,7 @@ void freeFileData(FileData* fileData)
 
 b8 writeFile(const c8 *filePath, const u8 *data, u32 size)
 {
-    FILE *file = fopen(filePath, "w");
+    FILE *file = fopen(filePath, "wb");
     if (file == NULL)
     {
         ERROR("Failed to open file for writing: %s\n", filePath);
@@ -96,7 +96,7 @@ b8 writeFile(const c8 *filePath, const u8 *data, u32 size)
 
 b8 fileExists(const c8 *filePath)
 {
-    FILE *file = fopen(filePath, "r");
+    FILE *file = fopen(filePath, "rb");
     if (file == NULL)
     {
         return false;
